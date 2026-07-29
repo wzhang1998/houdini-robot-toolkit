@@ -1,0 +1,20 @@
+# Houdini scenes and assets are binary containers -- never diff or merge them
+# as text, and never rewrite their line endings.
+*.hip      binary
+*.hipnc    binary
+*.hiplc    binary
+*.hda      binary
+*.hdanc    binary
+*.hdalc    binary
+*.otl      binary
+*.otlnc    binary
+*.otllc    binary
+*.bgeo     binary
+*.bgeo.sc  binary
+*.fbx      binary
+
+# Extracted Python / VEX / JSON is the diffable part of the project.
+*.py   text eol=lf
+*.vfl  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf

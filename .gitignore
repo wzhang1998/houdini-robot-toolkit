@@ -1,0 +1,33 @@
+# --- Houdini incremental saves / autosaves -------------------------------
+# Houdini writes a numbered backup on every save; 86 MB and growing.
+backup/
+hda/backup/
+otls/backup/
+.agent_backups/
+*_bak[0-9]*.hip*
+*_bak[0-9]*.hda*
+*_bak[0-9]*.otl*
+*.hip.autosave
+
+# --- Generated geometry / caches -----------------------------------------
+# The IK solve cache is reproducible from the scene (Clear and Recache).
+geo/
+*.bgeo
+*.bgeo.sc
+*.sim
+*.rat
+
+# --- Exported motion ------------------------------------------------------
+# Exports are outputs. Test fixtures live in tests/ and are tracked.
+export/
+render/
+
+# --- Python / OS ----------------------------------------------------------
+__pycache__/
+*.pyc
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# --- Local Houdini env ----------------------------------------------------
+houdini.env
