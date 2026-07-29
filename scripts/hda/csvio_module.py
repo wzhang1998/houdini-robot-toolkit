@@ -249,6 +249,32 @@ def resolve_wrist(ang, prev):
     return list(ang), False
 
 
+def _active_ancestors(node, seen=None):
+    """Upstream nodes reachable along the LIVE branch only.
+
+    hou.Node.inputAncestors() walks every branch of a switch, which is the
+    wrong question here: what matters is what the node is actually reading
+    right now, not what is merely wired into it.
+    """
+    if seen is None:
+        seen = set()
+    if node is None or node in seen:
+        return seen
+    seen.add(node)
+    ins = node.inputs()
+    if not ins:
+        return seen
+    p = node.parm("input")
+    if node.type().name() == "switch" and p is not None:
+        live = [c for c in ins if c is not None]
+        if live:
+            _active_ancestors(live[int(p.eval()) % len(live)], seen)
+        return seen
+    for c in ins:
+        _active_ancestors(c, seen)
+    return seen
+
+
 def bake_ik_to_fk(kwargs):
     """Bake the solved skeleton onto an FK Rig Pose, free of wrist flips."""
     node = kwargs["node"]
@@ -279,6 +305,23 @@ def bake_ik_to_fk(kwargs):
         pos = node.position()
         tgt.setPosition(hou.Vector2(pos[0] - 3.0, pos[1] + 2.4))
         tgt.setColor(hou.Color((0.2, 0.7, 0.4)))
+
+    # Refuse to bake through the target. This asset's input is now the shared
+    # POSE_SOURCE switch, so selecting "Baked IK to FK" makes src resolve to
+    # tgt itself: the bake would read its own previous output and compound the
+    # error a little more on every press, with nothing to show it was wrong.
+    #
+    # Must follow only the SELECTED branch of a switch. inputAncestors() walks
+    # every branch, so with the bake target wired into the switch at all it
+    # reports a conflict on every pose source and blocks legitimate bakes.
+    chain = _active_ancestors(src)
+    if tgt in chain:
+        _notify("'%s' is upstream of this node's input, so baking would read "
+                "its own output and compound on every press. Set Pose Source "
+                "to IK (solved) and bake again." % tgt.name(),
+                severity=hou.severityType.Error, title="Bake IK to FK")
+        return
+
     tgt.setFirstInput(rest)
     tgt.parm("transformations").set(NUM_JOINTS)
     for jn in range(1, NUM_JOINTS + 1):

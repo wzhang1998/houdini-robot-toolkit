@@ -159,10 +159,18 @@ def validate_skeleton(geo, prof):
     n = prof["robot"]["num_joints"]
     pattern = prof["rig"]["joint_name_pattern"]
 
+    # Distinguish "empty input" from "wrong skeleton". They need different
+    # fixes, and reporting a missing attribute when the geometry simply has no
+    # points sends you looking in the wrong place.
+    if len(geo.points()) == 0:
+        return ["input geometry is empty -- nothing upstream produced a "
+                "skeleton (check the solve cache and the frame range)"]
+
     names = set()
     attr = geo.findPointAttrib("name")
     if attr is None:
-        return ["skeleton has no 'name' point attribute"]
+        return ["skeleton has %d points but no 'name' point attribute, so "
+                "joints cannot be identified" % len(geo.points())]
     for p in geo.points():
         names.add(p.attribValue("name"))
 

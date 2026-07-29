@@ -49,11 +49,16 @@ the asset changes.
 
 ## Known issues
 
+- **J4 exports past its limit on the current clip.** Wrapped, J4 stays inside
+  ±180°, but continuity unwrapping accumulates it to −422° across 50 frames —
+  beyond the ±360° the arm can reach. The exporter reports this as
+  `50 limit warnings`; do not send such a clip to hardware. The pre-flight
+  gate will make this a hard stop.
+
 - FBIK enforces joint limits on J1/J2/J3/J5 but ignores them on J4. Rotation
   weights *do* bind on J4, so use J4 Roll Freedom to constrain it. Unexplained.
 - J3 carries a +90° offset between the Configure Joints frame and the frame
   the analysis and CSV export report in.
-- Joint limits are currently duplicated across `scripts/hda/csvio_module.py`,
-  `scripts/joint_angles_sop.py` and `scripts/callbacks/ctrl_cfg_presets.py`,
-  and the three copies have already drifted (−241.9 vs −242.0, ±123.9 vs
-  ±124.0). Consolidating them into `profiles/uf850.json` is the next task.
+- ~~Joint limits duplicated across three files~~ — resolved; `profiles/uf850.json`
+  is now the single source and `scripts/robot_profile.py` the only place the
+  frame conversion lives.
