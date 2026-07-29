@@ -1,0 +1,21 @@
+// POSITION only, taken from the single point on input 1.
+//
+// Orientation used to be computed here too, which is why Aim Target and Fixed
+// Direction did nothing in Point Transform mode: the whole pose came out of
+// this node and bypassed the orient chain entirely. Position and orientation
+// are now separate, so the same three orient modes work whether the goal comes
+// from a curve or from a point.
+
+int src = 1;
+int selected = (chi("../TCP_PATH_CTRL/goal_mode") == 2);
+
+if (npoints(src) < 1) {
+    // Only an error when this mode is actually driving the solve; otherwise
+    // an unwired input would red-flag the network for curve users.
+    if (selected) {
+        error("Point Transform mode needs one point wired into POINT_IN, but that input has none.");
+    }
+} else {
+    @P = point(src, "P", 0);
+    f@curve_u = 0.0;
+}

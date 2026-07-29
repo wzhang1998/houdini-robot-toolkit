@@ -48,11 +48,22 @@ neighbour's cache.
 
 **Goal Mode** — what the IK solver aims at:
 
-| Mode | Source | Notes |
+| Mode | Position from | Notes |
 |---|---|---|
-| Manual Rig Pose | `rigpose_ik` | pose the TCP joint directly |
-| Curve | `CURVE_IN` → orient modes | tangent / aim / fixed orientation |
-| Point Transform | `POINT_IN` | reads `transform`, else `orient`, else `N`+`up`, else the manual Fixed direction |
+| Manual Rig Pose | Manual TCP Goal parms | direct translate/rotate on the TCP |
+| Curve | `CURVE_IN` sampled at Progress | |
+| Point Transform | `POINT_IN`, else the built-in target | external input overrides the built-in |
+
+Position and orientation are **independent**. All three orient modes work with
+either goal source:
+
+| Orient Mode | Curve goal | Point goal |
+|---|---|---|
+| Follow | curve **tangent** | the point's own orient (`transform` → `orient` → `N`+`up`) |
+| Aim At Target | point the tool at Aim Target | same |
+| Fixed Direction | Fixed Tool Direction + Roll | same |
+
+`Point Roll` adds spin about the tool axis on top of the point's orientation.
 
 **Pose Source** — what actually drives the deformed robot *and* the CSV
 exporter: FK (manual joints) / IK (solved) / Imported CSV / Baked IK→FK.

@@ -1,0 +1,65 @@
+// Orientation taken from the goal point's own frame. This is the "Follow"
+// orient mode when the goal comes from a point, standing in for the curve
+// tangent, which has no meaning without a curve.
+//
+// Read from whichever attribute input 1 actually carries, most specific first,
+// so a KineFX joint, a copy-stamped point and a bare position all work:
+//
+//     3@transform   full rotation matrix (what a KineFX joint carries)
+//     p@orient      quaternion (what orientalongcurve and copy SOPs emit)
+//     v@N (+ v@up)  direction, with up resolving the roll
+//     otherwise     leave the incoming frame alone
+//
+// The tool axis is +Y -- KineFX runs Y down the bone toward the child -- so N
+// and the Y row of transform both mean "where the tool points".
+
+int src = 1;
+if (npoints(src) < 1) {
+    // handled upstream by goal_pos_from_point; nothing to orient from
+} else {
+    int pt = 0;
+    matrix3 rot = ident();
+    int got = 1;
+
+    if (haspointattrib(src, "transform")) {
+        rot = point(src, "transform", pt);
+    } else if (haspointattrib(src, "orient")) {
+        rot = qconvert(vector4(point(src, "orient", pt)));
+    } else if (haspointattrib(src, "N")) {
+        vector y = point(src, "N", pt);
+        if (length(y) < 1e-9) y = set(0, -1, 0);
+        y = normalize(y);
+        vector ref = haspointattrib(src, "up")
+                     ? point(src, "up", pt) : set(0, 0, 1);
+        if (length(ref) < 1e-9 || abs(dot(y, normalize(ref))) > 0.999) {
+            ref = (abs(y.x) > 0.9) ? set(0, 0, 1) : set(1, 0, 0);
+        }
+        vector x = normalize(cross(normalize(ref), y));
+        vector z = cross(x, y);
+        rot = set(x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z);
+    } else {
+        got = 0;
+    }
+
+    // A bare position carries no orientation. Spin the incoming frame by the
+    // roll parm so the mode still gives some control rather than snapping to
+    // an arbitrary identity.
+    if (!got) {
+        rot = 3@transform;
+    }
+
+    // getcomp rather than a .yx style swizzle: matrix component swizzles are
+    // not valid VEX on matrix3, and the row we want is row 1 -- the tool axis.
+    float roll = chf("../TCP_PATH_CTRL/point_roll");
+    if (abs(roll) > 1e-9) {
+        vector y = set(getcomp(rot, 1, 0), getcomp(rot, 1, 1), getcomp(rot, 1, 2));
+        if (length(y) > 1e-9) {
+            y = normalize(y);
+            matrix3 spin = ident();
+            rotate(spin, radians(roll), y);
+            rot *= spin;
+        }
+    }
+
+    3@transform = rot;
+}
