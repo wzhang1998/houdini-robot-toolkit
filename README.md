@@ -19,6 +19,26 @@ in `profiles/`, not in the assets. UF850 is the first profile.
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
 
+## Two selectors drive everything
+
+**Goal Mode** — what the IK solver aims at:
+
+| Mode | Source | Notes |
+|---|---|---|
+| Manual Rig Pose | `rigpose_ik` | pose the TCP joint directly |
+| Curve | `CURVE_IN` → orient modes | tangent / aim / fixed orientation |
+| Point Transform | `POINT_IN` | reads `transform`, else `orient`, else `N`+`up`, else the manual Fixed direction |
+
+**Pose Source** — what actually drives the deformed robot *and* the CSV
+exporter: FK (manual joints) / IK (solved) / Imported CSV / Baked IK→FK.
+
+Manual FK is typed into `Joint_controller`'s `j1`–`j6` in the **robot frame**,
+clamped to the profile's limits. The profile's sign is applied on the way to
+the Rig Pose, so what you type is what the CSV exports.
+
+`COLLISION_IN` is a reserved, unconnected wiring point. Collision avoidance is
+not implemented.
+
 ## `$HIP` is not the project root
 
 Scenes live in `scenes/`, so `$HIP` resolves to that folder. Project-relative

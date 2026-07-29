@@ -1,0 +1,64 @@
+// Goal from a single transform, for "move here and hold" or for driving the
+// arm from a null you keyframe by hand. Input 1 supplies one point; the whole
+// TCP pose comes from it.
+//
+// Orientation is read from whichever attribute the input actually carries, in
+// order of specificity, so this works with a KineFX joint, a copy-stamped
+// point, or a bare position:
+//
+//     3@transform   full rotation matrix (what a KineFX joint carries)
+//     p@orient      quaternion (what orientalongcurve and copy SOPs emit)
+//     v@N (+ v@up)  direction, with up resolving the roll
+//     otherwise     falls back to the manual Fixed Tool Direction / Roll
+//
+// The tool axis is +Y (KineFX runs Y down the bone toward the child), so N
+// and the Y row of transform both mean "where the tool points".
+
+int src = 1;
+int selected = (chi("../TCP_PATH_CTRL/goal_mode") == 2);
+
+if (npoints(src) < 1) {
+    // Only a problem when this mode is the one driving the solve. Erroring
+    // regardless would put the network in error for anyone using the curve.
+    if (selected) {
+        error("Point Transform mode needs one point wired into POINT_IN, but that input has none.");
+    }
+} else {
+    int pt = 0;
+    @P = point(src, "P", pt);
+    f@curve_u = 0.0;
+
+    matrix3 rot = ident();
+
+    if (haspointattrib(src, "transform")) {
+        rot = point(src, "transform", pt);
+    } else if (haspointattrib(src, "orient")) {
+        rot = qconvert(vector4(point(src, "orient", pt)));
+    } else if (haspointattrib(src, "N")) {
+        vector y = point(src, "N", pt);
+        if (length(y) < 1e-9) y = set(0, -1, 0);
+        y = normalize(y);
+        vector ref = haspointattrib(src, "up")
+                     ? point(src, "up", pt) : set(0, 0, 1);
+        if (length(ref) < 1e-9 || abs(dot(y, normalize(ref))) > 0.999) {
+            ref = (abs(y.x) > 0.9) ? set(0, 0, 1) : set(1, 0, 0);
+        }
+        vector x = normalize(cross(normalize(ref), y));
+        vector z = cross(x, y);
+        rot = set(x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z);
+    } else {
+        vector dir = chv("../TCP_PATH_CTRL/fixed_dir");
+        if (length(dir) < 1e-6) dir = set(0, -1, 0);
+        vector y = normalize(dir);
+        vector ref = (abs(y.z) > 0.999) ? set(1, 0, 0) : set(0, 0, 1);
+        vector x = normalize(cross(ref, y));
+        vector z = cross(x, y);
+        matrix3 spin = ident();
+        rotate(spin, radians(chf("../TCP_PATH_CTRL/fixed_roll")), y);
+        x = normalize(x * spin);
+        z = normalize(z * spin);
+        rot = set(x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z);
+    }
+
+    3@transform = rot;
+}
