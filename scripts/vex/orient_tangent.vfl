@@ -1,0 +1,22 @@
+// Align the tool axis (+Y, down the bone) with the curve tangent.
+// Interpolate the frame AXES, not the quaternion: primuv() lerps linearly and
+// adjacent quaternions can carry opposite signs (q and -q are the same
+// rotation), so lerping across that sign flip yields a corrupt frame.
+float u = f@curve_u;
+vector ta = primuv(1, "cz", 0, set(u, 0, 0));   // curve tangent
+vector ua = primuv(1, "cy", 0, set(u, 0, 0));   // curve up
+
+vector y = normalize(ta);
+vector ref = ua - dot(ua, y) * y;
+if (length(ref) < 1e-6) {
+    vector wup = set(0, 1, 0);
+    ref = wup - dot(wup, y) * y;
+}
+ref = normalize(ref);
+
+vector x = normalize(cross(ref, y));
+vector z = cross(x, y);
+
+3@transform = set(x.x, x.y, x.z,
+                  y.x, y.y, y.z,
+                  z.x, z.y, z.z);

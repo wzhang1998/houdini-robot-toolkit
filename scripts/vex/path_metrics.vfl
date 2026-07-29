@@ -1,0 +1,39 @@
+// The trail emits newest-first, so point 0 is the last frame and a
+// neighbour difference toward higher ptnum steps one frame BACK in time.
+int   n    = npoints(0);
+float fps  = chf("fps");
+
+i@frame_no = n - @ptnum;
+
+int   prev  = min(@ptnum + 1, n - 1);
+int   valid = (@ptnum + 1 < n) ? 1 : 0;
+
+// TCP linear speed, metres/second
+vector pp  = point(0, "P", prev);
+@tcp_speed = valid ? distance(@P, pp) * fps : 0.0;
+
+// per-joint angular speed, degrees/second
+float vmax = 0.0;
+int   wj   = 0;
+for (int j = 1; j <= 6; j++) {
+    float a0 = point(0, "j" + itoa(j), prev);
+    float a1 = point(0, "j" + itoa(j), @ptnum);
+    // Wrap the difference into [-180, 180]. Extracted angles live in
+    // (-180, 180], so a joint rotating smoothly through the boundary shows
+    // up as a 360 deg/frame jump -- a measurement artifact, not motion.
+    float d  = a1 - a0;
+    d -= 360.0 * rint(d / 360.0);
+    float v  = valid ? abs(d) * fps : 0.0;
+    if (v > vmax) {
+        vmax = v;
+        wj   = j;
+    }
+}
+@vel_max     = vmax;
+i@worst_joint = wj;
+
+// Large joint motion with little TCP motion is the signature of a wrist
+// flip: the arm reconfigures internally while the tool barely moves.
+@flip_ratio = vmax / max(@tcp_speed, 1e-4);
+
+@speed_pct = min((vmax / chf("max_velocity")) * 100.0, chf("speed_cap"));

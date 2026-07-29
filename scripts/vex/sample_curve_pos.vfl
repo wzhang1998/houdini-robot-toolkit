@@ -1,0 +1,5 @@
+// Sample the resampled curve at `progress`. Because resample_arclen uses
+// even-length segments, uniform u == uniform arc length == constant TCP speed.
+float u = clamp(chf("../TCP_PATH_CTRL/progress"), 0.0, 1.0);
+@P = primuv(1, "P", 0, set(u, 0, 0));
+f@curve_u = u;

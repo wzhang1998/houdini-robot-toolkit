@@ -1,0 +1,39 @@
+// Compare the TCP the solver achieved (input 0) against the one that was
+// requested (input 1), in BOTH position and orientation. A non-zero residual
+// has three possible causes: out of reach, solver non-convergence, or a
+// position/orientation conflict against the joint limits. This node reports
+// the magnitude, not the cause.
+string target = point(1, "name", 0);
+vector want   = point(1, "P", 0);
+
+int solved = -1;
+int n = npoints(0);
+for (int i = 0; i < n; i++) {
+    if (point(0, "name", i) == target) {
+        solved = i;
+        break;
+    }
+}
+
+if (solved < 0) {
+    // requested joint is absent from the solved skeleton
+    f@tcp_residual      = -1.0;
+    i@tcp_offtarget     = 1;
+    f@tcp_orient_error  = -1.0;
+    i@tcp_orient_offtarget = 1;
+} else {
+    float d = distance(want, point(0, "P", solved));
+    f@tcp_residual  = d;
+    i@tcp_offtarget = d > chf("../TCP_PATH_CTRL/residual_tolerance");
+
+    // Tool axis is +Y (KineFX: Y runs down the bone), i.e. row 1 of the
+    // matrix3. Position tracking alone can look perfect while the tool
+    // points somewhere useless, so measure both.
+    matrix3 wm = point(1, "transform", 0);
+    matrix3 gm = point(0, "transform", solved);
+    vector wy = normalize(set(getcomp(wm,1,0), getcomp(wm,1,1), getcomp(wm,1,2)));
+    vector gy = normalize(set(getcomp(gm,1,0), getcomp(gm,1,1), getcomp(gm,1,2)));
+    float a = degrees(acos(clamp(dot(wy, gy), -1.0, 1.0)));
+    f@tcp_orient_error     = a;
+    i@tcp_orient_offtarget = a > chf("../TCP_PATH_CTRL/orient_tolerance");
+}

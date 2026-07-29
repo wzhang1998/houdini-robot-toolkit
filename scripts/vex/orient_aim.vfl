@@ -1,0 +1,17 @@
+// Point the tool axis (+Y, down the bone) at aim_target.
+vector aim = chv("../TCP_PATH_CTRL/aim_target");
+vector up  = normalize(chv("../TCP_PATH_CTRL/up_vector"));
+
+vector y = aim - @P;
+if (length(y) < 1e-6) y = set(0, 1, 0);
+y = normalize(y);
+
+// guard: up parallel to the tool axis collapses the cross product
+if (abs(dot(y, up)) > 0.999) up = normalize(set(up.z, up.x, up.y));
+
+vector x = normalize(cross(up, y));
+vector z = cross(x, y);
+
+3@transform = set(x.x, x.y, x.z,
+                  y.x, y.y, y.z,
+                  z.x, z.y, z.z);

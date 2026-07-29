@@ -1,0 +1,6 @@
+// Display only. Not wired into the deform path.
+if (detail(1, "tcp_offtarget", 0)) {
+    @Cd = set(1.0, 0.0, 0.0);
+} else {
+    @Cd = set(0.0, 1.0, 0.0);
+}

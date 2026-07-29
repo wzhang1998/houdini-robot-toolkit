@@ -1,0 +1,22 @@
+// Position still comes from the curve; orientation is entirely manual.
+// The tool axis is +Y (KineFX: Y runs down the bone), so point Y at
+// fixed_dir and spin by fixed_roll about it. Constant along the whole path,
+// so there is no tangent to flip and motion is smooth by construction.
+vector dir = chv("../TCP_PATH_CTRL/fixed_dir");
+if (length(dir) < 1e-6) dir = set(0, -1, 0);
+vector y = normalize(dir);
+
+// any stable reference perpendicular to y
+vector ref = set(0, 0, 1);
+if (abs(dot(y, ref)) > 0.999) ref = set(1, 0, 0);
+vector x = normalize(cross(ref, y));
+vector z = cross(x, y);
+
+matrix3 rot = ident();
+rotate(rot, radians(chf("../TCP_PATH_CTRL/fixed_roll")), y);
+x = normalize(x * rot);
+z = normalize(z * rot);
+
+3@transform = set(x.x, x.y, x.z,
+                  y.x, y.y, y.z,
+                  z.x, z.y, z.z);

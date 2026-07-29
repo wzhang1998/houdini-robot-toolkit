@@ -1,0 +1,22 @@
+// 把 matrix3 里那种 -1.6e-7 之类的“脏值”直接清成 0 / ±1
+float clean(float v; float eps)
+{
+    if (abs(v) < eps) return 0;
+    if (abs(v - 1.0) < eps) return 1;
+    if (abs(v + 1.0) < eps) return -1;
+    return rint(v); // 其它情况就四舍五入到整数
+}
+
+float eps = 1e-4;
+
+// 例：处理 rest_transform（3x3）
+matrix3 m = 3@transform;
+
+m.xx = clean(m.xx, eps);  m.xy = clean(m.xy, eps);  m.xz = clean(m.xz, eps);
+m.yx = clean(m.yx, eps);  m.yy = clean(m.yy, eps);  m.yz = clean(m.yz, eps);
+m.zx = clean(m.zx, eps);  m.zy = clean(m.zy, eps);  m.zz = clean(m.zz, eps);
+
+3@transform = m;
+
+// 如果你也要处理 transform，同样再来一遍：
+// matrix3 t = 3@transform; ... ; 3@transform = t;
