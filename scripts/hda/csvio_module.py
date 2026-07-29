@@ -67,18 +67,35 @@ if os.path.join(_ROOT, "scripts") not in sys.path:
 import robot_profile
 
 
+def _find_profile_parm(node):
+    """Locate the Robot Profile menu without an absolute path.
+
+    Checked in order: this node, a sibling controller, then the enclosing
+    asset. Absolute paths like /obj/geo1/TCP_PATH_CTRL break the moment the
+    network is wrapped into a subnet or instanced twice.
+    """
+    if node is None:
+        return None
+    if node.parm("robot_profile") is not None:
+        return node.parm("robot_profile")
+    net = node.parent()
+    for _ in range(4):
+        if net is None:
+            break
+        if net.parm("robot_profile") is not None:
+            return net.parm("robot_profile")
+        for sib in net.children():
+            if sib.parm("robot_profile") is not None:
+                return sib.parm("robot_profile")
+        net = net.parent()
+    return None
+
+
 def _profile(node=None):
     """Resolved per call so switching the Robot Profile menu takes effect
     without reloading the asset."""
-    pid = None
-    if node is not None:
-        p = node.parm("robot_profile")
-        if p is not None:
-            pid = p.eval()
-    if not pid:
-        ctrl = hou.node("/obj/geo1/TCP_PATH_CTRL")
-        if ctrl is not None and ctrl.parm("robot_profile") is not None:
-            pid = ctrl.parm("robot_profile").eval()
+    p = _find_profile_parm(node)
+    pid = p.eval() if p is not None else None
     return robot_profile.load(pid or "uf850", os.path.join(_ROOT, "profiles"))
 
 
@@ -408,6 +425,11 @@ def export_animation(kwargs):
     dt = 1.0 / fps
     max_vel = float(node.parm("max_velocity").eval())
     cap = float(node.parm("speed_cap").eval())
+    # Resolve limits from THIS node's profile rather than the module-level one,
+    # which is bound once at import. With two arms in a scene on different
+    # profiles, the module-level copy would validate both against whichever
+    # loaded first and pass angles the second arm cannot reach.
+    limits = [tuple(r) for r in _profile(node)["robot"]["limits_deg"]]
     check_limits = int(node.parm("check_limits").eval())
     warn_frac = float(node.parm("warn_threshold").eval())
 
@@ -492,7 +514,7 @@ def export_animation(kwargs):
 
             if check_limits:
                 for i, a in enumerate(ang):
-                    lo, hi = JOINT_LIMITS_DEG[i]
+                    lo, hi = limits[i]
                     if a < lo or a > hi:
                         limit_hits.append("frame %d  J%d  %.3f deg (limit %.1f..%.1f)"
                                           % (frame, i + 1, a, lo, hi))

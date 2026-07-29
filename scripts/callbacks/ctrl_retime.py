@@ -18,8 +18,12 @@ single script and nested defs do not reliably see module-level names.
 import math
 
 node = kwargs["node"]
+# This callback runs either on the internal controller null or on the wrapping
+# wenyi::robot_arm asset, depending on which copy of the parameter was pressed.
+# Resolve the network that actually holds the tool nodes instead of assuming
+# node.parent(): on the asset the tool nodes are CHILDREN, not siblings.
 which = kwargs["parm"].name()
-geo = node.parent()
+geo = node if node.node("cache_solve") is not None else node.parent()
 prog = node.parm("progress")
 
 if which == "reset_progress_btn":

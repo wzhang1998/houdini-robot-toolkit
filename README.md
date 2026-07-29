@@ -19,6 +19,31 @@ in `profiles/`, not in the assets. UF850 is the first profile.
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
 
+## The asset
+
+`wenyi::robot_arm::1.0` (`otls/sop_wenyi.robot_arm.1.0.hdalc`) wraps the whole
+tool: 46 nodes, 78 parameters, six tabs following the workflow.
+
+| Input | |
+|---|---|
+| 0 | Rest skeleton |
+| 1 | Goal curve |
+| 2 | Goal point — overrides the built-in target when connected |
+| 3 | Collision — **reserved, unused** |
+
+Tabs: **Setup · 1 Motion · 2 Solve · 3 Analyze · 4 Output · Advanced**.
+
+An internal `TCP_PATH_CTRL` null sits beside the VEX nodes so every
+`ch("../TCP_PATH_CTRL/...")` reference inside the wrangles keeps resolving
+untouched; its parameters are channel-referenced to the asset's. Input
+parameters flow *down* (asset is master); status strings flow *up* (the inner
+node writes, the asset mirrors).
+
+The solve cache name is a **raw string with backtick expressions**, not a parm
+expression — `setExpression` is flattened to a literal when the definition is
+saved, which made every new instance inherit one stale path and overwrite its
+neighbour's cache.
+
 ## Two selectors drive everything
 
 **Goal Mode** — what the IK solver aims at:
