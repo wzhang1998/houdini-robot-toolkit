@@ -37,6 +37,9 @@
     "joint_name_pattern": "joint_%d",
     "tool_axis": "y",
 
+    "_comment_fbx": "Source mesh and skeleton for this robot, relative to the toolkit root. The asset's Robot FBX parameter defaults to this; input 0 overrides it. FBX outputs on this file: 0 = skin mesh, 1 = rest skeleton (6 pts), 2 = full skeleton (9 pts, split down to 7).",
+    "fbx": "assets/fbx/uf850_fk_01.fbx",
+
     "_comment_axis": "Measured, not assumed: dot(row, joint_5->joint_6 link) == 1.000 on the Y row.",
     "rotation_axis": ["y", "z", "z", "y", "z", "y"],
 
