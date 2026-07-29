@@ -1,0 +1,84 @@
+{
+  "id": "uf850",
+  "label": "UFactory 850",
+  "schema_version": 1,
+
+  "_comment_frames": [
+    "THREE FRAMES ARE IN PLAY. Getting them confused is the single most",
+    "expensive mistake in this project, so every angle below states its own.",
+    "",
+    "  configurejoints : what the Configure Joints SOP and FBIK limits use",
+    "  extracted       : what extract_angles() measures from the rest pose",
+    "  robot           : what the controller and the CSV file speak",
+    "",
+    "  extracted = configurejoints + rig.offset_deg",
+    "  robot     = extracted * rig.sign",
+    "",
+    "Every limit in this file is in the ROBOT frame, because that is the one",
+    "the published datasheet uses. Code converts to the other frames using",
+    "rig.sign and rig.offset_deg -- never hand-write a converted number.",
+    "Note that where sign is -1 the min and max SWAP under conversion."
+  ],
+
+  "robot": {
+    "num_joints": 6,
+    "limits_deg": [
+      [-360.0, 360.0],
+      [-131.9, 131.9],
+      [-241.9, 3.4],
+      [-360.0, 360.0],
+      [-123.9, 123.9],
+      [-360.0, 360.0]
+    ],
+    "max_velocity_deg_s": 180.0
+  },
+
+  "rig": {
+    "joint_name_pattern": "joint_%d",
+    "tool_axis": "y",
+
+    "_comment_axis": "Measured, not assumed: dot(row, joint_5->joint_6 link) == 1.000 on the Y row.",
+    "rotation_axis": ["y", "z", "z", "y", "z", "y"],
+
+    "_comment_sign": "robot = extracted * sign. Only J3 is inverted on this rig.",
+    "sign": [1, 1, -1, 1, 1, 1],
+
+    "_comment_offset": "extracted = configurejoints + offset. Measured by pinning each joint to a narrow band and reading the extractor: J3 came back +90.5 against a +-0.5 probe band, so the true offset is 90.",
+    "offset_deg": [0, 0, 90, 0, 0, 0],
+
+    "_comment_fbik": "FBIK enforces joint limits on J1/J2/J3/J5 but IGNORES them on J4 -- verified at +-5, +-30 and [60,70] with byte-identical output, and again here: pinning J4 to -20 and +20 both yielded -84.51, a slope of exactly 0. Rotation WEIGHTS do bind on J4 (1.0 -> 352 deg travel, 0.3 -> 101, 0.1 -> 26, 0.0 -> locked), so constrain J4 through weight, not range. Root cause unexplained.",
+    "fbik_enforces_limits": [true, true, true, false, true, true]
+  },
+
+  "output": {
+    "writer": "ufactory_csv",
+
+    "_comment_cap": "Matches xarm-blender-animation core/csv_export.py, which sets max_speed_cap = 50.0 'for safety'. The Houdini asset shipped with 100, which only diverges once motion is fast enough for the cap to engage.",
+    "speed_cap_pct": 50.0,
+    "warn_threshold": 1.0,
+    "time_decimals": 4,
+    "angle_decimals": 6
+  },
+
+  "presets": {
+    "_comment": "Robot frame. Converted to the configurejoints frame at apply time. J4 is absent because FBIK ignores its limits -- see rig.fbik_enforces_limits.",
+    "shoulder": {
+      "joint": 1,
+      "any": [-360.0, 360.0],
+      "front": [-90.0, 90.0],
+      "back": [90.0, 270.0]
+    },
+    "elbow": {
+      "joint": 3,
+      "any": [-241.9, 3.4],
+      "up": [-90.0, 3.4],
+      "down": [-241.9, -90.0]
+    },
+    "wrist": {
+      "joint": 5,
+      "any": [-123.9, 123.9],
+      "positive": [0.0, 123.9],
+      "negative": [-123.9, 0.0]
+    }
+  }
+}

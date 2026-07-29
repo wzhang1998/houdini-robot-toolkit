@@ -3,23 +3,34 @@
 Same extraction as the CSV exporter: local rest->posed delta, signed about
 each joint's own axis via atan2. Cheap here (7 points), and the expensive
 IK solve upstream is cached, so this is safe to run per frame.
+
+Joint count, limits and sign convention come from profiles/<id>.json. They
+used to be a literal table here, a second copy in the CSV asset's Python
+module, and a third in the preset callback -- and the three had already
+drifted (-241.9 vs -242.0, +-123.9 vs +-124.0). Reported angles are in the
+ROBOT frame, i.e. after the profile's sign is applied, so they match the
+exported CSV and can be checked against the profile's limits directly.
 """
 import math
+import sys
 
 import hou
 
 node = hou.pwd()
 geo = node.geometry()
 
-NUM_JOINTS = 6
-JOINT_LIMITS_DEG = [
-    (-360.0, 360.0),
-    (-131.9, 131.9),
-    (-241.9, 3.4),
-    (-360.0, 360.0),
-    (-123.9, 123.9),
-    (-360.0, 360.0),
-]
+_root = hou.expandString("$HIP/..")
+if _root + "/scripts" not in sys.path:
+    sys.path.insert(0, _root + "/scripts")
+import robot_profile
+
+_pp = node.parent().node("TCP_PATH_CTRL")
+_pp = _pp.parm("robot_profile") if _pp is not None else None
+PROFILE = robot_profile.load(_pp.eval() if _pp is not None else "uf850",
+                             _root + "/profiles")
+
+NUM_JOINTS = PROFILE["robot"]["num_joints"]
+JOINT_LIMITS_DEG = [tuple(r) for r in PROFILE["robot"]["limits_deg"]]
 
 
 def m4(nine):
@@ -38,14 +49,24 @@ def weights(raw):
     return [abs(float(x)) for x in vals]
 
 
-# sign convention: single source of truth is the CSV IO asset if present
-signs = [1.0] * NUM_JOINTS
+# Sign convention: the profile is authoritative. The CSV asset still carries
+# its own invert_jN toggles; Stage 2 drives those from the profile too. Until
+# then a manual change there will disagree with what this reports, so warn
+# rather than silently pick one.
+signs = [float(s) for s in PROFILE["rig"]["sign"]]
 hda = node.parent().node("robot_csv_io")
 if hda is not None:
     for i in range(NUM_JOINTS):
         p = hda.parm("invert_j%d" % (i + 1))
-        if p is not None and p.eval():
-            signs[i] = -1.0
+        if p is None:
+            continue
+        asset_sign = -1.0 if p.eval() else 1.0
+        if asset_sign != signs[i]:
+            raise hou.NodeError(
+                "J%d sign disagrees: profile '%s' says %+d, robot_csv_io/"
+                "invert_j%d says %+d. Reported angles and exported angles "
+                "would differ by 2x on that joint."
+                % (i + 1, PROFILE["id"], int(signs[i]), i + 1, int(asset_sign)))
 
 pts = list(geo.points())
 by = {}
