@@ -19,20 +19,72 @@ velocity calculation.
 import csv
 import math
 import os
+import sys
 
 import hou
 
-# From the xArm SDK playback table. 0.1 deg buffer already applied there.
-JOINT_LIMITS_DEG = [
-    (-360.0, 360.0),
-    (-131.9, 131.9),
-    (-241.9, 3.4),
-    (-360.0, 360.0),
-    (-123.9, 123.9),
-    (-360.0, 360.0),
-]
+# Joint count and limits come from profiles/<id>.json, which is also what the
+# preset callback and the joint-angle SOP read. They were three separate
+# literal tables until 2026-07-29 and had already drifted: this copy said
+# (-241.9, 3.4) and +-123.9 while the preset callback said (-242.0, 3.5) and
+# +-124.0, in a different reference frame. The preset copy was additionally
+# wrong by 148 degrees on J3. One table, converted by robot_profile, or the
+# same class of bug comes back.
+def _toolkit_root():
+    """Find the toolkit root: the directory holding profiles/ and scripts/.
 
-NUM_JOINTS = 6
+    Resolved from this asset's own .hdalc rather than from $HIP, so the asset
+    keeps working when instanced in someone else's scene. $HIP is only a
+    fallback for the case where the definition is embedded in the hip file
+    and has no library path on disk.
+    """
+    cands = []
+    try:
+        d = hou.nodeType(hou.sopNodeTypeCategory(),
+                         "wenyi::robot_anim_csv_io::1.0").definition()
+        if d and d.libraryFilePath():
+            cands.append(os.path.dirname(d.libraryFilePath()))
+    except Exception:
+        pass
+    cands.append(hou.expandString("$HIP"))
+    for start in cands:
+        cur = os.path.abspath(start)
+        for _ in range(5):
+            if os.path.isdir(os.path.join(cur, "profiles")) and \
+                    os.path.isdir(os.path.join(cur, "scripts")):
+                return cur
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+    raise hou.Error("Cannot locate the toolkit root (a directory containing "
+                    "both profiles/ and scripts/) from %r" % cands)
+
+
+_ROOT = _toolkit_root()
+if os.path.join(_ROOT, "scripts") not in sys.path:
+    sys.path.insert(0, os.path.join(_ROOT, "scripts"))
+import robot_profile
+
+
+def _profile(node=None):
+    """Resolved per call so switching the Robot Profile menu takes effect
+    without reloading the asset."""
+    pid = None
+    if node is not None:
+        p = node.parm("robot_profile")
+        if p is not None:
+            pid = p.eval()
+    if not pid:
+        ctrl = hou.node("/obj/geo1/TCP_PATH_CTRL")
+        if ctrl is not None and ctrl.parm("robot_profile") is not None:
+            pid = ctrl.parm("robot_profile").eval()
+    return robot_profile.load(pid or "uf850", os.path.join(_ROOT, "profiles"))
+
+
+PROFILE = _profile()
+JOINT_LIMITS_DEG = [tuple(r) for r in PROFILE["robot"]["limits_deg"]]
+NUM_JOINTS = PROFILE["robot"]["num_joints"]
 BASE_HEADERS = ["frame", "time_s"] + ["j%d_deg" % n for n in range(1, NUM_JOINTS + 1)] + ["speed_pct"]
 
 

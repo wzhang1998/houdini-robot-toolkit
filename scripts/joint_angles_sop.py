@@ -73,6 +73,16 @@ by = {}
 for p in pts:
     by[p.attribValue("name")] = p
 
+# Assert the skeleton is the one the profile describes. Every serious failure
+# in this project produced confident wrong numbers rather than an error: a
+# guessed rotation axis zeroed three joints, wrapped angles read as a 48x
+# velocity spike. Checking costs one pass over 7 points.
+_problems = robot_profile.validate_skeleton(geo, PROFILE)
+if _problems:
+    raise hou.NodeError(
+        "Skeleton does not match profile '%s':\n  %s"
+        % (PROFILE["id"], "\n  ".join(_problems)))
+
 for nm, dflt in (("angle", 0.0), ("residual", 0.0), ("orient_error", 0.0),
                  ("limit_margin", 0.0), ("is_tcp", 0)):
     if geo.findPointAttrib(nm) is None:
