@@ -46,10 +46,18 @@ axis +Y. The IK goal is moved *back* by that frame so the **tip** lands on the
 goal, and the solver keeps targeting `joint_6` exactly as before — no tool
 means a bit-identical no-op.
 
-Two halves that are easy to confuse, so Tool Status says which is in effect:
+**Tool Frame** decides where the TCP comes from:
 
-- **Tool Offset / Rotate** — numeric, and the only thing the solve uses
-- **Input 3 geometry** — display only; wiring a mesh does *not* move the TCP
+- **From Geometry** (default) — read out of the mesh on input 3, in order:
+  a point group called `tcp`, else a point named `tcp`, else the centroid of
+  the points furthest along +Y. Wire a tool and the arm reaches with it.
+- **Manual** — the numeric Tool Offset / Rotate
+
+Tool Status names the source and says outright when a tip was *guessed* from
+extent rather than declared, so add a `tcp` point when it matters.
+
+The centroid, not a single furthest vertex: on a tube the far points form a
+ring, so picking one put the tip a tool-radius off axis.
 
 Output 1 is the **achieved** tip, not the goal — the two differ by the tracking
 residual.

@@ -1,0 +1,70 @@
+// Derive the tool's TCP from the tool geometry itself.
+//
+// Wiring a tool and expecting the arm to reach with it is the obvious
+// expectation, and the numeric-offset-only design failed it silently: the
+// mesh hung 134 mm past the goal while the solver still drove the bare
+// flange. This reads the tip out of the geometry so the two agree.
+//
+// Detail wrangle on the tool geometry, which is modelled in FLANGE-LOCAL
+// space with +Y down the tool.
+//
+// In order of preference:
+//   1. a point in a group called "tcp"     -- explicit, survives remodelling
+//   2. a point whose @name is "tcp"        -- same intent, attribute form
+//   3. the point furthest along the tool axis -- the tip of a pointed tool
+//
+// found: 0 none, 1 group, 2 name, 3 extent. Reported in Tool Status so a
+// guessed tip is never mistaken for a declared one.
+
+int n = npoints(0);
+vector tip = {0, 0, 0};
+int found = 0;
+
+if (n > 0) {
+    for (int i = 0; i < n; i++) {
+        if (inpointgroup(0, "tcp", i)) {
+            tip = point(0, "P", i);
+            found = 1;
+            break;
+        }
+    }
+    if (!found && haspointattrib(0, "name")) {
+        for (int i = 0; i < n; i++) {
+            if (point(0, "name", i) == "tcp") {
+                tip = point(0, "P", i);
+                found = 2;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        // Centroid of the points at the far end, not a single vertex. On a
+        // tube the furthest points form a ring, so picking one gave a tip
+        // offset by the tool's tip radius -- 4 mm sideways on a 150 mm tool.
+        // Averaging the ring lands on the axis, which is where a TCP belongs.
+        // point() has an inferred return type, so `point(...).y` is an
+        // ambiguous-overload error. Bind to a declared vector first -- the
+        // same trap as push() with an unresolved point() argument.
+        float best = -1e18;
+        for (int i = 0; i < n; i++) {
+            vector q = point(0, "P", i);
+            best = max(best, q.y);
+        }
+        vector acc = {0, 0, 0};
+        int cnt = 0;
+        float eps = max(1e-5, abs(best) * 1e-3);
+        for (int i = 0; i < n; i++) {
+            vector p = point(0, "P", i);
+            if (p.y > best - eps) {
+                acc += p;
+                cnt++;
+            }
+        }
+        tip = (cnt > 0) ? acc / float(cnt) : set(0, best, 0);
+        found = 3;
+    }
+}
+
+setdetailattrib(0, "tcp_p", tip, "set");
+setdetailattrib(0, "tcp_found", found, "set");
+setdetailattrib(0, "tcp_len", length(tip), "set");
