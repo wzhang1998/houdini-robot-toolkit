@@ -163,7 +163,10 @@ cache directory.
 
 ## Pre-flight gate
 
-**4 Output → Run Pre-Flight Check** validates the clip and writes a report.
+**4 Output** is grouped as **Export CSV · Pre-Flight · Import CSV · Bake IK to
+FK**.
+
+**Run Pre-Flight Check** validates the clip and writes a report.
 **Gate Export On Pre-Flight** is on by default and refuses to write a CSV that
 fails. Checks run through the same `_collect()` the exporter uses, so the gate
 validates exactly what ships.

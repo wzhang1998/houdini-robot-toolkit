@@ -17,6 +17,18 @@ single script and nested defs do not reliably see module-level names.
 """
 import math
 
+def _max_velocity(node):
+    """The one joint-velocity limit, shared with export and pre-flight.
+
+    Retime used to carry its own copy. Two editable numbers for one physical
+    limit is the drift that put three different joint-limit tables in this
+    project, one of them wrong by 148 degrees -- so retime reads the same
+    parameter the exporter validates against.
+    """
+    p = node.parm("max_velocity")
+    return float(p.eval()) if p is not None else 180.0
+
+
 node = kwargs["node"]
 # This callback runs either on the internal controller null or on the wrapping
 # wenyi::robot_arm asset, depending on which copy of the parameter was pressed.
@@ -50,7 +62,7 @@ else:
         axis_of = _mod["axis_map_from_geo"](cfg.geometry())
 
         NS = max(8, int(node.parm("retime_samples").eval()))
-        wmax = (float(node.parm("retime_max_velocity").eval())
+        wmax = (_max_velocity(node)
                 * float(node.parm("retime_safety").eval()))
         fps = hou.fps()
         du = 1.0 / NS
@@ -130,5 +142,5 @@ else:
                 "Recache the IK solve to refresh the analysis."
                 % (nframes + 1, f0, fend,
                    node.parm("retime_safety").eval() * 100.0,
-                   node.parm("retime_max_velocity").eval(), max(rates)),
+                   _max_velocity(node), max(rates)),
                 title="Retime")
