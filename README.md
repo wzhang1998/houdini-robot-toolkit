@@ -62,6 +62,11 @@ ring, so picking one put the tip a tool-radius off axis.
 Output 1 is the **achieved** tip, not the goal — the two differ by the tracking
 residual.
 
+The **analysis follows the tip too**: the achieved path, TCP speed and the
+whole Analyze tab measure the working point, not the flange. On a 150 mm tool
+that is not cosmetic — peak TCP speed read 0.61 m/s at the flange against
+1.22 m/s at the tip, so the flange reading understated it by half.
+
 > Appending a rigid `tool_tip` joint and retargeting FBIK at it does **not**
 > work. The joint stays rigid correctly, but FBIK will not solve to a goal on
 > an appended joint: zero weights, zero limits and untouched config all left

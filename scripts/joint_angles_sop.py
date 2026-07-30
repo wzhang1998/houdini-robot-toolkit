@@ -90,7 +90,7 @@ if _problems:
         % (PROFILE["id"], "\n  ".join(_problems)))
 
 for nm, dflt in (("angle", 0.0), ("residual", 0.0), ("orient_error", 0.0),
-                 ("limit_margin", 0.0), ("is_tcp", 0)):
+                 ("limit_margin", 0.0), ("is_tcp", 0), ("tool_length", 0.0)):
     if geo.findPointAttrib(nm) is None:
         geo.addAttrib(hou.attribType.Point, nm, dflt)
 for i in range(1, NUM_JOINTS + 1):
@@ -173,6 +173,25 @@ if tcp is not None:
         tcp.setAttribValue("j%d" % (i + 1), a)
     tcp.setAttribValue("limit_margin", margin)
     tcp.setAttribValue("is_tcp", 1)
+
+    # Move the analysis point to the TOOL TIP.
+    #
+    # Everything downstream traces this point: the Trail builds the achieved
+    # path from it and path_metrics reads tcp_speed off its motion. Left on
+    # joint_6 the whole analysis describes the flange, so with a 150 mm tool
+    # the path drawn -- and the speed measured -- belonged to a point 150 mm
+    # behind the part of the robot actually doing the work.
+    #
+    # The joint angles gathered above stay on it; only the position moves, so
+    # velocity, limits and residual are untouched. With no tool the offset is
+    # zero and this is a no-op.
+    _ctrl = node.parent().node("TCP_PATH_CTRL")
+    if _ctrl is not None and _ctrl.parmTuple("tool_offset") is not None:
+        _off = hou.Vector3(_ctrl.parmTuple("tool_offset").eval())
+        if _off.length() > 1e-9:
+            _rot = hou.Matrix3(tcp.attribValue("transform"))
+            tcp.setPosition(tcp.position() + _off * _rot)
+            tcp.setAttribValue("tool_length", _off.length())
     # Residual and orientation error only exist on the IK branch -- they
     # compare a REQUESTED pose against the achieved one. An FK pose has no
     # target, so -1 marks "not applicable" rather than 0, which would read
