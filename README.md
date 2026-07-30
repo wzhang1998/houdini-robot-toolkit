@@ -115,14 +115,21 @@ the asset changes.
 
 ## Reading the analysis colours
 
-**3 Analyze → Colour By** picks the metric; **Colour Scale** decides what red
-means:
+**3 Analyze** is three collapsible groups in workflow order — **Cache** (recache
+first, nothing below is valid until you do), **Colour** (read the result),
+**Retime** (act on it). Cache location lives under Advanced → Cache Location,
+since it is set once rather than used daily.
+
+**Colour By** picks the metric; **Colour Scale** decides what red means:
 
 - **Profile Limits** (default) — red at a fixed value, so a colour means the
   same thing on every clip and takes are comparable. `vel_max` reds out at the
   profile's 180 °/s, `residual` at Red At Residual, and so on.
 - **Percentile (5–95)** — spans this clip only. Used automatically for
   `flip_ratio` and `tcp_speed`, which have no absolute reference.
+
+Only the threshold belonging to the current metric is shown — pick velocity and
+you see Red At Velocity, not four fields of which three are irrelevant.
 
 **Legend** states the scale in words, e.g.
 `vel_max  blue 0 → red 180 deg/s  (profile limits)  actual range 0 .. 4264`.
