@@ -1,0 +1,21 @@
+// Place the tool geometry on the flange so it rides with the arm.
+//
+// The tool is modelled in FLANGE-LOCAL space: origin at the mounting face,
+// +Y down the tool, matching the KineFX convention the rest of the rig uses.
+// Input 1 supplies the solved flange point.
+//
+// This is display only. The solve never sees the tool mesh -- it works from
+// the numeric tool frame, so a heavy tool model costs nothing per frame.
+
+int fl = 1;
+if (npoints(fl) < 1) {
+    // no flange to mount on; leave the geometry where it is
+} else {
+    matrix3 fR = point(fl, "transform", 0);
+    vector  fP = point(fl, "P", 0);
+
+    @P = @P * fR + fP;
+    if (haspointattrib(0, "N")) {
+        @N = normalize(@N * fR);
+    }
+}

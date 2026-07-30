@@ -29,7 +29,35 @@ tool: 46 nodes, 78 parameters, six tabs following the workflow.
 | 0 | Rest skeleton |
 | 1 | Goal curve |
 | 2 | Goal point — overrides the built-in target when connected |
-| 3 | Collision — **reserved, unused** |
+| 3 | **Tool geometry** — display only |
+| 4 | Collision — **reserved, unused** |
+
+| Output | |
+|---|---|
+| 0 | Display |
+| 1 | **Tool Tip** — one point: `P`, `transform`, `orient` |
+| 2 | Analysis |
+| 3 | Posed Skeleton |
+
+## Tools
+
+**Setup → Tool** sets the tool frame relative to the flange (`joint_6`), tool
+axis +Y. The IK goal is moved *back* by that frame so the **tip** lands on the
+goal, and the solver keeps targeting `joint_6` exactly as before — no tool
+means a bit-identical no-op.
+
+Two halves that are easy to confuse, so Tool Status says which is in effect:
+
+- **Tool Offset / Rotate** — numeric, and the only thing the solve uses
+- **Input 3 geometry** — display only; wiring a mesh does *not* move the TCP
+
+Output 1 is the **achieved** tip, not the goal — the two differ by the tracking
+residual.
+
+> Appending a rigid `tool_tip` joint and retargeting FBIK at it does **not**
+> work. The joint stays rigid correctly, but FBIK will not solve to a goal on
+> an appended joint: zero weights, zero limits and untouched config all left
+> every joint at 0.0 with an 886 mm residual.
 
 Tabs: **Setup · 1 Motion · 2 Solve · 3 Analyze · 4 Output · Advanced**.
 

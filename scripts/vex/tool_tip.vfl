@@ -1,0 +1,46 @@
+// The robot's ACTUAL tool tip: where the tool ended up, not where it was
+// asked to go. The two differ by the tracking residual.
+//
+// Emits a single point carrying P, transform (matrix3) and orient, so it can
+// drive a Copy to Points, a constraint, or anything downstream that needs the
+// working end of the arm. With no tool configured this is joint_6 itself, so
+// the output is always meaningful.
+//
+// Input 0 is the solved skeleton. Everything else on it is discarded.
+
+int src = 0;
+vector off = chv("../TCP_PATH_CTRL/tool_offset");
+vector rot = chv("../TCP_PATH_CTRL/tool_rotate");
+
+int flange = -1;
+int n = npoints(src);
+for (int i = 0; i < n; i++) {
+    if (point(src, "name", i) == "joint_6") {
+        flange = i;
+        break;
+    }
+}
+
+if (flange < 0) {
+    error("No joint_6 in the solved skeleton, so the tool tip is undefined.");
+} else {
+    matrix3 fR = point(src, "transform", flange);
+    vector fP = point(src, "P", flange);
+
+    matrix3 R = ident();
+    if (abs(rot.x) > 1e-9) rotate(R, radians(rot.x), 0);
+    if (abs(rot.y) > 1e-9) rotate(R, radians(rot.y), 1);
+    if (abs(rot.z) > 1e-9) rotate(R, radians(rot.z), 2);
+
+    // forward of what tool_goal_offset undoes: goalR = R * flangeR.
+    // Row-vector convention -- see the note in tool_goal_offset.vfl.
+    matrix3 tipR = R * fR;
+    vector tipP = fP + off * fR;
+
+    @P = tipP;
+    3@transform = tipR;
+    p@orient = quaternion(tipR);
+    s@name = "tool_tip";
+    // how far the tip sits from the flange, for a quick sanity read
+    f@tool_length = length(off);
+}

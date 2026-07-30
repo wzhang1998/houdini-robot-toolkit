@@ -1,0 +1,39 @@
+// Move the IK goal from the TOOL TIP back to the FLANGE.
+//
+// The solver drives joint_6. With a tool mounted, what you actually want at
+// the goal is the tool's tip, which sits at flange x T. So the flange must go
+// to goal x T^-1, and the solve is untouched.
+//
+// The alternative -- appending a rigid tool_tip joint and retargeting FBIK at
+// it -- was tried first and does not work. The joint stays rigid correctly,
+// but FBIK simply does not solve to a goal on an appended joint: three
+// configurations (zero weights, zero limits, config untouched) all left every
+// joint at 0.0 with an 886 mm residual. Transforming the goal keeps FBIK
+// doing exactly what it already does, which also means no tool wired is
+// bit-identical to before.
+//
+// Row-vector convention: a frame's local axes are the ROWS of its matrix, so
+// a flange-local offset maps to world as `off * flangeR`.
+
+vector off = chv("../TCP_PATH_CTRL/tool_offset");
+vector rot = chv("../TCP_PATH_CTRL/tool_rotate");
+
+if (length(off) < 1e-9 && length(rot) < 1e-9) {
+    // no tool: leave the goal exactly as it was
+} else {
+    matrix3 R = ident();
+    if (abs(rot.x) > 1e-9) rotate(R, radians(rot.x), 0);
+    if (abs(rot.y) > 1e-9) rotate(R, radians(rot.y), 1);
+    if (abs(rot.z) > 1e-9) rotate(R, radians(rot.z), 2);
+
+    matrix3 goalR = 3@transform;
+    // invert(R) * goalR, not goalR * invert(R). Row-vector convention: a
+    // frame's local axes are the ROWS, so a child frame composes as
+    // child_world = child_local * parent_world. Getting this backwards is
+    // silent -- position stays exact and only the orientation drifts, by
+    // sin(angle).
+    matrix3 flangeR = invert(R) * goalR;
+
+    @P = @P - off * flangeR;
+    3@transform = flangeR;
+}
