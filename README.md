@@ -65,6 +65,16 @@ either goal source:
 
 `Point Roll` adds spin about the tool axis on top of the point's orientation.
 
+**Aim Target Source** is either Manual XYZ or **From Object**. The object may be
+either:
+
+- **SOP geometry** — aims at point 0 (an Add or Transform SOP works)
+- **An OBJ node** — aims at its origin (a null you drag in the viewport)
+
+Aim Object Status states which was resolved and how, so a silent zero is not
+mistaken for a working target. Relative paths are resolved against the asset,
+which is where you type them.
+
 **Pose Source** — what actually drives the deformed robot *and* the CSV
 exporter: FK (manual joints) / IK (solved) / Imported CSV / Baked IK→FK.
 
