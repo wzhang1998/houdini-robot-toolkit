@@ -77,7 +77,13 @@ for p in pts:
 # in this project produced confident wrong numbers rather than an error: a
 # guessed rotation axis zeroed three joints, wrapped angles read as a 48x
 # velocity spike. Checking costs one pass over 7 points.
-_problems = robot_profile.validate_skeleton(geo, PROFILE)
+#
+# An EMPTY input is not a failure. The Trail SOP downstream cooks this node
+# across a frame window, including frames the solve cache has no file for, and
+# an empty input can only produce empty output -- everything below already
+# no-ops on it. Erroring there took the whole analysis chain down for a
+# transient, legitimate state. A wrong skeleton still hard-errors.
+_problems = robot_profile.validate_skeleton(geo, PROFILE) if pts else []
 if _problems:
     raise hou.NodeError(
         "Skeleton does not match profile '%s':\n  %s"
