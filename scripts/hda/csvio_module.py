@@ -111,8 +111,37 @@ BASE_HEADERS = ["frame", "time_s"] + ["j%d_deg" % n for n in range(1, NUM_JOINTS
 _QUIET = False
 
 
+# Set by each entry point so _notify can find the Quiet toggle without an
+# absolute path. Absolute paths break the moment the asset is instanced twice.
+_HOST = None
+
+
+def _quiet_parm():
+    """Honour a Quiet toggle on this node or the asset wrapping it.
+
+    hou.ui.displayMessage blocks Houdini's main thread until a human clicks
+    it. A scripted or bridge-driven run then deadlocks with no way to dismiss
+    the dialog from outside, which has stalled this project twice. The toggle
+    lets automation suppress dialogs without touching the module global.
+    """
+    n = _HOST
+    for _ in range(4):
+        if n is None:
+            break
+        if n.parm("quiet_mode") is not None:
+            return bool(n.parm("quiet_mode").eval())
+        n = n.parent()
+    return False
+
+
 def _notify(text, severity=None, title=None):
-    if _QUIET or not hou.isUIAvailable():
+    quiet = _QUIET
+    if not quiet:
+        try:
+            quiet = _quiet_parm()
+        except Exception:
+            quiet = False
+    if quiet or not hou.isUIAvailable():
         return
     hou.ui.displayMessage(text,
                           severity=severity or hou.severityType.Message,
@@ -295,6 +324,8 @@ def _active_ancestors(node, seen=None):
 def bake_ik_to_fk(kwargs):
     """Bake the solved skeleton onto an FK Rig Pose, free of wrist flips."""
     node = kwargs["node"]
+    global _HOST
+    _HOST = node
     net = node.parent()
     src = node.inputs()[0] if node.inputs() else None
     if src is None:
@@ -398,8 +429,379 @@ def bake_ik_to_fk(kwargs):
             title="Bake IK to FK")
 
 
+def _collect(node, src):
+    """Walk the frame range once and build the exact rows the CSV would hold.
+
+    Shared by export_animation and preflight, deliberately. A pre-flight that
+    recomputed the angles its own way could pass a clip the exporter then
+    writes differently, and a gate that validates something other than what
+    ships is worse than no gate.
+    """
+    f0 = int(node.parm("frame_rangex").eval())
+    f1 = int(node.parm("frame_rangey").eval())
+    if f1 < f0:
+        raise ValueError("End frame (%d) is before start frame (%d)." % (f1, f0))
+
+    fps = hou.fps()
+    dt = 1.0 / fps
+    max_vel = float(node.parm("max_velocity").eval())
+    cap = float(node.parm("speed_cap").eval())
+    # Resolve limits from THIS node's profile rather than the module-level one,
+    # which is bound once at import. With two arms in a scene on different
+    # profiles, the module-level copy would validate both against whichever
+    # loaded first and pass angles the second arm cannot reach.
+    limits = [tuple(r) for r in _profile(node)["robot"]["limits_deg"]]
+    check_limits = int(node.parm("check_limits").eval())
+    warn_frac = float(node.parm("warn_threshold").eval())
+
+    axis_of = axis_map_from_geo(src.geometry())
+    if not axis_of:
+        cfg = _find_config_joints(node)
+        if cfg is not None:
+            axis_of = axis_map_from_geo(cfg.geometry())
+
+    rows, limit_hits, speed_hits, wrist_flips = [], [], [], []
+    angles, steps = [], []
+    prev = None
+    signs = _joint_signs(node)
+    do_unwrap = True
+    up = node.parm("unwrap_angles")
+    if up is not None:
+        do_unwrap = bool(up.eval())
+    prev_raw = None
+    turns = [0.0] * NUM_JOINTS
+    use_wrist = True
+    _wp = node.parm("wrist_continuity")
+    if _wp is not None:
+        use_wrist = bool(_wp.eval())
+    prev_wrist = None
+    peak_vel = 0.0
+    worst_vel = None
+
+    for frame in range(f0, f1 + 1):
+        geo = src.geometryAtFrame(frame)
+        ang = extract_angles(geo, axis_of)
+
+        # Resolve the wrist branch first. FBIK solves each frame on its own
+        # and may return either of the two equivalent wrist solutions, which
+        # shows up as a 180 deg spin the arm need not do.
+        if use_wrist:
+            ang, _flipped = resolve_wrist(ang, prev_wrist)
+            if _flipped:
+                wrist_flips.append(frame)
+        prev_wrist = list(ang)
+
+        # Unwrap before anything else. Extracted angles live in (-180, 180],
+        # so a joint rotating smoothly through the boundary emits 180.0 then
+        # -179.97 -- and a robot reading that literally spins 360 degrees
+        # backwards. Accumulate whole turns so the exported channel stays
+        # continuous. J1/J4/J6 have +-360 range, the headroom this relies on.
+        if do_unwrap:
+            if prev_raw is not None:
+                for i in range(NUM_JOINTS):
+                    d = ang[i] - prev_raw[i]
+                    if d > 180.0:
+                        turns[i] -= 360.0
+                    elif d < -180.0:
+                        turns[i] += 360.0
+            prev_raw = list(ang)
+            ang = [ang[i] + turns[i] for i in range(NUM_JOINTS)]
+
+        # into the robot's convention before anything else looks at it, so
+        # limit checks and velocities are evaluated on real J values
+        ang = [ang[i] * signs[i] for i in range(NUM_JOINTS)]
+        idx = frame - f0 + 1
+
+        if prev is None:
+            speed = 0.0
+        else:
+            vels = [abs(ang[i] - prev[i]) / dt for i in range(NUM_JOINTS)]
+            speed = min((max(vels) / max_vel) * 100.0, cap)
+            if max(vels) > peak_vel:
+                peak_vel = max(vels)
+                worst_vel = (frame, vels.index(max(vels)) + 1, max(vels))
+            thr = max_vel * warn_frac
+            for i, v in enumerate(vels):
+                if v > thr:
+                    speed_hits.append("frame %d  J%d  %.1f deg/s" % (frame, i + 1, v))
+            for i in range(NUM_JOINTS):
+                d = ang[i] - prev[i]
+                if abs(d) > 180.0:
+                    steps.append((frame, i + 1, d))
+
+        if check_limits:
+            for i, a in enumerate(ang):
+                lo, hi = limits[i]
+                if a < lo or a > hi:
+                    limit_hits.append("frame %d  J%d  %.3f deg (limit %.1f..%.1f)"
+                                      % (frame, i + 1, a, lo, hi))
+
+        row = [str(idx), "%.4f" % ((idx - 1) * dt)]
+        row += ["%.6f" % a for a in ang]
+        row.append("%.2f" % speed)
+        rows.append(row)
+        angles.append(list(ang))
+        prev = ang
+
+    return {"rows": rows, "angles": angles, "limit_hits": limit_hits,
+            "speed_hits": speed_hits, "wrist_flips": wrist_flips,
+            "steps_over_180": steps, "fps": fps, "dt": dt, "f0": f0, "f1": f1,
+            "limits": limits, "max_vel": max_vel, "warn_frac": warn_frac,
+            "peak_vel": peak_vel, "worst_vel": worst_vel,
+            "unwrapped": do_unwrap, "wrist_resolved": use_wrist}
+
+
+def _parm_upward(node, name):
+    """Find a parameter on this node or any ancestor.
+
+    Several controls live on the wrapping asset rather than on this one.
+    Looking them up locally returns None, which reads as "not configured" and
+    silently skips the check that depends on it.
+    """
+    n = node
+    for _ in range(4):
+        if n is None:
+            return None
+        if n.parm(name) is not None:
+            return n.parm(name)
+        n = n.parent()
+    return None
+
+
+def _cache_is_stale(node, data):
+    """Is the solve cache showing something other than the live solve?
+
+    The analysis chain reads the cache while pre-flight and export read live,
+    so a stale cache means the numbers on screen describe a different clip
+    from the one about to ship.
+    """
+    net = node.parent()
+    if net is None:
+        return None
+    cache = net.node("cache_solve")
+    src = node.inputs()[0] if node.inputs() else None
+    if cache is None or src is None:
+        return None
+
+    def tcp(n, f):
+        g = n.geometryAtFrame(f)
+        if g is None:
+            return None
+        for p in g.points():
+            if p.attribValue("name") == "joint_%d" % NUM_JOINTS:
+                return tuple(round(x, 5) for x in p.position())
+        return None
+
+    f0, f1 = data["f0"], data["f1"]
+    for f in (f0, (f0 + f1) // 2, f1):
+        a, b = tcp(src, f), tcp(cache, f)
+        if a is None or b is None:
+            return None
+        if any(abs(a[i] - b[i]) > 1e-4 for i in range(3)):
+            return f
+    return False
+
+
+def _preflight_checks(node, data):
+    """Structured pass/fail list. Each entry: (ok, severity, name, detail).
+
+    severity FAIL blocks export; WARN is advisory. The split is about whether
+    the arm can execute the command at all, not about how good the motion is.
+    """
+    out = []
+    lim = data["limits"]
+    ang = data["angles"]
+    f0 = data["f0"]
+
+    # 1. joint limits, checked on the UNWRAPPED values that actually ship
+    worst = None
+    n_over = 0
+    for i, row in enumerate(ang):
+        for j, a in enumerate(row):
+            lo, hi = lim[j]
+            if a < lo or a > hi:
+                n_over += 1
+                over = max(lo - a, a - hi)
+                if worst is None or over > worst[3]:
+                    worst = (f0 + i, j + 1, a, over)
+    if n_over:
+        out.append((False, "FAIL", "Joint limits",
+                    "%d samples out of range; worst J%d = %.1f deg at frame %d "
+                    "(%.1f deg past the limit)"
+                    % (n_over, worst[1], worst[2], worst[0], worst[3])))
+    else:
+        out.append((True, "OK", "Joint limits", "all samples within profile limits"))
+
+    # 2. steps over 180 deg -- the command that spins the arm backwards
+    steps = data["steps_over_180"]
+    if steps:
+        w = max(steps, key=lambda t: abs(t[2]))
+        out.append((False, "FAIL", "Angle continuity",
+                    "%d steps over 180 deg; worst J%d = %.1f deg at frame %d"
+                    % (len(steps), w[1], w[2], w[0])))
+    else:
+        out.append((True, "OK", "Angle continuity", "no step exceeds 180 deg"))
+
+    # 3. unwrapping must be on, or check 2 is meaningless
+    if not data["unwrapped"]:
+        out.append((False, "FAIL", "Unwrap",
+                    "Unwrap Angles is off, so the channel is discontinuous "
+                    "at every +-180 crossing"))
+    else:
+        out.append((True, "OK", "Unwrap", "continuous angles"))
+
+    # 4. joint velocity
+    mv = data["max_vel"]
+    wv = data["worst_vel"]
+    if wv and wv[2] > mv:
+        out.append((False, "FAIL", "Joint velocity",
+                    "peak %.1f deg/s exceeds %.0f (J%d at frame %d)"
+                    % (wv[2], mv, wv[1], wv[0])))
+    elif wv and wv[2] > mv * data["warn_frac"]:
+        out.append((True, "WARN", "Joint velocity",
+                    "peak %.1f deg/s, above %.0f%% of %.0f (J%d at frame %d)"
+                    % (wv[2], data["warn_frac"] * 100, mv, wv[1], wv[0])))
+    else:
+        out.append((True, "OK", "Joint velocity",
+                    "peak %.1f deg/s of %.0f allowed" % (wv[2] if wv else 0.0, mv)))
+
+    # 5. wrist branch
+    wf = data["wrist_flips"]
+    if not data["wrist_resolved"]:
+        out.append((True, "WARN", "Wrist branch",
+                    "Resolve Wrist Flips is off; FBIK may alternate between "
+                    "the two equivalent wrist solutions"))
+    else:
+        out.append((True, "OK", "Wrist branch",
+                    "resolved at %d frames (tool pose unchanged)" % len(wf)))
+
+    # 6. frame range against the playbar
+    fr = hou.playbar.frameRange()
+    if int(fr[0]) != data["f0"] or int(fr[1]) != data["f1"]:
+        out.append((True, "WARN", "Frame range",
+                    "exporting %d-%d but the playbar is %d-%d"
+                    % (data["f0"], data["f1"], int(fr[0]), int(fr[1]))))
+    else:
+        out.append((True, "OK", "Frame range",
+                    "%d-%d, matches playbar" % (data["f0"], data["f1"])))
+
+    # 7. tracking residual, IK only -- FK has no target to miss
+    try:
+        src = node.inputs()[0]
+        g = src.geometryAtFrame(data["f0"])
+        if g is not None and g.findGlobalAttrib("tcp_residual") is not None:
+            worst_r, worst_f = 0.0, data["f0"]
+            for f in range(data["f0"], data["f1"] + 1, max(1, (data["f1"] - data["f0"]) // 60 or 1)):
+                gg = src.geometryAtFrame(f)
+                r = gg.attribValue("tcp_residual")
+                if r > worst_r:
+                    worst_r, worst_f = r, f
+            # residual_tolerance lives on the wrapping asset, not on this
+            # node. Looking it up locally returned None, so tolv was 0, so the
+            # check reported OK on a 634 mm miss against a 490 mm tolerance.
+            tol = _parm_upward(node, "residual_tolerance")
+            tolv = tol.eval() if tol is not None else 0.0
+            if tolv and worst_r > tolv:
+                out.append((True, "WARN", "Tracking residual",
+                            "peak %.2f mm at frame %d, over the %.2f mm tolerance"
+                            % (worst_r * 1000, worst_f, tolv * 1000)))
+            else:
+                out.append((True, "OK", "Tracking residual",
+                            "peak %.2f mm" % (worst_r * 1000)))
+        else:
+            out.append((True, "OK", "Tracking residual",
+                        "not applicable (no IK target on this pose)"))
+    except Exception as e:
+        out.append((True, "WARN", "Tracking residual", "could not sample: %s" % str(e)[:60]))
+
+    # 8. solve cache against the live solve
+    try:
+        stale = _cache_is_stale(node, data)
+        if stale is None:
+            out.append((True, "OK", "Solve cache", "not in use"))
+        elif stale is False:
+            out.append((True, "OK", "Solve cache", "matches the live solve"))
+        else:
+            out.append((True, "WARN", "Solve cache",
+                        "stale at frame %d -- the Analyze tab is describing a "
+                        "different clip from the one about to export; "
+                        "Clear and Recache" % stale))
+    except Exception as e:
+        out.append((True, "WARN", "Solve cache", "could not compare: %s" % str(e)[:60]))
+
+    return out
+
+
+def _preflight_failures(data):
+    """Just the blocking reasons, for the export gate."""
+    lim = data["limits"]
+    fails = []
+    n_over = sum(1 for row in data["angles"]
+                 for j, a in enumerate(row) if a < lim[j][0] or a > lim[j][1])
+    if n_over:
+        worst = max(((f, j + 1, a, max(lim[j][0] - a, a - lim[j][1]))
+                     for f, row in enumerate(data["angles"])
+                     for j, a in enumerate(row)
+                     if a < lim[j][0] or a > lim[j][1]),
+                    key=lambda t: t[3])
+        fails.append("Joint limits: %d samples out of range, worst J%d = %.1f deg "
+                     "at frame %d" % (n_over, worst[1], worst[2],
+                                      data["f0"] + worst[0]))
+    if data["steps_over_180"]:
+        w = max(data["steps_over_180"], key=lambda t: abs(t[2]))
+        fails.append("Angle continuity: %d steps over 180 deg, worst J%d = %.1f deg "
+                     "at frame %d" % (len(data["steps_over_180"]), w[1], w[2], w[0]))
+    if not data["unwrapped"]:
+        fails.append("Unwrap Angles is off; the channel is discontinuous")
+    wv = data["worst_vel"]
+    if wv and wv[2] > data["max_vel"]:
+        fails.append("Joint velocity: peak %.1f deg/s exceeds %.0f (J%d frame %d)"
+                     % (wv[2], data["max_vel"], wv[1], wv[0]))
+    return fails
+
+
+def preflight(kwargs):
+    """Run every check and write a readable report to the asset."""
+    node = kwargs["node"]
+    global _HOST
+    _HOST = node
+
+    src = node.inputs()[0] if node.inputs() else None
+    if src is None:
+        node.parm("preflight_report").set("No input wired.")
+        _notify("Nothing wired into the input.",
+                severity=hou.severityType.Error, title="Pre-Flight")
+        return
+
+    try:
+        data = _collect(node, src)
+    except ValueError as e:
+        node.parm("preflight_report").set("FAILED: %s" % e)
+        _notify(str(e), severity=hou.severityType.Error, title="Pre-Flight")
+        return
+
+    checks = _preflight_checks(node, data)
+    n_fail = sum(1 for c in checks if c[1] == "FAIL")
+    n_warn = sum(1 for c in checks if c[1] == "WARN")
+
+    lines = ["%-5s %-20s %s" % (c[1], c[2], c[3]) for c in checks]
+    verdict = ("BLOCKED - %d failure%s, %d warning%s"
+               % (n_fail, "" if n_fail == 1 else "s",
+                  n_warn, "" if n_warn == 1 else "s")) if n_fail else (
+              "READY - %d warning%s" % (n_warn, "" if n_warn == 1 else "s"))
+    report = "%s\n\n%s" % (verdict, "\n".join(lines))
+    node.parm("preflight_report").set(report)
+    node.parm("status").set(verdict)
+    _notify(report,
+            severity=hou.severityType.Error if n_fail else
+            (hou.severityType.Warning if n_warn else hou.severityType.Message),
+            title="Pre-Flight Check")
+
+
 def export_animation(kwargs):
     node = kwargs["node"]
+    global _HOST
+    _HOST = node
 
     src = node.inputs()[0] if node.inputs() else None
     if src is None:
@@ -414,25 +816,6 @@ def export_animation(kwargs):
                               severity=hou.severityType.Error, title="No Output Path")
         return
 
-    f0 = int(node.parm("frame_rangex").eval())
-    f1 = int(node.parm("frame_rangey").eval())
-    if f1 < f0:
-        _notify("End frame (%d) is before start frame (%d)." % (f1, f0),
-                              severity=hou.severityType.Error, title="Bad Frame Range")
-        return
-
-    fps = hou.fps()
-    dt = 1.0 / fps
-    max_vel = float(node.parm("max_velocity").eval())
-    cap = float(node.parm("speed_cap").eval())
-    # Resolve limits from THIS node's profile rather than the module-level one,
-    # which is bound once at import. With two arms in a scene on different
-    # profiles, the module-level copy would validate both against whichever
-    # loaded first and pass angles the second arm cannot reach.
-    limits = [tuple(r) for r in _profile(node)["robot"]["limits_deg"]]
-    check_limits = int(node.parm("check_limits").eval())
-    warn_frac = float(node.parm("warn_threshold").eval())
-
     out_dir = os.path.dirname(path)
     if out_dir and not os.path.isdir(out_dir):
         try:
@@ -442,91 +825,33 @@ def export_animation(kwargs):
                                   severity=hou.severityType.Error, title="Directory Error")
             return
 
-    axis_of = axis_map_from_geo(src.geometry())
-    if not axis_of:
-        cfg = _find_config_joints(node)
-        if cfg is not None:
-            axis_of = axis_map_from_geo(cfg.geometry())
-
-    rows = []
-    limit_hits = []
-    speed_hits = []
-    prev = None
-    signs = _joint_signs(node)
-    do_unwrap = True
-    up = node.parm("unwrap_angles")
-    if up is not None:
-        do_unwrap = bool(up.eval())
-    prev_raw = None
-    turns = [0.0] * NUM_JOINTS
-    use_wrist = True
-    _wp = node.parm("wrist_continuity")
-    if _wp is not None:
-        use_wrist = bool(_wp.eval())
-    prev_wrist = None
-    wrist_flips = []
-
     try:
-        for frame in range(f0, f1 + 1):
-            geo = src.geometryAtFrame(frame)
-            ang = extract_angles(geo, axis_of)
-
-            # Resolve the wrist branch first. FBIK solves each frame on its
-            # own and may return either of the two equivalent wrist
-            # solutions, which shows up as a 180 deg spin the arm need not do.
-            if use_wrist:
-                ang, _flipped = resolve_wrist(ang, prev_wrist)
-                if _flipped:
-                    wrist_flips.append(frame)
-            prev_wrist = list(ang)
-
-            # Unwrap before anything else. Extracted angles live in
-            # (-180, 180], so a joint rotating smoothly through the boundary
-            # emits 180.0 then -179.97 -- and a robot reading that literally
-            # spins 360 degrees backwards. Accumulate whole turns so the
-            # exported channel stays continuous. J1/J4/J6 have +-360 range,
-            # which is the headroom this relies on.
-            if do_unwrap:
-                if prev_raw is not None:
-                    for i in range(NUM_JOINTS):
-                        d = ang[i] - prev_raw[i]
-                        if d > 180.0:
-                            turns[i] -= 360.0
-                        elif d < -180.0:
-                            turns[i] += 360.0
-                prev_raw = list(ang)
-                ang = [ang[i] + turns[i] for i in range(NUM_JOINTS)]
-
-            # into the robot's convention before anything else looks at it,
-            # so limit checks and velocities are evaluated on real J values
-            ang = [ang[i] * signs[i] for i in range(NUM_JOINTS)]
-            idx = frame - f0 + 1
-
-            if prev is None:
-                speed = 0.0
-            else:
-                vels = [abs(ang[i] - prev[i]) / dt for i in range(NUM_JOINTS)]
-                speed = min((max(vels) / max_vel) * 100.0, cap)
-                thr = max_vel * warn_frac
-                for i, v in enumerate(vels):
-                    if v > thr:
-                        speed_hits.append("frame %d  J%d  %.1f deg/s" % (frame, i + 1, v))
-
-            if check_limits:
-                for i, a in enumerate(ang):
-                    lo, hi = limits[i]
-                    if a < lo or a > hi:
-                        limit_hits.append("frame %d  J%d  %.3f deg (limit %.1f..%.1f)"
-                                          % (frame, i + 1, a, lo, hi))
-
-            row = [str(idx), "%.4f" % ((idx - 1) * dt)]
-            row += ["%.6f" % a for a in ang]
-            row.append("%.2f" % speed)
-            rows.append(row)
-            prev = ang
+        data = _collect(node, src)
     except ValueError as e:
         _notify(str(e), severity=hou.severityType.Error, title="Extraction Failed")
         return
+
+    rows = data["rows"]
+    limit_hits = data["limit_hits"]
+    speed_hits = data["speed_hits"]
+    wrist_flips = data["wrist_flips"]
+    fps = data["fps"]
+    max_vel = data["max_vel"]
+    warn_frac = data["warn_frac"]
+
+    # Refuse to write a clip that would misbehave on hardware. Gate Export is
+    # on by default: an out-of-limit or >180 deg step is not a style choice,
+    # it is a command the arm cannot execute or will execute backwards.
+    gate = node.parm("gate_export")
+    if gate is not None and gate.eval():
+        fails = _preflight_failures(data)
+        if fails:
+            node.parm("status").set("BLOCKED by pre-flight (%d)" % len(fails))
+            _notify("Export blocked by pre-flight:\n\n" + "\n".join(fails) +
+                    "\n\nRun Pre-Flight Check for detail, or switch off "
+                    "Gate Export On Pre-Flight to write it anyway.",
+                    severity=hou.severityType.Error, title="Export Blocked")
+            return
 
     try:
         with open(path, "w", newline="") as f:
@@ -629,6 +954,8 @@ def _find_rest_source(node):
 def import_animation(kwargs):
     """Read a CSV and key its joint angles onto an FK Rig Pose."""
     node = kwargs["node"]
+    global _HOST
+    _HOST = node
 
     path = node.parm("import_csv").eval().strip()
     if not path or not os.path.isfile(path):

@@ -103,13 +103,47 @@ the asset changes.
   `wenyi::robot_anim_csv_io::1.0`.
 - Houdini incremental saves (`backup/`, `otls/backup/`) are gitignored.
 
+## Pre-flight gate
+
+**4 Output → Run Pre-Flight Check** validates the clip and writes a report.
+**Gate Export On Pre-Flight** is on by default and refuses to write a CSV that
+fails. Checks run through the same `_collect()` the exporter uses, so the gate
+validates exactly what ships.
+
+| Check | Blocks? |
+|---|---|
+| Joint limits (on the unwrapped values that ship) | **FAIL** |
+| Angle continuity — any step over 180° | **FAIL** |
+| Unwrap enabled | **FAIL** |
+| Joint velocity vs profile max | **FAIL** |
+| Wrist branch resolved | warn |
+| Frame range vs playbar | warn |
+| Tracking residual vs tolerance | warn |
+| Solve cache vs live solve | warn |
+
+The cache check matters: the Analyze tab reads the cache while pre-flight and
+export read live, so a stale cache means the numbers on screen describe a
+different clip from the one about to ship.
+
+**Quiet (no popup dialogs)** in Advanced suppresses modal dialogs.
+`hou.ui.displayMessage` blocks Houdini's main thread until dismissed, which
+deadlocks scripted and bridge-driven runs.
+
 ## Known issues
 
-- **J4 exports past its limit on the current clip.** Wrapped, J4 stays inside
-  ±180°, but continuity unwrapping accumulates it to −422° across 50 frames —
-  beyond the ±360° the arm can reach. The exporter reports this as
-  `50 limit warnings`; do not send such a clip to hardware. The pre-flight
-  gate will make this a hard stop.
+- **No orientation mode currently passes pre-flight on the drawn curve.**
+  Measured on the same clip: Tangent hits 3307 °/s, Aim puts J6 at 627.6° and
+  misses by 634 mm, Fixed puts J4 at −422.1° (62.1° past its limit) at frame
+  225. The curve is more aggressive than the arm can follow as planned —
+  slow it down, constrain J4 through Roll Freedom, or redraw.
+
+- **Why J4 unwraps past its limit.** Extracted angles can only live in
+  (−180, 180], but a controller needs continuous values: 179° followed by
+  −179° reads as a −358° command and spins the joint backwards at speed. So
+  the exporter unwraps, adding ±360° to preserve continuity — and that
+  accumulates. J4 is a wrist roll joint, it is the one FBIK ignores limits on,
+  and the flip resolver commits to whichever branch is nearest, so it can wind
+  steadily in one direction until it runs past the ±360° the joint has.
 
 - FBIK enforces joint limits on J1/J2/J3/J5 but ignores them on J4. Rotation
   weights *do* bind on J4, so use J4 Roll Freedom to constrain it. Unexplained.
