@@ -103,6 +103,25 @@ the asset changes.
   `wenyi::robot_anim_csv_io::1.0`.
 - Houdini incremental saves (`backup/`, `otls/backup/`) are gitignored.
 
+## Reading the analysis colours
+
+**3 Analyze → Colour By** picks the metric; **Colour Scale** decides what red
+means:
+
+- **Profile Limits** (default) — red at a fixed value, so a colour means the
+  same thing on every clip and takes are comparable. `vel_max` reds out at the
+  profile's 180 °/s, `residual` at Red At Residual, and so on.
+- **Percentile (5–95)** — spans this clip only. Used automatically for
+  `flip_ratio` and `tcp_speed`, which have no absolute reference.
+
+**Legend** states the scale in words, e.g.
+`vel_max  blue 0 → red 180 deg/s  (profile limits)  actual range 0 .. 4264`.
+Outliers pin to the ends of the ramp rather than being clipped out of the data.
+
+Cache controls live on this tab, not on Solve: `cache_solve` reads
+`POSE_SOURCE` and only the analysis chain consumes it — export and pre-flight
+both read the live solve.
+
 ## Pre-flight gate
 
 **4 Output → Run Pre-Flight Check** validates the clip and writes a report.

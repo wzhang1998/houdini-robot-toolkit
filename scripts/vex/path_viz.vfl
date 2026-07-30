@@ -1,34 +1,91 @@
-// Colour the achieved path by one metric, auto-normalised over the whole
-// path so the ramp always spans the data rather than an arbitrary range.
+// Colour the achieved path by one metric.
+//
+// The ramp used to normalise across raw min..max, which made every metric look
+// identical: a single extreme sample flattened everything else into the bottom
+// of the range. Measured on a 245-point clip, vel_max ran 2463 at one point
+// and 43-60 everywhere else, so 244 points rendered as the same deep blue and
+// switching metric only changed which lone point was red.
+//
+// That extreme sample is NOT an artifact -- point 0 is the last frame (the
+// trail emits newest-first) and pre-flight independently flags frame 245 as
+// the velocity and residual peak. Discarding it would hide a real problem, so
+// the fix is a scale that survives outliers rather than one that removes them.
+//
+//   Profile Limits : red at a fixed, meaningful value, so a colour means the
+//                    same thing on every clip and takes are comparable
+//   Percentile     : 5th-95th, for metrics with no absolute reference
+//
+// Metrics with no profile limit fall back to percentile automatically.
+
 int n = npoints(0);
 int m = chi("viz_metric");
+int mode = chi("viz_scale");          // 0 = profile limits, 1 = percentile
 
 string names[] = {"residual", "orient_error", "vel_max",
                   "flip_ratio", "limit_margin", "tcp_speed"};
 string a = names[m];
 
-// limit_margin is inverted: small margin is the dangerous end
+// limit_margin is inverted: a small margin is the dangerous end
 int invert = (m == 4) ? 1 : 0;
 
-float mx = 0.0;
-float mn = 1e18;
-for (int i = 0; i < n; i++) {
-    float v = point(0, a, i);
-    mx = max(mx, v);
-    mn = min(mn, v);
+// absolute reference per metric; -1 means "no absolute, use percentile"
+float abs_lo = 0.0;
+float abs_hi = -1.0;
+if (m == 0) abs_hi = chf("viz_res_max");        // metres
+if (m == 1) abs_hi = chf("viz_orient_max");     // degrees
+if (m == 2) abs_hi = chf("viz_vel_max");        // deg/s, from the profile
+if (m == 4) abs_hi = chf("viz_margin_max");     // degrees of headroom
+
+float mn, mx;
+int used_abs = 0;
+
+if (mode == 0 && abs_hi > 0.0) {
+    mn = abs_lo;
+    mx = abs_hi;
+    used_abs = 1;
+} else {
+    // percentile, so one bad sample cannot flatten the rest
+    // Indexed assignment, not push(). point() has an inferred return type and
+    // push() cannot pick between its float and float[] overloads from it --
+    // binding to a local float first does not help either. Writing into a
+    // sized array gives the compiler an unambiguous float lvalue.
+    float vals[];
+    resize(vals, n);
+    for (int i = 0; i < n; i++) {
+        vals[i] = point(0, a, i);
+    }
+    vals = sort(vals);
+    int lo_i = clamp(int(floor(0.05 * float(n - 1))), 0, n - 1);
+    int hi_i = clamp(int(ceil(0.95 * float(n - 1))), 0, n - 1);
+    mn = vals[lo_i];
+    mx = vals[hi_i];
 }
 
 float v = point(0, a, @ptnum);
 float t = (mx - mn > 1e-12) ? (v - mn) / (mx - mn) : 0.0;
+t = clamp(t, 0.0, 1.0);               // outliers pin to the ends, still visible
 if (invert) t = 1.0 - t;
 
-// blue (fine) -> green -> yellow -> red (worst)
+// blue (fine) -> cyan -> green -> yellow -> red (worst). Four stops rather
+// than two: the old version jumped straight from green to yellow at t=0.5.
 vector c;
-if (t < 0.5) {
-    c = lerp(set(0.1, 0.3, 1.0), set(0.1, 1.0, 0.3), t * 2.0);
+if (t < 0.25) {
+    c = lerp(set(0.10, 0.30, 1.00), set(0.10, 0.85, 0.95), t * 4.0);
+} else if (t < 0.5) {
+    c = lerp(set(0.10, 0.85, 0.95), set(0.15, 0.95, 0.25), (t - 0.25) * 4.0);
+} else if (t < 0.75) {
+    c = lerp(set(0.15, 0.95, 0.25), set(1.00, 0.95, 0.10), (t - 0.5) * 4.0);
 } else {
-    c = lerp(set(1.0, 1.0, 0.1), set(1.0, 0.1, 0.1), (t - 0.5) * 2.0);
+    c = lerp(set(1.00, 0.95, 0.10), set(1.00, 0.10, 0.10), (t - 0.75) * 4.0);
 }
 @Cd = c;
 @viz_value = v;
 @viz_t = t;
+
+// legend, read back by the Colour By callback so the ramp has a stated scale
+if (@ptnum == 0) {
+    setdetailattrib(0, "viz_lo", mn, "set");
+    setdetailattrib(0, "viz_hi", mx, "set");
+    setdetailattrib(0, "viz_name", a, "set");
+    setdetailattrib(0, "viz_absolute", used_abs, "set");
+}
