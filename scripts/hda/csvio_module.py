@@ -420,7 +420,7 @@ def bake_ik_to_fk(kwargs):
             key.setExpression("linear()", hou.exprLanguage.Hscript)
             parm.setKeyframe(key)
 
-    node.parm("status").set("Baked %d frames to %s (%d wrist flips resolved)"
+    _out_parm(node, "status").set("Baked %d frames to %s (%d wrist flips resolved)"
                             % (f1 - f0 + 1, tgt.name(), len(flips)))
     _notify("Baked frames %d-%d onto:\n%s\n\n%d wrist flips resolved.\n\n"
             "Tool pose is identical -- only the redundant 180 degree wrist\n"
@@ -549,6 +549,27 @@ def _collect(node, src):
             "limits": limits, "max_vel": max_vel, "warn_frac": warn_frac,
             "peak_vel": peak_vel, "worst_vel": worst_vel,
             "unwrapped": do_unwrap, "wrist_resolved": use_wrist}
+
+
+def _out_parm(node, name):
+    """The OUTERMOST parameter with this name, walking up from node.
+
+    Status strings belong on the asset the user is looking at, not on the
+    nested node that happens to compute them. Mirroring them upward with
+    channel references failed: an expression set on one node never reaches
+    other instances, and a DialogScript expression-default stores the raw
+    text for string parameters instead of evaluating it. Writing directly to
+    the outermost owner has neither problem.
+    """
+    found = node.parm(name)
+    n = node.parent()
+    for _ in range(4):
+        if n is None:
+            break
+        if n.parm(name) is not None:
+            found = n.parm(name)
+        n = n.parent()
+    return found
 
 
 def _parm_upward(node, name):
@@ -768,7 +789,7 @@ def preflight(kwargs):
 
     src = node.inputs()[0] if node.inputs() else None
     if src is None:
-        node.parm("preflight_report").set("No input wired.")
+        _out_parm(node, "preflight_report").set("No input wired.")
         _notify("Nothing wired into the input.",
                 severity=hou.severityType.Error, title="Pre-Flight")
         return
@@ -776,7 +797,7 @@ def preflight(kwargs):
     try:
         data = _collect(node, src)
     except ValueError as e:
-        node.parm("preflight_report").set("FAILED: %s" % e)
+        _out_parm(node, "preflight_report").set("FAILED: %s" % e)
         _notify(str(e), severity=hou.severityType.Error, title="Pre-Flight")
         return
 
@@ -784,14 +805,39 @@ def preflight(kwargs):
     n_fail = sum(1 for c in checks if c[1] == "FAIL")
     n_warn = sum(1 for c in checks if c[1] == "WARN")
 
+    # Publish the offending frames so the viewport can mark them. Recomputing
+    # this in VEX would miss the unwrap failures entirely -- the analysis chain
+    # sees wrapped angles, where J4 at -422 deg looks perfectly in range.
+    bad = set()
+    lim = data["limits"]
+    for i, row in enumerate(data["angles"]):
+        for j, a in enumerate(row):
+            if a < lim[j][0] or a > lim[j][1]:
+                bad.add(data["f0"] + i)
+    for fr, _j, _d in data["steps_over_180"]:
+        bad.add(fr)
+    dt = data["dt"]
+    prev = None
+    for i, row in enumerate(data["angles"]):
+        if prev is not None:
+            if max(abs(row[k] - prev[k]) / dt for k in range(NUM_JOINTS)) > data["max_vel"]:
+                bad.add(data["f0"] + i)
+        prev = row
+    fp = _out_parm(node, "preflight_frames")
+    if fp is not None:
+        fp.set(",".join(str(x) for x in sorted(bad)))
+    R_bad = len(bad)
+
     lines = ["%-5s %-20s %s" % (c[1], c[2], c[3]) for c in checks]
     verdict = ("BLOCKED - %d failure%s, %d warning%s"
                % (n_fail, "" if n_fail == 1 else "s",
                   n_warn, "" if n_warn == 1 else "s")) if n_fail else (
               "READY - %d warning%s" % (n_warn, "" if n_warn == 1 else "s"))
     report = "%s\n\n%s" % (verdict, "\n".join(lines))
-    node.parm("preflight_report").set(report)
-    node.parm("status").set(verdict)
+    report += "\n\n%d frame%s marked in the viewport." % (
+        R_bad, "" if R_bad == 1 else "s")
+    _out_parm(node, "preflight_report").set(report)
+    _out_parm(node, "status").set(verdict)
     _notify(report,
             severity=hou.severityType.Error if n_fail else
             (hou.severityType.Warning if n_warn else hou.severityType.Message),
@@ -846,7 +892,7 @@ def export_animation(kwargs):
     if gate is not None and gate.eval():
         fails = _preflight_failures(data)
         if fails:
-            node.parm("status").set("BLOCKED by pre-flight (%d)" % len(fails))
+            _out_parm(node, "status").set("BLOCKED by pre-flight (%d)" % len(fails))
             _notify("Export blocked by pre-flight:\n\n" + "\n".join(fails) +
                     "\n\nRun Pre-Flight Check for detail, or switch off "
                     "Gate Export On Pre-Flight to write it anyway.",
@@ -884,7 +930,7 @@ def export_animation(kwargs):
     if not limit_hits and not speed_hits:
         msg += "\n\nNo joint-limit or speed warnings."
 
-    node.parm("status").set(
+    _out_parm(node, "status").set(
         "Exported %d frames%s" % (len(rows),
                                   "  (%d limit, %d speed warnings)" % (len(limit_hits), len(speed_hits))
                                   if (limit_hits or speed_hits) else "  (clean)"))
@@ -1088,7 +1134,7 @@ def import_animation(kwargs):
     if made_node:
         node.parm("target_rigpose").set(tgt.path())
 
-    node.parm("status").set("Imported %d frames -> %s" % (len(rows), tgt.name()))
+    _out_parm(node, "status").set("Imported %d frames -> %s" % (len(rows), tgt.name()))
     _notify(
         "Imported %d frames (%d keyframes) onto:\n%s\n\nFrames %d..%d\n\n%s"
         % (len(rows), n_keys, tgt.path(), start, start + len(rows) - 1,

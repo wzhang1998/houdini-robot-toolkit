@@ -1,0 +1,26 @@
+// Mark the frames pre-flight failed on, so you can see WHERE on the path a
+// problem happens instead of reading a frame number out of a report.
+//
+// The frame list comes from pre-flight rather than being recomputed here, and
+// that is deliberate. The analysis chain works on WRAPPED joint angles, which
+// cannot see unwrap accumulation -- J4 reaching -422 deg is invisible to
+// limit_margin because wrapped it never leaves +-180. Recomputing locally
+// would quietly disagree with the gate on exactly the failure that matters
+// most. One source of truth: whatever pre-flight actually rejected.
+//
+// Consequence: markers are empty until Run Pre-Flight Check has been pressed.
+// The Analyze tab states the count so that is visible rather than puzzling.
+
+string raw = chs("../preflight_frames");
+int f = i@frame_no;
+
+i@is_problem = 0;
+if (raw != "") {
+    string parts[] = split(raw, ",");
+    foreach (string s; parts) {
+        if (atoi(s) == f) {
+            i@is_problem = 1;
+            break;
+        }
+    }
+}

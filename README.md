@@ -118,9 +118,27 @@ means:
 `vel_max  blue 0 → red 180 deg/s  (profile limits)  actual range 0 .. 4264`.
 Outliers pin to the ends of the ramp rather than being clipped out of the data.
 
+**Pass / Warn / Fail** replaces the ramp with three flat colours against the
+profile limits — green fine, amber approaching, red over. A ramp shows
+relative severity but never states where the line is; banding answers "where
+does this clip break?" directly. **Warn At** sets the amber boundary as a
+fraction of the limit.
+
+**Problem Frames** markers sit on the path at the frames the last pre-flight
+rejected. They come from pre-flight's own numbers rather than being recomputed,
+because the analysis chain works on *wrapped* angles and cannot see unwrap
+accumulation — J4 reaching −422° is invisible to `limit_margin`, since wrapped
+it never leaves ±180. Consequence: markers are empty until **Run Pre-Flight
+Check** has been pressed.
+
 Cache controls live on this tab, not on Solve: `cache_solve` reads
 `POSE_SOURCE` and only the analysis chain consumes it — export and pre-flight
-both read the live solve.
+both read the live solve. If the analysis looks frozen (identical values on
+every frame, zero velocity), the cache is stale — recache.
+
+> **Locked instances cannot recache.** A freshly created asset is locked and
+> **Clear and Recache** silently does nothing. Right-click →
+> *Allow Editing of Contents* first. Not yet fixed.
 
 ## Pre-flight gate
 
