@@ -172,6 +172,25 @@ since it is set once rather than used daily.
 Only the threshold belonging to the current metric is shown — pick velocity and
 you see Red At Velocity, not four fields of which three are irrelevant.
 
+### Colour is reserved for data
+
+The metric ramp owns **blue → cyan → green → yellow → red**, and the bands own
+green / amber / red. Nothing else is drawn in those colours, so a colour on
+screen always means a measurement:
+
+| | |
+|---|---|
+| Achieved path | the metric ramp — **the only thing that carries meaning** |
+| Planned curve | white — a reference, not a measurement |
+| TCP marker / Aim target | magenta / violet — controls |
+| Residual ties | light neutral |
+| Problem markers | hot pink — deliberately loud |
+| Tool | steel grey |
+
+The planned curve used to be cyan, which sat **0.12** from the ramp's cyan
+stop — on a well-tracking clip both curves rendered nearly the same colour.
+It is now 0.86 away.
+
 **Legend** states the scale in words, e.g.
 `vel_max  blue 0 → red 180 deg/s  (profile limits)  actual range 0 .. 4264`.
 Outliers pin to the ends of the ramp rather than being clipped out of the data.
