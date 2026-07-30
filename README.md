@@ -146,9 +146,13 @@ Cache controls live on this tab, not on Solve: `cache_solve` reads
 both read the live solve. If the analysis looks frozen (identical values on
 every frame, zero velocity), the cache is stale — recache.
 
-> **Locked instances cannot recache.** A freshly created asset is locked and
-> **Clear and Recache** silently does nothing. Right-click →
-> *Allow Editing of Contents* first. Not yet fixed.
+Cache Directory, Cache Name and Cache Version are asset parameters, not
+buried in the internal filecache. That is not cosmetic: **a locked asset
+instance can read its internal parameters but not write them**, so anything a
+callback has to change must be promoted. Cache Name defaults to
+`ik_solve_`chs("robot_profile")`_`opname(".")`` — backticks evaluate at cook
+time and `opname(".")` is the instance, so two arms in one scene never share a
+cache directory.
 
 ## Pre-flight gate
 

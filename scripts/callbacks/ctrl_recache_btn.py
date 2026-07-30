@@ -40,9 +40,16 @@ else:
         except OSError:
             pass
 
-    cache.parm("loadfromdisk").set(0)
+    # Nothing is written to the filecache's own parameters. A locked asset
+    # instance forbids that -- reads are fine, writes raise PermissionError --
+    # and it is the contract, not a quirk: anything a callback must change
+    # belongs on a promoted parameter. This used to toggle loadfromdisk around
+    # the write, which made Recache silently fail on every locked instance.
+    #
+    # Measured: Save to Disk writes the full frame range with loadfromdisk
+    # left at 1, so the toggle was never doing anything. Pressing a button on
+    # an internal node IS permitted while locked; only parm writes are not.
     cache.parm("execute").pressButton()
-    cache.parm("loadfromdisk").set(1)
 
     f0 = int(cache.parm("f1").eval())
     f1 = int(cache.parm("f2").eval())
