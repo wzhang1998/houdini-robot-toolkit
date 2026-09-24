@@ -18,7 +18,7 @@ names — see [Profiles drive the asset](#profiles-drive-the-asset).
 | `scripts/` | Python and VEX extracted from the binaries, in diffable form |
 | `scenes/` | `.hiplc` scene files |
 | `assets/fbx/` | Source geometry |
-| `assets/fairino_description/` | FR20 URDF and link STLs — **not committed** (gitignored): the upstream repo declares no license. Copy `fairino_description/` from FAIR-INNOVATION/frcobot_ros2 here; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
+| `assets/fairino_description/` | FR20 URDF and link STLs, copied unmodified from FAIR-INNOVATION/frcobot_ros2 (`fairino_description/`), which declares no license; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
 | `tests/csv/` | Reference fixtures for export/import validation |
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
@@ -41,7 +41,7 @@ tool: 110 internal nodes, six tabs following the workflow.
 | 0 | Display |
 | 1 | **Tool Tip** — one point: `P`, `transform`, `orient` |
 | 2 | Analysis |
-| 3 | Posed Skeleton — drives external link meshes for a robot with no FBX skin |
+| 3 | Posed Skeleton — the KineFX skeleton the active Pose Source produces |
 
 Outputs 2 and 3 existed inside the asset and were labelled in its dialog
 script, but the definition allowed only two outputs, so neither was reachable.
