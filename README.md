@@ -245,6 +245,76 @@ inputs. On a fresh locked instance, FK matches URDF forward kinematics to
 4 µm, every link-mesh vertex matches its STL placed by URDF FK to 5 µm, and
 IK → extracted angles → URDF FK lands on the solved tool tip to 2 µm.
 
+## Closed-form IK (UR-type arms)
+
+`rig.ik_solver` in the profile picks the solver: `fbik` (default, UF850) or
+`ur_closed_form` (FR20). The closed form is `scripts/ur_ik.py`, pure Python:
+it checks the URDF is UR-type (J2/J3/J4 parallel, J5 ⟂ J4, J6 ⟂ J5), derives
+the solve from the URDF's own zero-pose geometry — no DH table, so no angle
+offsets or signs to transcribe — and returns every branch, up to 8
+(shoulder × elbow × wrist). Each branch is polished by a few Newton steps on
+the exact URDF (its π/2 is written 1.5708) and kept only if it reproduces the
+goal to 1 µm / 1e-6 rad. `python scripts/ur_ik.py` runs its tests: over
+10,000 random in-limit poses every branch reproduces its target (worst
+4e-12 m), and away from singularities the pose's own q is always among them.
+Near the wrist, elbow or shoulder singularity branches merge or a family of
+solutions reaches the same pose, so there only exactness is checked.
+
+Inside the asset: `analytic_ik` (Python SOP) solves the joint_6 goal from
+`tool_goal_offset`, writing `ik_q` / `ik_ok` / `ik_singular` / `ik_nsol` /
+`ik_branch` as detail attributes; `ik_rigpose` — a copy of `rigpose_fk` —
+poses the skeleton from them; `IK_SOLVER` switches between that and
+`fullbodyik1`. Everything downstream is unchanged.
+
+Branch choice per frame: the Solve tab presets (shoulder / elbow / wrist)
+filter the branches — the usual industrial configuration flags — and the one
+nearest the previous frame's solution wins, else the one nearest
+`rig.ik_reference_deg`. Recache clears that memory and writes frames in
+order, so a cached solve is continuous and reproducible. With no admissible
+branch (out of reach, or all outside limits / presets), `closest()` gets as
+near as the arm can from the previous pose — Levenberg–Marquardt, clamped to
+the limits — and `ik_ok` reads 0.
+
+Measured on FR20, locked instance:
+
+| | FBIK | closed form |
+|---|---|---|
+| Manual goals, residual | 3–24 mm | 0.0001–0.0008 mm (an out-of-reach one: 3.2 mm) |
+| Drawn curve, 240 frames | 67 frames > 1 mm, max 134 mm | all solved, max 0.005 mm |
+| Branch changes on the curve | wrist flips mid-branch | 4, each forced: the branch it left needed J1 −175.7 / −175.3, J6 176.1 or J4 95.0 |
+| Against the FR20 controller (SimMachine) | — | its `GetInverseKin` answer is among our branches for 18/18 poses, to within its 0.001-unit output rounding |
+
+Joint steps above the velocity limit remain on that curve where the curve
+itself asks for them — passing near the wrist singularity (q5 ≈ −10°: J4/J6
+turn 8–14°/frame while the goal turns 2°) and at the four forced branch
+changes. That is the curve, not the solver; Pre-flight flags it.
+
+## Playback on a Fairino arm
+
+`scripts/fairino_player.py` plays the asset's exported joint CSV on a Fairino
+controller by ServoJ streaming — standard library only, XML-RPC on port
+20003, which is what Fairino's SDK calls underneath. The approach is the one
+td-robot-twin arrived at for UF850 (`PLAYBACK_FINDINGS.md` there): condition
+the whole path first (shape-preserving cubic per joint, at rest at both
+ends, equal-interval resampling at the control rate, uniform time scaling to
+the velocity / acceleration envelope — never per-joint clipping), MoveJ to
+the first sample, stream on absolute deadlines and coalesce stale samples,
+read feedback on a separate connection, and report what happened.
+
+```
+python scripts/fairino_player.py --self-test
+python scripts/fairino_player.py clip.csv --ip 192.168.116.128 --sim --report run.json
+```
+
+`--sim` is required; it has only run against SimMachine, whose WebApp shows
+the VM's internal 192.168.58.2 while the host reaches it at its VMware NAT
+address. First run, FR20, the scene's 240-frame clip: 2666 ServoJ at
+125.04 Hz, 0 skips, max lateness 0.55 ms; actual joints trail the command by
+~40 ms and, aligned for that, track within 0.072° (RMS 0.018°). A physical
+arm will differ in latency and dynamics — run it at reduced dynamics with an
+operator at the E-stop before trusting these numbers. Segment-by-segment
+sending, as td-robot-twin's worker does, is the next step.
+
 ## Conventions
 
 - All assets use the **`wenyi::`** namespace. `sop_vvox.robot_anim_by_csv.1.0.hdalc`
@@ -371,12 +441,25 @@ deadlocks scripted and bridge-driven runs.
   failed a frame); full-turn ranges like UF850's ±360° pass unchanged. It
   also trims UF850's Shoulder *back* [90, 270] and Elbow *down* presets,
   which cross the same edge — not measured on UF850.
-- **FR20 still misses a few frames of the drawn curve at the wrist flip.**
-  After the range fix, 6 of 40 sampled frames miss by 190–520 mm, all where
-  J5 passes through 0 while the solution switches wrist sign. Each frame
-  solves from the URDF zero — itself fully stretched and singular. Pinning
-  the Wrist preset to either sign made every frame miss (a range starting at
-  0 puts the rest pose on its edge).
+- ~~FR20 misses frames of the drawn curve at the wrist flip~~ — resolved:
+  FR20 no longer uses FBIK (see [Closed-form IK](#closed-form-ik-ur-type-arms)).
+  Under FBIK, 6 of 40 sampled frames missed by 190–520 mm where J5 crossed 0;
+  every frame solved from the stretched, singular URDF zero. The range trim
+  above still applies to any profile that stays on FBIK.
+- **Joint velocity limits are per joint.** `robot.max_velocity_deg_s` is one
+  number (UF850: 180) or one per joint (FR20, from Fairino's datasheet: J1–J3
+  120, J4–J6 180 deg/s). Export, pre-flight, Retime, the analysis
+  (`path_metrics`: `vel_limit1..6`, `vel_ratio`, `speed_pct`) and
+  `fairino_player.py` all compare each joint to its own limit; Max Joint
+  Velocity caps every joint on top and is set to the profile's highest on a
+  profile change. Before this, Houdini checked FR20 against the asset
+  parameter's UF850 default of 180 on every joint — the profile's number was
+  never read. Checked: an FK clip turning J1 and J5 at 150 deg/s fails
+  pre-flight on J1 only (150 > 120) and warns on J5 (above 80 % of 180).
+- `path_metrics` still carries literal `fps` 24 and `speed_cap` 50 (the asset's
+  Speed Cap is 100), and the Colour By `vel_max` scale is one number
+  (`viz_vel_max`). `vel_ratio` is the per-joint measure; not yet a colour
+  option.
 - **Progress** now defaults to `fit($FF, $RFSTART, $RFEND, 0, 1)`, what Reset
   Progress writes; it used to default to a flat 0, so a new instance on curve
   mode never moved unless someone had pressed Reset or Retime.
@@ -384,9 +467,18 @@ deadlocks scripted and bridge-driven runs.
   weights *do* bind on J4, so use J4 Roll Freedom to constrain it. Unexplained.
   Reproduced on FR20: an IK solve returned J4 = +95.67° against a configured
   [−265, 85]. FR20's other joints are not yet probed.
-- FR20's URDF zero is assumed to equal the controller's zero (Fairino's own
-  ROS 2 driver passes positions straight through). Not yet confirmed against
-  SimMachine or hardware.
+- ~~FR20's URDF zero vs the controller's~~ — **confirmed in SimMachine**
+  (`FR20-V1-001(V6.0)`, controller v3.9.3). Controller `GetForwardKin` vs
+  `fairino20_v6.urdf` over 23 poses: zero pose (-1716.0, -286.0, 77.0) mm
+  both; position within 0.016 mm; orientation within 0.0006° with rx/ry/rz
+  as R = Rz·Ry·Rx; fitted flange 120.0 mm (the profile's 0.12 m) and base
+  offset 0. The controller's own IK returns other branches than the one
+  asked about (e.g. J4 = −184° for a −157° pose) — send joint angles, not
+  poses, for authored motion.
+  URDF and controller *can* disagree across hardware versions: on the
+  SimMachine's default FR5 (V5.0) the v6 URDF's J4→J5 is 102.1 mm against the
+  controller's 130 mm. Check any new model the same way (queries only,
+  nothing moves).
 - ~~Recache left the old solve on screen~~ — resolved. On a **locked**
   instance, after `cache_solve` wrote, its load side kept serving the solve it
   had loaded before (same filenames, nothing dirtied): 222 mm off the new files

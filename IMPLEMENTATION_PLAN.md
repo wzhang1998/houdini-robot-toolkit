@@ -1,0 +1,106 @@
+# Implementation plan — motion lab
+
+Architecture and reasoning: `docs/motion-lab-architecture.md`.
+Delete this file when every stage is Complete.
+
+## Stage 1: FR20 closed-form IK inside Houdini
+**Goal**: A UR-type closed-form IK (`scripts/ur_ik.py`, no hou dependency)
+returning all valid branches, and a solver backend in `robot_arm` selected by
+the profile: FR20 uses it through a Python SOP in place of FBIK; UF850 keeps
+FBIK.
+**Success Criteria**:
+- Every returned branch reproduces its target through URDF FK to < 1 µm and
+  < 0.001° over 10,000 random in-limit poses.
+- Solutions respect `limits_deg`; unreachable targets report "no solution"
+  instead of a wrong pose.
+- Along the drawn test curve, the solver adds no discontinuity of its own:
+  every branch change is forced by a joint limit. (The original wording, "no
+  joint step above the velocity limit", turned out to be a property of the
+  curve, not the solver: near the wrist singularity the curve itself needs
+  8–14 deg/frame on J4/J6.)
+- UF850 regression unchanged (baseline harness).
+- When SimMachine is available: 20 poses agree with `GetForwardKin` /
+  `GetInverseKin`.
+**Tests**: FK round-trip per branch; limit filtering; singular configurations
+(wrist, shoulder, elbow) return finite results or a clear failure; continuity
+on the test curve; UF850 baseline.
+**Status**: Complete — `ur_ik.py` tests pass over 10,000 random in-limit
+poses: every branch reproduces its target (worst 4e-12 m, 8e-11°); away from
+singularities the pose's own q is always among the branches; the 190 poses in
+a wrist / elbow / shoulder singular neighbourhood are checked for exactness
+only, since there branches merge or a family of solutions reaches the same
+pose. Also float32 goal noise, unreachable → `closest()`; asset: manual goals 0.0001–0.0008 mm, drawn curve 240/240
+frames ≤ 0.005 mm, 4 branch changes all limit-forced; SimMachine FR20: FK
+0.016 mm / 0.0006° over 23 poses, controller IK among our branches 18/18;
+UF850 baseline unchanged.
+
+## Stage 1b: Playback on FR20 — A: ServoJ stream
+**Goal**: `scripts/fairino_player.py` plays a joint CSV exported from the
+asset on a Fairino arm by ServoJ streaming, following the td-robot-twin
+playback findings: controller-planned move to the first pose; the whole path
+conditioned before motion (shape-preserving interpolation, rest at both ends,
+equal-interval resampling at the control rate, uniform time scaling to the
+velocity / acceleration envelope); absolute-deadline sends that coalesce stale
+samples; feedback on a separate connection; a measured report. SimMachine
+first. Later: segment-by-segment sending as in td-robot-twin.
+**Success Criteria**: Conditioning self-tests pass (passes through samples, no
+overshoot, zero end velocity, envelope honoured after scaling, bad CSVs
+rejected). On SimMachine FR20: the exported clip plays start to end without a
+controller error; the report gives effective send rate, skips, lateness,
+duration scale, and tracking error of actual vs commanded joints after lag
+alignment.
+**Tests**: `python scripts/fairino_player.py --self-test`; a SimMachine run.
+**Status**: Complete on SimMachine (FR20-V1-001 V6.0) — self-tests pass; the
+scene's 240-frame curve clip (Fixed Direction) exported from the asset,
+conditioned to 21.3 s (time scale 2.14, acceleration-bound at 300 deg/s^2),
+streamed 2666 ServoJ at 125.04 Hz with 0 skips, max lateness 0.55 ms, send
+p50/p95/max 1.2/3.4/8.3 ms; actual joints lag the command by ~40 ms and,
+aligned, track within 0.072 deg (RMS 0.018 deg). Hardware not yet run: the
+real controller's network latency and dynamics will differ.
+
+## Stage 2: Capability atlas
+**Goal**: FR20 reachability, manipulability, joint-limit margin and speed
+headroom baked as VDB fields over the workspace, via PDG, readable by other
+SOPs (path tools, simulations) as constraints.
+**Success Criteria**: Field values at 200 random sample points match a direct
+Stage 1 solve within one voxel; a documented bake time and resolution.
+**Tests**: Point-sample comparison against direct IK; known unreachable
+regions (inside the base, beyond 1854 mm) read unreachable.
+**Status**: Not Started
+
+## Stage 3: Motion clip contract + PDG factory
+**Goal**: A clip format (JointTrajectory-shaped JSON: times, joint positions,
+TCP path, style parameters, metadata — spatial bounds, duration, tags,
+safety), jerk-limited time parameterisation with Ruckig against the FR20
+limits, and a PDG network: wedge primitives × style parameters → Stage 1
+solve → filter by Stage 2 fields → write clips and a library manifest.
+**Success Criteria**: A 50-variant wedge produces valid clips; every clip
+stays within the velocity / acceleration / jerk limits; the manifest lists
+rejected variants with the reason.
+**Tests**: Schema validation; limit check on every clip; round-trip clip →
+Houdini import → same poses.
+**Status**: Not Started
+
+## Stage 4: ROS 2 validation service
+**Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config
+(URDF from `assets/fairino_description`, SRDF, collision scene) and an HTTP
+service that checks a clip — collision, Pilz LIN/PTP/CIRC re-timing — and
+plans transitions between clips. PDG calls it; results come back into
+Houdini.
+**Success Criteria**: The Stage 3 library validates end to end from PDG; a
+deliberately colliding clip is rejected; a planned transition joins two
+clips without collision.
+**Tests**: Service contract tests; the colliding-clip case; transition
+continuity at both ends.
+**Status**: Not Started
+
+## Stage 5: AI critic
+**Goal**: Render a preview per clip and have a vision-language model label
+it (legibility, perceived intent), written into the manifest.
+**Success Criteria**: Labels on the full library; agreement with a small set
+of hand labels reported, not assumed.
+**Tests**: Deterministic manifest update; a hand-labelled check set.
+**Status**: Not Started
+
+Runtime (audience-driven clip selection with OAK-D) follows once the library
+exists and is planned separately.

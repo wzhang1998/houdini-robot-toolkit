@@ -12,8 +12,12 @@ int   valid = (@ptnum + 1 < n) ? 1 : 0;
 vector pp  = point(0, "P", prev);
 @tcp_speed = valid ? distance(@P, pp) * fps : 0.0;
 
-// per-joint angular speed, degrees/second
+// per-joint angular speed, degrees/second, and how close each joint runs to
+// ITS OWN limit (vel_limit1..6 from the profile: FR20's base three are 120,
+// its wrist 180). The worst joint is the one nearest its limit, not the one
+// turning fastest -- a wrist at 150 is fine where a base joint at 130 is not.
 float vmax = 0.0;
+float rmax = 0.0;
 int   wj   = 0;
 for (int j = 1; j <= 6; j++) {
     float a0 = point(0, "j" + itoa(j), prev);
@@ -24,16 +28,21 @@ for (int j = 1; j <= 6; j++) {
     float d  = a1 - a0;
     d -= 360.0 * rint(d / 360.0);
     float v  = valid ? abs(d) * fps : 0.0;
-    if (v > vmax) {
-        vmax = v;
+    float lim = chf("vel_limit" + itoa(j));
+    if (lim <= 0.0) lim = chf("max_velocity");      // no per-joint parms
+    float r  = v / max(lim, 1e-6);
+    vmax = max(vmax, v);
+    if (r > rmax) {
+        rmax = r;
         wj   = j;
     }
 }
-@vel_max     = vmax;
+@vel_max      = vmax;
+f@vel_ratio   = rmax;
 i@worst_joint = wj;
 
 // Large joint motion with little TCP motion is the signature of a wrist
 // flip: the arm reconfigures internally while the tool barely moves.
 @flip_ratio = vmax / max(@tcp_speed, 1e-4);
 
-@speed_pct = min((vmax / chf("max_velocity")) * 100.0, chf("speed_cap"));
+@speed_pct = min(rmax * 100.0, chf("speed_cap"));

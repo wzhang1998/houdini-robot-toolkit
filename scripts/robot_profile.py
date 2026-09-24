@@ -86,6 +86,26 @@ def _check_profile(p, fp):
         if lo >= hi:
             raise ValueError("%s: robot.limits_deg[%d] is not ascending: %r"
                              % (fp, i, [lo, hi]))
+    v = p["robot"]["max_velocity_deg_s"]
+    if isinstance(v, list):
+        if len(v) != n:
+            raise ValueError("%s: robot.max_velocity_deg_s has %d entries, expected %d"
+                             % (fp, len(v), n))
+        vals = v
+    else:
+        vals = [v]
+    for x in vals:
+        if not x > 0:
+            raise ValueError("%s: robot.max_velocity_deg_s must be positive, got %r" % (fp, x))
+
+
+def velocity_limits(prof):
+    """Per-joint velocity limits, deg/s. robot.max_velocity_deg_s is either
+    one number for every joint (UF850) or one per joint (FR20: the base
+    three are slower than the wrist)."""
+    v = prof["robot"]["max_velocity_deg_s"]
+    n = prof["robot"]["num_joints"]
+    return [float(x) for x in v] if isinstance(v, list) else [float(v)] * n
 
 
 # --------------------------------------------------------------------------
@@ -213,7 +233,7 @@ def stamp(geo, prof):
         "id": prof["id"],
         "label": prof["label"],
         "num_joints": prof["robot"]["num_joints"],
-        "max_velocity_deg_s": prof["robot"]["max_velocity_deg_s"],
+        "max_velocity_deg_s": velocity_limits(prof),
         "speed_cap_pct": prof["output"]["speed_cap_pct"],
         "limits_lo": [lo for lo, _ in prof["robot"]["limits_deg"]],
         "limits_hi": [hi for _, hi in prof["robot"]["limits_deg"]],

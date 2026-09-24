@@ -29,6 +29,17 @@ def _max_velocity(node):
     return float(p.eval()) if p is not None else 180.0
 
 
+def _velocity_limits(node, geo):
+    """Per-joint limits, the same ones export and pre-flight check against:
+    the asset module's velocity_limits() (profile per joint, capped by Max
+    Joint Velocity). One shared number for every joint would let retime
+    budget a base joint as if it could turn as fast as the wrist."""
+    try:
+        return list(geo.hdaModule().velocity_limits(geo))
+    except Exception:
+        return [_max_velocity(node)] * 6
+
+
 node = kwargs["node"]
 # This callback runs either on the internal controller null or on the wrapping
 # wenyi::robot_arm asset, depending on which copy of the parameter was pressed.
@@ -62,8 +73,8 @@ else:
         axis_of = _mod["axis_map_from_geo"](cfg.geometry())
 
         NS = max(8, int(node.parm("retime_samples").eval()))
-        wmax = (_max_velocity(node)
-                * float(node.parm("retime_safety").eval()))
+        safety = float(node.parm("retime_safety").eval())
+        wlim = [v * safety for v in _velocity_limits(node, geo)]
         fps = hou.fps()
         du = 1.0 / NS
         # floor on how fast u may advance, so flat stretches do not take zero time
@@ -79,6 +90,7 @@ else:
         rates = []
         for i in range(NS):
             rate = 0.0
+            need = 0.0      # seconds this step needs at the slowest-relative joint
             for j in range(6):
                 # Wrap into [-180, 180]. Extracted angles live in (-180, 180],
                 # so a joint passing through the boundary reads as a 360 deg
@@ -87,8 +99,9 @@ else:
                 d = angles[i + 1][j] - angles[i][j]
                 d -= 360.0 * round(d / 360.0)
                 rate = max(rate, abs(d) / du)
+                need = max(need, abs(d) / wlim[j])
             rates.append(rate)
-            cum.append(cum[-1] + max(rate * du / wmax, dt_floor))
+            cum.append(cum[-1] + max(need, dt_floor))
 
         total = cum[-1]
         f0 = int(hou.playbar.frameRange()[0])
@@ -136,11 +149,11 @@ else:
                                        % (nframes + 1, f0, fend))
         if hou.isUIAvailable():
             hou.ui.displayMessage(
-                "Retimed to %d frames (%d-%d) at %g%% of %g deg/s.\n"
+                "Retimed to %d frames (%d-%d) at %g%% of each joint's limit (%s deg/s).\n"
                 "Peak joint rate %.0f deg per unit u.\n\n"
                 "The path in space is unchanged -- only the timing.\n"
                 "Recache the IK solve to refresh the analysis."
                 % (nframes + 1, f0, fend,
                    node.parm("retime_safety").eval() * 100.0,
-                   _max_velocity(node), max(rates)),
+                   "/".join("%g" % v for v in _velocity_limits(node, geo)), max(rates)),
                 title="Retime")

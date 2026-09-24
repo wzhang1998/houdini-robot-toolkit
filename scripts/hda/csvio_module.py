@@ -444,7 +444,11 @@ def _collect(node, src):
 
     fps = hou.fps()
     dt = 1.0 / fps
+    # Per-joint velocity limits from the profile (FR20: J1-J3 120, J4-J6 180
+    # deg/s), each capped by Max Joint Velocity. One number for every joint
+    # let the wrist-limited and base-limited joints share a limit neither has.
     max_vel = float(node.parm("max_velocity").eval())
+    vel_limits = [min(v, max_vel) for v in robot_profile.velocity_limits(_profile(node))]
     cap = float(node.parm("speed_cap").eval())
     # Resolve limits from THIS node's profile rather than the module-level one,
     # which is bound once at import. With two arms in a scene on different
@@ -516,14 +520,16 @@ def _collect(node, src):
             speed = 0.0
         else:
             vels = [abs(ang[i] - prev[i]) / dt for i in range(NUM_JOINTS)]
-            speed = min((max(vels) / max_vel) * 100.0, cap)
-            if max(vels) > peak_vel:
-                peak_vel = max(vels)
-                worst_vel = (frame, vels.index(max(vels)) + 1, max(vels))
-            thr = max_vel * warn_frac
+            ratios = [vels[i] / vel_limits[i] for i in range(NUM_JOINTS)]
+            speed = min(max(ratios) * 100.0, cap)
+            peak_vel = max(peak_vel, max(vels))
+            if worst_vel is None or max(ratios) > worst_vel[3]:
+                j = ratios.index(max(ratios))
+                worst_vel = (frame, j + 1, vels[j], max(ratios))
             for i, v in enumerate(vels):
-                if v > thr:
-                    speed_hits.append("frame %d  J%d  %.1f deg/s" % (frame, i + 1, v))
+                if v > vel_limits[i] * warn_frac:
+                    speed_hits.append("frame %d  J%d  %.1f deg/s (limit %.0f)"
+                                      % (frame, i + 1, v, vel_limits[i]))
             for i in range(NUM_JOINTS):
                 d = ang[i] - prev[i]
                 if abs(d) > 180.0:
@@ -546,7 +552,8 @@ def _collect(node, src):
     return {"rows": rows, "angles": angles, "limit_hits": limit_hits,
             "speed_hits": speed_hits, "wrist_flips": wrist_flips,
             "steps_over_180": steps, "fps": fps, "dt": dt, "f0": f0, "f1": f1,
-            "limits": limits, "max_vel": max_vel, "warn_frac": warn_frac,
+            "limits": limits, "max_vel": max_vel, "vel_limits": vel_limits,
+            "warn_frac": warn_frac,
             "peak_vel": peak_vel, "worst_vel": worst_vel,
             "unwrapped": do_unwrap, "wrist_resolved": use_wrist}
 
@@ -672,19 +679,21 @@ def _preflight_checks(node, data):
         out.append((True, "OK", "Unwrap", "continuous angles"))
 
     # 4. joint velocity
-    mv = data["max_vel"]
+    # worst_vel is (frame, joint, deg/s, fraction of that joint's limit)
     wv = data["worst_vel"]
-    if wv and wv[2] > mv:
+    if wv and wv[3] > 1.0:
         out.append((False, "FAIL", "Joint velocity",
-                    "peak %.1f deg/s exceeds %.0f (J%d at frame %d)"
-                    % (wv[2], mv, wv[1], wv[0])))
-    elif wv and wv[2] > mv * data["warn_frac"]:
+                    "J%d at %.1f deg/s exceeds its %.0f (frame %d)"
+                    % (wv[1], wv[2], data["vel_limits"][wv[1] - 1], wv[0])))
+    elif wv and wv[3] > data["warn_frac"]:
         out.append((True, "WARN", "Joint velocity",
-                    "peak %.1f deg/s, above %.0f%% of %.0f (J%d at frame %d)"
-                    % (wv[2], data["warn_frac"] * 100, mv, wv[1], wv[0])))
+                    "J%d at %.1f deg/s, above %.0f%% of its %.0f (frame %d)"
+                    % (wv[1], wv[2], data["warn_frac"] * 100,
+                       data["vel_limits"][wv[1] - 1], wv[0])))
     else:
         out.append((True, "OK", "Joint velocity",
-                    "peak %.1f deg/s of %.0f allowed" % (wv[2] if wv else 0.0, mv)))
+                    "worst J%d at %.0f%% of its limit" % (wv[1], wv[3] * 100)
+                    if wv else "no motion"))
 
     # 5. wrist branch
     wf = data["wrist_flips"]
@@ -775,9 +784,9 @@ def _preflight_failures(data):
     if not data["unwrapped"]:
         fails.append("Unwrap Angles is off; the channel is discontinuous")
     wv = data["worst_vel"]
-    if wv and wv[2] > data["max_vel"]:
-        fails.append("Joint velocity: peak %.1f deg/s exceeds %.0f (J%d frame %d)"
-                     % (wv[2], data["max_vel"], wv[1], wv[0]))
+    if wv and wv[3] > 1.0:
+        fails.append("Joint velocity: J%d at %.1f deg/s exceeds its %.0f (frame %d)"
+                     % (wv[1], wv[2], data["vel_limits"][wv[1] - 1], wv[0]))
     return fails
 
 
@@ -820,7 +829,7 @@ def preflight(kwargs):
     prev = None
     for i, row in enumerate(data["angles"]):
         if prev is not None:
-            if max(abs(row[k] - prev[k]) / dt for k in range(NUM_JOINTS)) > data["max_vel"]:
+            if any(abs(row[k] - prev[k]) / dt > data["vel_limits"][k] for k in range(NUM_JOINTS)):
                 bad.add(data["f0"] + i)
         prev = row
     fp = _out_parm(node, "preflight_frames")
@@ -919,8 +928,9 @@ def export_animation(kwargs):
             msg += "\n... and %d more" % (len(limit_hits) - 15)
     if speed_hits:
         sev = hou.severityType.Warning
-        msg += "\n\nSPEED WARNINGS above %d%% of %g deg/s (%d):\n" % (
-            int(warn_frac * 100), max_vel, len(speed_hits))
+        msg += "\n\nSPEED WARNINGS above %d%% of each joint's limit (%s deg/s) (%d):\n" % (
+            int(warn_frac * 100), "/".join("%g" % v for v in data["vel_limits"]),
+            len(speed_hits))
         msg += "\n".join(speed_hits[:15])
         if len(speed_hits) > 15:
             msg += "\n... and %d more" % (len(speed_hits) - 15)

@@ -49,6 +49,13 @@ else:
     # Measured: Save to Disk writes the full frame range with loadfromdisk
     # left at 1, so the toggle was never doing anything. Pressing a button on
     # an internal node IS permitted while locked; only parm writes are not.
+    # The closed-form IK picks each frame's branch nearest the previous
+    # frame's solution. Forget solutions from interactive scrubbing first, so
+    # the frame-ordered write below starts clean and is reproducible.
+    clear = getattr(geo.hdaModule(), "clear_ik_memo", None) if geo.type().definition() else None
+    if clear is not None:
+        clear(geo)
+
     cache.parm("execute").pressButton()
 
     # Then make the load side re-read. After writing, cache_solve kept serving

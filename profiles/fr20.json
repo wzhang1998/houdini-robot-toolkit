@@ -13,11 +13,9 @@
     "listed axis. urdf_rig.py's tests measure this per joint (+25 deg in,",
     "+25 deg out) instead of asserting it.",
     "",
-    "What is NOT yet verified: that the URDF zero equals the controller's",
-    "zero. Fairino's own ROS 2 driver passes joint positions straight through,",
-    "which suggests they match. Confirm in SimMachine: pose the virtual robot",
-    "in the WebApp, read its joint angles, and compare against this rig at",
-    "the same angles."
+    "URDF zero == controller zero, confirmed against SimMachine set to",
+    "FR20-V1-001 (V6.0): the controller's GetForwardKin and this URDF agree to",
+    "0.016 mm and 0.0006 deg over 23 poses, flange face 120 mm past joint_6."
   ],
 
   "robot": {
@@ -33,8 +31,8 @@
       [-175.0, 175.0]
     ],
 
-    "_comment_velocity": "The datasheet gives J1-J3 +-120 deg/s and J4-J6 +-180 deg/s. The URDF says 180.5 / 183.3 deg/s, which looks like a placeholder. The schema holds one number, so this is the binding one: 120, the base joints' datasheet limit. It reds out wrist motion earlier than necessary, which is the safe side of wrong.",
-    "max_velocity_deg_s": 120.0
+    "_comment_velocity": "Per joint, from Fairino's FR20 datasheet (fairino.us product page): J1-J3 +-120 deg/s, J4-J6 +-180 deg/s; TCP up to 2 m/s. The URDF's 180.5 / 183.3 deg/s look like placeholders and are not used. The controller's own safety settings (collaborative speed limits) may cap lower; the asset's Max Joint Velocity parameter caps every joint on top of these.",
+    "max_velocity_deg_s": [120.0, 120.0, 120.0, 180.0, 180.0, 180.0]
   },
 
   "rig": {
@@ -55,11 +53,15 @@
     "_comment_sign": "robot = extracted * sign. All +1 by construction; verified per joint in urdf_rig.py's tests.",
     "sign": [1, 1, 1, 1, 1, 1],
 
-    "_comment_offset": "Skeleton built at the URDF zero, so extracted angles start at zero. Pending the SimMachine check that URDF zero == controller zero.",
+    "_comment_offset": "Skeleton built at the URDF zero, so extracted angles start at zero. URDF zero == controller zero, confirmed in SimMachine (FR20-V1-001 V6.0): GetForwardKin matches this URDF to 0.016 mm and 0.0006 deg over 23 poses.",
     "offset_deg": [0, 0, 0, 0, 0, 0],
 
     "_comment_fbik": "J4: MEASURED false. An IK solve to a manual goal of joint_6 rest + (0.9, 0.2, -0.4) m in joint_6's local frame returned J4 = +95.67 deg against a configured range of [-265, 85] -- the same silent over-limit seen on UF850's J4. The other five are NOT yet probed; true means unverified, not confirmed.",
-    "fbik_enforces_limits": [true, true, true, false, true, true]
+    "fbik_enforces_limits": [true, true, true, false, true, true],
+
+    "_comment_ik": "FR20 is a UR-type arm (J2/J3/J4 parallel -- measured), so it solves with scripts/ur_ik.py's closed form instead of KineFX Full Body IK, which jams on ranges crossing +-180 and at wrist flips. Branches are filtered by the Solve tab presets, then the one nearest the previous frame wins; with no previous frame, nearest ik_reference_deg.",
+    "ik_solver": "ur_closed_form",
+    "ik_reference_deg": [0, -90, 90, -90, -90, 0]
   },
 
   "output": {

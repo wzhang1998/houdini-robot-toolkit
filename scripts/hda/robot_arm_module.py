@@ -271,6 +271,182 @@ def cook_urdf_links(node):
 
 
 # --------------------------------------------------------------------------
+# IK solver: FBIK or closed form
+# --------------------------------------------------------------------------
+#
+# rig.ik_solver in the profile picks the solver:
+#   "fbik"            KineFX Full Body IK (default; UF850)
+#   "ur_closed_form"  scripts/ur_ik.py, for UR-type arms (FR20)
+#
+# The closed form runs in analytic_ik (Python SOP), which only computes
+# joint angles and writes them as detail attributes. ik_rigpose -- a copy of
+# rigpose_fk -- then poses the skeleton from them, so the IK result goes
+# through the same KineFX machinery as FK and everything downstream
+# (measure_residual, joint_angles, the cache, export) is unchanged.
+#
+# Branch choice, per frame: the Solve tab's shoulder / elbow / wrist presets
+# filter the up to 8 branches (the usual industrial configuration flags);
+# of those left, the one nearest the previous frame's solution wins, else the
+# one nearest the profile's rig.ik_reference_deg. The previous-frame memory
+# is per asset; Recache clears it, and a cache is written in frame order, so
+# a cached solve is continuous and reproducible.
+
+_IK_MEMO = {}
+DEFAULT_IK_REFERENCE = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+
+
+def ik_solver_index(node):
+    """IK_SOLVER input: 0 FBIK, 1 closed form."""
+    return 1 if profile(node)["rig"].get("ik_solver") == "ur_closed_form" else 0
+
+
+def _ur_ik():
+    _robot_profile()
+    import ur_ik
+    return ur_ik
+
+
+def _ur_model(node):
+    """ur_ik.analyse() of the profile's URDF, cached like urdf_model()."""
+    model = urdf_model(node)
+    if model is None:
+        raise hou.NodeError("rig.ik_solver is ur_closed_form but the profile has no rig.urdf")
+    path = os.path.normpath(os.path.join(_root(), profile(node)["rig"]["urdf"]))
+    key = ("ur_ik", path, os.path.getmtime(path))
+    m = _CACHE.get(key)
+    if m is None:
+        m = _ur_ik().analyse(model["parsed"]["chain"])
+        _CACHE[key] = m
+    return m
+
+
+def clear_ik_memo(asset):
+    """Forget previous-frame solutions for this asset (Recache calls it)."""
+    for k in [k for k in _IK_MEMO if k[0] == asset.path()]:
+        del _IK_MEMO[k]
+
+
+def _preset_ranges(asset, prof):
+    """{joint: (lo, hi)} from the Solve tab presets, robot frame."""
+    ctrl = asset.node("TCP_PATH_CTRL")
+    out = {}
+    for j in _preset_joints(prof):
+        lo, hi = ctrl.parm("cfg_j%d_min" % j), ctrl.parm("cfg_j%d_max" % j)
+        if lo is not None and hi is not None:
+            out[j] = (lo.eval(), hi.eval())
+    return out
+
+
+def cook_analytic_ik(node):
+    """analytic_ik (Python SOP). Input 0: the rest skeleton; input 1: the
+    joint_6 goal from tool_goal_offset (P, 3@transform). Passes the skeleton
+    through and writes detail attributes:
+
+        ik_q         6 floats, robot frame, degrees
+        ik_ok        1 when a solution within limits and presets exists
+        ik_singular  1 at the wrist singularity (q5 ~ 0)
+        ik_nsol      branches that reproduced the goal, before filtering
+        ik_branch    (shoulder, wrist, elbow) as +1/-1
+    """
+    geo = node.geometry()
+    asset = asset_of(node)
+    prof = profile(asset)
+    for name, default in (("ik_q", (0.0,) * 6), ("ik_branch", (0, 0, 0))):
+        if geo.findGlobalAttrib(name) is None:
+            geo.addAttrib(hou.attribType.Global, name, default)
+    for name in ("ik_ok", "ik_singular", "ik_nsol"):
+        if geo.findGlobalAttrib(name) is None:
+            geo.addAttrib(hou.attribType.Global, name, 0)
+    if ik_solver_index(asset) != 1:
+        return
+
+    K = _ur_ik()
+    model = _ur_model(asset)
+    chain = model["chain"]
+    rest6 = [p for p in geo.points() if p.attribValue("name") == "joint_6"]
+    goal_geo = node.inputs()[1].geometry() if len(node.inputs()) > 1 and node.inputs()[1] else None
+    if not rest6 or goal_geo is None or not goal_geo.points():
+        raise hou.NodeError("analytic_ik needs joint_6 on input 0 and a goal point on input 1")
+    t = rest6[0].attribValue("transform")
+    rest_rows = (tuple(t[0:3]), tuple(t[3:6]), tuple(t[6:9]))
+    gp = goal_geo.points()[0]
+    g = gp.attribValue("transform")
+    goal_rows = (tuple(g[0:3]), tuple(g[3:6]), tuple(g[6:9]))
+    R6, p6 = K.urdf_pose_from_kinefx_full(chain, goal_rows, tuple(gp.position()), rest_rows)
+
+    frame = round(hou.frame(), 4)
+    reference = _IK_MEMO.get((asset.path(), round(frame - 1, 4)))
+    if reference is None:
+        # floats: JSON gives ints, and ik_q is a float attribute
+        reference = [float(x) for x in prof["rig"].get("ik_reference_deg", DEFAULT_IK_REFERENCE)]
+
+    raw = K.solve(model, R6, p6, q6_when_singular=reference[5])
+    sols = K.within_limits(model, raw)
+    for j, (lo, hi) in _preset_ranges(asset, prof).items():
+        sols = [s for s in sols if lo - 1e-9 <= s["q"][j - 1] <= hi + 1e-9]
+    best = K.nearest(sols, reference)
+
+    geo.setGlobalAttribValue("ik_nsol", len(raw))
+    if best is None:
+        # No admissible branch -- out of reach, or every branch outside the
+        # limits / presets. Get as near as the arm can from the previous
+        # frame's pose (continuous), and say so: ik_ok 0, and
+        # measure_residual shows the miss, as it does for FBIK.
+        q, _, _ = K.closest(model, R6, p6, reference)
+        geo.setGlobalAttribValue("ik_q", tuple(float(x) for x in q))
+        geo.setGlobalAttribValue("ik_ok", 0)
+        _IK_MEMO[(asset.path(), frame)] = list(q)
+        return
+    geo.setGlobalAttribValue("ik_q", tuple(best["q"]))
+    geo.setGlobalAttribValue("ik_ok", 1)
+    geo.setGlobalAttribValue("ik_singular", 1 if best["singular"] else 0)
+    geo.setGlobalAttribValue("ik_branch", tuple(best["branch"]))
+    _IK_MEMO[(asset.path(), frame)] = list(best["q"])
+
+
+def ik_rotation(node, joint, axis):
+    """ik_rigpose rotation of joint about axis: analytic_ik's angle * profile
+    sign on the profile's axis, zero on the others -- fk_rotation's rule.
+
+    Read from ik_rigpose's own input (analytic_ik is wired into it), so the
+    dependency is a wire Houdini tracks, not a side read."""
+    asset = asset_of(node)
+    prof = profile(asset)
+    if _axis(prof, joint) != axis:
+        return 0.0
+    src = node.inputs()[0] if node.inputs() else None
+    if src is None or src.geometry().findGlobalAttrib("ik_q") is None:
+        return 0.0
+    q = src.geometry().attribValue("ik_q")
+    return q[joint - 1] * float(prof["rig"]["sign"][joint - 1])
+
+
+# --------------------------------------------------------------------------
+# joint velocity limits
+# --------------------------------------------------------------------------
+
+def velocity_limits(node):
+    """Effective per-joint velocity limits, deg/s: the profile's (one per
+    joint -- FR20's base three are 120, its wrist 180) capped by the asset's
+    Max Joint Velocity, which on_profile_changed() sets to the profile's
+    highest so it binds only when lowered by hand."""
+    asset = asset_of(node)
+    per_joint = _robot_profile().velocity_limits(profile(asset))
+    cap = asset.parm("max_velocity")
+    cap = float(cap.eval()) if cap is not None else max(per_joint)
+    return [min(v, cap) for v in per_joint]
+
+
+def vel_limit(node, joint):
+    """path_metrics vel_limitN: joint's effective limit (1-based)."""
+    return velocity_limits(node)[joint - 1]
+
+
+def vel_limit_expr(joint):
+    return CALL + "vel_limit(hou.pwd(), %d)" % joint
+
+
+# --------------------------------------------------------------------------
 # UI
 # --------------------------------------------------------------------------
 
@@ -293,6 +469,7 @@ def on_profile_changed(asset):
       * invert_jN from the profile's sign, which joint_angles.py checks;
       * Robot Mesh on when the profile has a body to show (FBX skin or URDF
         links), off when it has neither;
+      * Max Joint Velocity to the profile's highest per-joint limit;
       * the Configuration presets reset through cfg_reset, which reloads the
         preset ranges from the new profile.
     """
@@ -304,6 +481,11 @@ def on_profile_changed(asset):
     if asset.parm("show_robot") is not None:
         has_body = prof["rig"].get("fbx") is not None or bool(prof["rig"].get("urdf"))
         asset.parm("show_robot").set(1 if has_body else 0)
+    # Max Joint Velocity is a cap on top of the profile's per-joint limits;
+    # start it at the profile's highest so it does not bind by default
+    mv = asset.parm("max_velocity")
+    if mv is not None:
+        mv.set(max(_robot_profile().velocity_limits(prof)))
     reset = asset.parm("cfg_reset")
     if reset is not None:
         reset.pressButton()
@@ -342,6 +524,17 @@ def skel_source_expr():
 
 def mesh_source_expr():
     return CALL + "mesh_source(hou.pwd())"
+
+
+def ik_solver_expr():
+    return CALL + "ik_solver_index(hou.pwd())"
+
+
+def ik_rotation_expr(joint, axis):
+    return CALL + 'ik_rotation(hou.pwd(), %d, "%s")' % (joint, axis)
+
+
+ANALYTIC_IK_CODE = "hou.pwd().parent().hdaModule().cook_analytic_ik(hou.pwd())\n"
 
 
 # Python SOP code for urdf_skeleton / urdf_links
