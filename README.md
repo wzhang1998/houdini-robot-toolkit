@@ -301,7 +301,13 @@ the velocity / acceleration envelope — never per-joint clipping), MoveJ to
 the first sample, stream on absolute deadlines and coalesce stale samples,
 read feedback on a separate connection, and report what happened.
 
-**Easiest: edit `playback.toml`, run `python scripts/play.py`.** The file
+**A window: `python scripts/play_ui.py`** — target, IP, clip (Browse…),
+speed and wiggle fields, one button per step, a log with a one-line summary,
+and a STOP button (StopMotion + ServoMoveEnd, then ends the player; a
+software stop, not an E-stop). Hardware steps that move ask to confirm in a
+dialog. It saves to the same `playback.toml`.
+
+**Or edit `playback.toml` and run `python scripts/play.py`.** The file
 holds target, IP, clip, speed, wiggle settings; the menu offers check /
 dry-run / goto-start / wiggle / play and re-reads the file before each step
 (`python scripts/play.py 5` runs a step directly; `e` in the menu opens the
