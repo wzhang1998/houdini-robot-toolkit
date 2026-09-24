@@ -31,3 +31,9 @@ desktop.ini
 
 # --- Local Houdini env ----------------------------------------------------
 houdini.env
+
+# --- Third-party robot descriptions without a license --------------------
+# FR20 URDF + STLs from FAIR-INNOVATION/frcobot_ros2, which declares no
+# license. This repo is public, so they stay local -- README says where to
+# get them.
+assets/fairino_description/

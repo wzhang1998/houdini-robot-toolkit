@@ -185,12 +185,21 @@ if tcp is not None:
     # The joint angles gathered above stay on it; only the position moves, so
     # velocity, limits and residual are untouched. With no tool the offset is
     # zero and this is a no-op.
+    #
+    # The profile's flange_offset comes first: joint_6 -> flange face -> tool
+    # tip, both along joint_6's frame. Zero on UF850 (joint_6 is the face);
+    # 0.12 m on FR20, whose last joint sits behind its face. tool_length still
+    # reports the tool alone.
     _ctrl = node.parent().node("TCP_PATH_CTRL")
     if _ctrl is not None and _ctrl.parmTuple("tool_offset") is not None:
         _off = hou.Vector3(_ctrl.parmTuple("tool_offset").eval())
-        if _off.length() > 1e-9:
+        _fp = _ctrl.parm("flange_offset")
+        _face = hou.Vector3(0.0, _fp.eval() if _fp is not None else 0.0, 0.0)
+        _total = _face + _off
+        if _total.length() > 1e-9:
             _rot = hou.Matrix3(tcp.attribValue("transform"))
-            tcp.setPosition(tcp.position() + _off * _rot)
+            tcp.setPosition(tcp.position() + _total * _rot)
+        if _off.length() > 1e-9:
             tcp.setAttribValue("tool_length", _off.length())
     # Residual and orientation error only exist on the IK branch -- they
     # compare a REQUESTED pose against the achieved one. An FK pose has no

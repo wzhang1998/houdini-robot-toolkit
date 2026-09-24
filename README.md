@@ -4,7 +4,10 @@ Houdini toolset for animating a 6-axis robot arm — FK and IK, motion
 analysis, and CSV export to a real controller.
 
 Model-agnostic by design: the kinematic specification for a given arm lives
-in `profiles/`, not in the assets. UF850 is the first profile.
+in `profiles/`, not in the assets. Two profiles so far: **UF850** (FBX rig) and
+**Fairino FR20** (built from the vendor URDF). The asset reads the profile when
+it cooks, so a *locked* instance follows whichever robot its Robot Profile
+names — see [Profiles drive the asset](#profiles-drive-the-asset).
 
 ## Layout
 
@@ -15,6 +18,7 @@ in `profiles/`, not in the assets. UF850 is the first profile.
 | `scripts/` | Python and VEX extracted from the binaries, in diffable form |
 | `scenes/` | `.hiplc` scene files |
 | `assets/fbx/` | Source geometry |
+| `assets/fairino_description/` | FR20 URDF and link STLs — **not committed** (gitignored): the upstream repo declares no license. Copy `fairino_description/` from FAIR-INNOVATION/frcobot_ros2 here; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
 | `tests/csv/` | Reference fixtures for export/import validation |
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
@@ -22,11 +26,11 @@ in `profiles/`, not in the assets. UF850 is the first profile.
 ## The asset
 
 `wenyi::robot_arm::1.0` (`otls/sop_wenyi.robot_arm.1.0.hdalc`) wraps the whole
-tool: 46 nodes, 78 parameters, six tabs following the workflow.
+tool: 110 internal nodes, six tabs following the workflow.
 
 | Input | |
 |---|---|
-| 0 | Rest skeleton |
+| 0 | Rest skeleton — optional override of the profile's own (FBX or URDF) skeleton; the mesh still follows the profile |
 | 1 | Goal curve |
 | 2 | Goal point — overrides the built-in target when connected |
 | 3 | **Tool geometry** — display only |
@@ -37,12 +41,18 @@ tool: 46 nodes, 78 parameters, six tabs following the workflow.
 | 0 | Display |
 | 1 | **Tool Tip** — one point: `P`, `transform`, `orient` |
 | 2 | Analysis |
-| 3 | Posed Skeleton |
+| 3 | Posed Skeleton — drives external link meshes for a robot with no FBX skin |
+
+Outputs 2 and 3 existed inside the asset and were labelled in its dialog
+script, but the definition allowed only two outputs, so neither was reachable.
+It now allows four.
 
 ## Tools
 
-**Setup → Tool** sets the tool frame relative to the flange (`joint_6`), tool
-axis +Y. The IK goal is moved *back* by that frame so the **tip** lands on the
+**Setup → Tool** sets the tool frame relative to the flange face, tool axis
++Y. The face is `joint_6` plus the profile's `flange_offset_m` along +Y — zero
+on UF850, where `joint_6` is the face; 0.12 m on FR20, whose last joint sits
+behind it. The IK goal is moved *back* by that frame so the **tip** lands on the
 goal, and the solver keeps targeting `joint_6` exactly as before — no tool
 means a bit-identical no-op.
 
@@ -52,6 +62,16 @@ means a bit-identical no-op.
   a point group called `tcp`, else a point named `tcp`, else the centroid of
   the points furthest along +Y. Wire a tool and the arm reaches with it.
 - **Manual** — the numeric Tool Offset / Rotate
+
+The switch lives in one place: `TCP_PATH_CTRL/tool_offset` takes
+`tool_tcp_probe`'s `tcp_p` under From Geometry with input 3 wired, else the
+typed offset, and the goal offset, `TOOL_TIP` and `joint_angles` all read it.
+Rotation stays manual — the probe finds a point, not a frame. Until this was
+wired, be5f879's probe and status shipped but the solve still read only the
+typed offset, so a wired tool moved nothing. Checked on FR20 with an off-axis
+tip at (0.03, 0.15, -0.02) m: the solved tip sits 154.3 mm from the flange
+face (the tool's length) and lands on the goal to within the solver's own
+residual.
 
 Tool Status names the source and says outright when a tip was *guessed* from
 extent rather than declared, so add a `tcp` point when it matters.
@@ -146,6 +166,84 @@ resolves correctly on a fresh clone with no configuration.
 can be reviewed and diffed — a change inside a `.hdalc` is otherwise invisible
 in a commit. Treat `scripts/` as the readable copy, and keep it in sync when
 the asset changes.
+
+`joint_angles_sop.py` had drifted: the readable copy carried the "analysis
+follows the tool tip" block (d916492) but the asset never did — that commit
+changed a scene instance, not the definition. The asset now runs the copy.
+
+## Profiles drive the asset
+
+Until now three things inside `wenyi::robot_arm` were written for UF850 only,
+although limits and presets already came from the profile: the axis each joint
+turns about (J5 pinned to z) and literal J2/J4/J6 limits in `configurejoints1`;
+the FK axis per joint and J3's sign as a literal `-1` in `rigpose_fk`; and
+UF850's limits baked into the `fk_j1..6` slider templates as strict ranges.
+
+They are now **expressions** on the internal nodes, evaluated against the
+current profile by the asset's PythonModule (`scripts/hda/robot_arm_module.py`).
+Not a callback that writes them: a locked instance forbids writes to internal
+parameters, so a callback would only ever have worked on an unlocked copy.
+
+What a callback still does — `on_profile_changed()`, run by the Robot Profile
+menu and on creation — touches only promoted parameters: the `invert_jN`
+toggles from the profile's sign, Robot Mesh on when the profile has a body
+(FBX or URDF) and off when it has neither, and the Configuration presets via
+`cfg_reset`. The menu lists every
+`profiles/*.json`.
+
+The FK sliders are now plain ±360 °; `Joint_controller` clamps each one to the
+profile's limit.
+
+**Solve cache path.** `cache_solve`'s basename was the literal
+`ik_solve_uf850_robot_arm`, not a reference to `cache_name`, so every instance
+in every scene shared one folder — and Recache deletes the matching files
+before writing. It now follows `cache_name` (`ik_solve_<profile>_<node>`). An
+instance named `robot_arm` on UF850 resolves to the same folder as before;
+any other name gets its own and needs one recache.
+
+**Checked against a baseline.** Before any of this, a fresh UF850 instance was
+recorded over four FK poses and three IK goals (skeleton P/transform, tool tip,
+residuals, joint config). After each change a fresh locked instance matched it
+except for the cache path and J2's range, which moved from the literal ±132 to
+the profile's ±131.9.
+
+## Adding a robot from a URDF
+
+`scripts/urdf_rig.py` builds the rest skeleton and places the link meshes from
+a URDF. KineFX wants +Y down each bone; a URDF turns every joint about its own
+local z, Z-up. So each joint frame is rebuilt from where the joints are and
+which way each turns, and classified: `y` where the axis runs along the bone
+(a twist), `z` where it is perpendicular (a hinge). A skewed joint raises
+rather than producing a wrong rig.
+
+`python scripts/urdf_rig.py` checks, for FR20: frames orthonormal and
+right-handed, +Y down every bone at rest and posed, +25° in reads +25° out on
+every joint, upper arm + forearm + J5→J6 = the datasheet's 1854 mm, and that
+`profiles/fr20.json` states the same axes, signs, limits and flange offset the
+geometry does.
+
+The asset does this itself. When a profile names `rig.urdf` and no `rig.fbx`:
+
+| Node | |
+|---|---|
+| `urdf_skeleton` | Python SOP — the rest skeleton, into `SKEL_SOURCE` (input 2) |
+| `urdf_links` | Python SOP — one rigid STL per link at the URDF zero, prim `name` = the joint that moves it (`base` for the static link). STLs are reversed on load: their CCW winding points every face inward in Houdini |
+| `urdf_normals` | vertex N, cusp 45° — CAD tessellation smears under point normals |
+| `urdf_drive` | Transform Pieces — each link from `to_fk_ik` (rest) to `POSE_SOURCE` (posed) |
+| `ROBOT_MESH_SOURCE` | switch — FBX skin (`out_robot`) or URDF links (`urdf_robot`), into Robot Mesh |
+
+Both switches are Python expressions (`skel_source`, `mesh_source` in the
+module), so a locked instance follows the profile. Mesh paths are
+`package://` URIs, resolved the ROS way: the URDF sits at
+`<package_root>/<package>/urdf/`. Nothing is wired outside — dropping the
+asset and picking `fr20` is the whole setup. Input 0 still overrides the
+skeleton when wired, but the links stay placed for the URDF's own rest, so
+only wire one that matches it.
+
+`scenes/FR20_rig.hiplc` is that: one locked `robot_arm`, profile `fr20`, no
+inputs. On a fresh locked instance, FK matches URDF forward kinematics to
+4 µm, every link-mesh vertex matches its STL placed by URDF FK to 5 µm, and
+IK → extracted angles → URDF FK lands on the solved tool tip to 2 µm.
 
 ## Conventions
 
@@ -266,8 +364,33 @@ deadlocks scripted and bridge-driven runs.
   and the flip resolver commits to whichever branch is nearest, so it can wind
   steadily in one direction until it runs past the ±360° the joint has.
 
+- **FBIK cannot use a range that crosses ±180° without being a full turn.**
+  FR20's J2 and J4 ([−265, 85]) jammed the solver — J2 sat at 5° on every
+  frame of the drawn curve, the tip missing by 200–800 mm. `fbik_range()` in
+  the module now keeps such a range's part inside ±179° (−180 itself still
+  failed a frame); full-turn ranges like UF850's ±360° pass unchanged. It
+  also trims UF850's Shoulder *back* [90, 270] and Elbow *down* presets,
+  which cross the same edge — not measured on UF850.
+- **FR20 still misses a few frames of the drawn curve at the wrist flip.**
+  After the range fix, 6 of 40 sampled frames miss by 190–520 mm, all where
+  J5 passes through 0 while the solution switches wrist sign. Each frame
+  solves from the URDF zero — itself fully stretched and singular. Pinning
+  the Wrist preset to either sign made every frame miss (a range starting at
+  0 puts the rest pose on its edge). Untried: seeding each frame from the
+  previous solve, or solving from a bent home pose.
+- **Progress** now defaults to `fit($FF, $RFSTART, $RFEND, 0, 1)`, what Reset
+  Progress writes; it used to default to a flat 0, so a new instance on curve
+  mode never moved unless someone had pressed Reset or Retime.
 - FBIK enforces joint limits on J1/J2/J3/J5 but ignores them on J4. Rotation
   weights *do* bind on J4, so use J4 Roll Freedom to constrain it. Unexplained.
+  Reproduced on FR20: an IK solve returned J4 = +95.67° against a configured
+  [−265, 85]. FR20's other joints are not yet probed.
+- FR20's URDF zero is assumed to equal the controller's zero (Fairino's own
+  ROS 2 driver passes positions straight through). Not yet confirmed against
+  SimMachine or hardware.
+- After `cache_solve` writes, its load side can keep the previous file until
+  it reloads — seen in bridge-driven runs, where extracted angles read one
+  solve behind until the node was reloaded. Not yet checked from the UI.
 - J3 carries a +90° offset between the Configure Joints frame and the frame
   the analysis and CSV export report in.
 - ~~Joint limits duplicated across three files~~ — resolved; `profiles/uf850.json`

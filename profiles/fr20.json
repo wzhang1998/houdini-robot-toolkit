@@ -1,0 +1,99 @@
+{
+  "id": "fr20",
+  "label": "Fairino FR20",
+  "schema_version": 1,
+
+  "_comment_frames": [
+    "Same three frames as uf850.json -- configurejoints, extracted, robot.",
+    "",
+    "The rest skeleton is BUILT from the vendor URDF by scripts/urdf_rig.py",
+    "at the URDF zero pose, rather than read from an FBX. That is why sign and",
+    "offset are trivial here: every joint's KineFX frame was constructed so",
+    "that turning the URDF joint by +q turns the KineFX joint by +q about the",
+    "listed axis. urdf_rig.py's tests measure this per joint (+25 deg in,",
+    "+25 deg out) instead of asserting it.",
+    "",
+    "What is NOT yet verified: that the URDF zero equals the controller's",
+    "zero. Fairino's own ROS 2 driver passes joint positions straight through,",
+    "which suggests they match. Confirm in SimMachine: pose the virtual robot",
+    "in the WebApp, read its joint angles, and compare against this rig at",
+    "the same angles."
+  ],
+
+  "robot": {
+    "num_joints": 6,
+
+    "_comment_limits": "From fairino20_v6.urdf (vendor, frcobot_ros2/fairino_description). Robot frame, degrees. To be cross-checked against the controller's own soft limits.",
+    "limits_deg": [
+      [-175.0, 175.0],
+      [-265.0, 85.0],
+      [-162.0, 162.0],
+      [-265.0, 85.0],
+      [-175.0, 175.0],
+      [-175.0, 175.0]
+    ],
+
+    "_comment_velocity": "The datasheet gives J1-J3 +-120 deg/s and J4-J6 +-180 deg/s. The URDF says 180.5 / 183.3 deg/s, which looks like a placeholder. The schema holds one number, so this is the binding one: 120, the base joints' datasheet limit. It reds out wrist motion earlier than necessary, which is the safe side of wrong.",
+    "max_velocity_deg_s": 120.0
+  },
+
+  "rig": {
+    "joint_name_pattern": "joint_%d",
+    "tool_axis": "y",
+
+    "_comment_source": "No FBX. The asset builds the rest skeleton and link meshes from this URDF itself (urdf_skeleton / urdf_links, through scripts/urdf_rig.py); nothing needs wiring into input 0.",
+    "fbx": null,
+    "urdf": "assets/fairino_description/urdf/fairino20_v6.urdf",
+    "builder": "scripts/urdf_rig.py",
+
+    "_comment_flange": "Distance along joint_6's +Y from the joint to the tool mounting face. FR20's last joint sits behind the face: 0.120 m, measured as the far extent of wrist3_link.STL along the link's own axis (urdf_rig.flange_offset_from_mesh; urdf_rig.py's tests hold this number to that measurement). The asset moves the TCP by this much before applying any tool.",
+    "flange_offset_m": 0.12,
+
+    "_comment_axis": "Measured from geometry by urdf_rig.build_rest_skeleton: 'y' where the URDF axis lies along the bone (J1 vertical, and J4/J5/J6 whose next joint sits along their own axis), 'z' where it is perpendicular (J2, J3 -- the two hinges).",
+    "rotation_axis": ["y", "z", "z", "y", "y", "y"],
+
+    "_comment_sign": "robot = extracted * sign. All +1 by construction; verified per joint in urdf_rig.py's tests.",
+    "sign": [1, 1, 1, 1, 1, 1],
+
+    "_comment_offset": "Skeleton built at the URDF zero, so extracted angles start at zero. Pending the SimMachine check that URDF zero == controller zero.",
+    "offset_deg": [0, 0, 0, 0, 0, 0],
+
+    "_comment_fbik": "J4: MEASURED false. An IK solve to a manual goal of joint_6 rest + (0.9, 0.2, -0.4) m in joint_6's local frame returned J4 = +95.67 deg against a configured range of [-265, 85] -- the same silent over-limit seen on UF850's J4. The other five are NOT yet probed; true means unverified, not confirmed.",
+    "fbik_enforces_limits": [true, true, true, false, true, true]
+  },
+
+  "output": {
+    "_comment_writer": "No Fairino-specific writer exists yet. The CSV columns (time_s, j1_deg..j6_deg) are controller-neutral; how the Fairino side consumes them is still open.",
+    "writer": "joint_csv",
+
+    "_comment_cap": "Copied from uf850.json as a conservative default. Its meaning for a Fairino export is not defined yet.",
+    "speed_cap_pct": 50.0,
+    "warn_threshold": 1.0,
+    "time_decimals": 4,
+    "angle_decimals": 6
+  },
+
+  "presets": {
+    "_comment": "Robot frame. Converted to the configurejoints frame at apply time.",
+    "shoulder": {
+      "joint": 1,
+      "_comment_back": "J1 stops at +-175, so the true 'back' region is split across +-180 and cannot be one range. This is its +J1 half only.",
+      "any": [-175.0, 175.0],
+      "front": [-90.0, 90.0],
+      "back": [90.0, 175.0]
+    },
+    "elbow": {
+      "joint": 3,
+      "_comment_side": "Measured with forward kinematics: while the arm reaches forward (J2 between -90 and 0), J3 > 0 puts the elbow ABOVE the shoulder-wrist line. Leaning past vertical (J2 < -90) flips it -- the usual reason industrial elbow flags are read together with the shoulder flag.",
+      "any": [-162.0, 162.0],
+      "up": [0.0, 162.0],
+      "down": [-162.0, 0.0]
+    },
+    "wrist": {
+      "joint": 5,
+      "any": [-175.0, 175.0],
+      "positive": [0.0, 175.0],
+      "negative": [-175.0, 0.0]
+    }
+  }
+}

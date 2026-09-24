@@ -2,7 +2,8 @@
 //
 // The tool is modelled in FLANGE-LOCAL space: origin at the mounting face,
 // +Y down the tool, matching the KineFX convention the rest of the rig uses.
-// Input 1 supplies the solved flange point.
+// Input 1 supplies the solved joint_6 point; the face sits flange_offset
+// (from the profile) further along its +Y -- zero on UF850, 0.12 m on FR20.
 //
 // This is display only. The solve never sees the tool mesh -- it works from
 // the numeric tool frame, so a heavy tool model costs nothing per frame.
@@ -13,8 +14,9 @@ if (npoints(fl) < 1) {
 } else {
     matrix3 fR = point(fl, "transform", 0);
     vector  fP = point(fl, "P", 0);
+    vector  face = set(0, chf("../TCP_PATH_CTRL/flange_offset"), 0);
 
-    @P = @P * fR + fP;
+    @P = @P * fR + fP + face * fR;
     if (haspointattrib(0, "N")) {
         @N = normalize(@N * fR);
     }

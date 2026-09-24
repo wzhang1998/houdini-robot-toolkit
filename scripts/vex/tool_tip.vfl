@@ -3,14 +3,16 @@
 //
 // Emits a single point carrying P, transform (matrix3) and orient, so it can
 // drive a Copy to Points, a constraint, or anything downstream that needs the
-// working end of the arm. With no tool configured this is joint_6 itself, so
-// the output is always meaningful.
+// working end of the arm. With no tool configured this is the flange face --
+// joint_6 plus the profile's flange_offset along +Y (zero on UF850, 0.12 m on
+// FR20) -- so the output is always meaningful.
 //
 // Input 0 is the solved skeleton. Everything else on it is discarded.
 
 int src = 0;
 vector off = chv("../TCP_PATH_CTRL/tool_offset");
 vector rot = chv("../TCP_PATH_CTRL/tool_rotate");
+vector face = set(0, chf("../TCP_PATH_CTRL/flange_offset"), 0);
 
 int flange = -1;
 int n = npoints(src);
@@ -35,7 +37,8 @@ if (flange < 0) {
     // forward of what tool_goal_offset undoes: goalR = R * flangeR.
     // Row-vector convention -- see the note in tool_goal_offset.vfl.
     matrix3 tipR = R * fR;
-    vector tipP = fP + off * fR;
+    // joint_6 -> flange face -> tool tip. The face shares joint_6's frame.
+    vector tipP = fP + (face + off) * fR;
 
     @P = tipP;
     3@transform = tipR;
