@@ -51,6 +51,15 @@ else:
     # an internal node IS permitted while locked; only parm writes are not.
     cache.parm("execute").pressButton()
 
+    # Then make the load side re-read. After writing, cache_solve kept serving
+    # the solve it had loaded before -- same filenames, so nothing upstream
+    # was dirtied -- and the robot and the debug path showed the OLD solve
+    # (measured: 365-646 mm off the new files) until Reload was pressed by
+    # hand. Reload dirties the node and everything downstream of it.
+    reload_btn = cache.parm("reload")
+    if reload_btn is not None:
+        reload_btn.pressButton()
+
     f0 = int(cache.parm("f1").eval())
     f1 = int(cache.parm("f2").eval())
     written = len(glob.glob(pattern))

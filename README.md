@@ -376,8 +376,7 @@ deadlocks scripted and bridge-driven runs.
   J5 passes through 0 while the solution switches wrist sign. Each frame
   solves from the URDF zero — itself fully stretched and singular. Pinning
   the Wrist preset to either sign made every frame miss (a range starting at
-  0 puts the rest pose on its edge). Untried: seeding each frame from the
-  previous solve, or solving from a bent home pose.
+  0 puts the rest pose on its edge).
 - **Progress** now defaults to `fit($FF, $RFSTART, $RFEND, 0, 1)`, what Reset
   Progress writes; it used to default to a flat 0, so a new instance on curve
   mode never moved unless someone had pressed Reset or Retime.
@@ -388,9 +387,14 @@ deadlocks scripted and bridge-driven runs.
 - FR20's URDF zero is assumed to equal the controller's zero (Fairino's own
   ROS 2 driver passes positions straight through). Not yet confirmed against
   SimMachine or hardware.
-- After `cache_solve` writes, its load side can keep the previous file until
-  it reloads — seen in bridge-driven runs, where extracted angles read one
-  solve behind until the node was reloaded. Not yet checked from the UI.
+- ~~Recache left the old solve on screen~~ — resolved. On a **locked**
+  instance, after `cache_solve` wrote, its load side kept serving the solve it
+  had loaded before (same filenames, nothing dirtied): 222 mm off the new files
+  on UF850, 647 mm on FR20, robot and debug path both. Unlocked instances were
+  unaffected, which is why an unlocked UF850 scene never showed it. Recache
+  now presses `cache_solve`'s Reload after writing; all four cases read the
+  new files. The internal `TCP_PATH_CTRL/recache_btn` still carries an older
+  copy of the script and is not exposed in the asset's UI.
 - J3 carries a +90° offset between the Configure Joints frame and the frame
   the analysis and CSV export report in.
 - ~~Joint limits duplicated across three files~~ — resolved; `profiles/uf850.json`
