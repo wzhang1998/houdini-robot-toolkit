@@ -31,3 +31,9 @@ desktop.ini
 
 # --- Local Houdini env ----------------------------------------------------
 houdini.env
+
+# --- Playback outputs (scripts/play.py names them next to the clip) --------
+*_actual_sim_*.csv
+*_actual_hardware_*.csv
+*_sim_2*.json
+*_hardware_2*.json

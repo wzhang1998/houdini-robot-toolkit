@@ -301,19 +301,38 @@ the velocity / acceleration envelope — never per-joint clipping), MoveJ to
 the first sample, stream on absolute deadlines and coalesce stale samples,
 read feedback on a separate connection, and report what happened.
 
-```
-python scripts/fairino_player.py --self-test
-python scripts/fairino_player.py clip.csv --ip 192.168.116.128 --sim --report run.json
-```
+**Easiest: edit `playback.toml`, run `python scripts/play.py`.** The file
+holds target, IP, clip, speed, wiggle settings; the menu offers check /
+dry-run / goto-start / wiggle / play and re-reads the file before each step
+(`python scripts/play.py 5` runs a step directly; `e` in the menu opens the
+file). Recordings and reports are named automatically next to the clip.
+`play.py` only builds the player's arguments, so the table below is what it
+runs:
 
-`--sim` is required; it has only run against SimMachine, whose WebApp shows
-the VM's internal 192.168.58.2 while the host reaches it at its VMware NAT
-address. First run, FR20, the scene's 240-frame clip: 2666 ServoJ at
-125.04 Hz, 0 skips, max lateness 0.55 ms; actual joints trail the command by
-~40 ms and, aligned for that, track within 0.072° (RMS 0.018°). A physical
-arm will differ in latency and dynamics — run it at reduced dynamics with an
-operator at the E-stop before trusting these numbers. Segment-by-segment
-sending, as td-robot-twin's worker does, is the next step.
+| Command | Moves? | Use |
+|---|---|---|
+| `--self-test` | no | conditioning, wiggle and recording tests |
+| `clip.csv --dry-run` | no | how much the clip is slowed to fit, peaks per joint |
+| `--check --ip IP` | no | controller model / version / errors, current pose, FK vs the URDF |
+| `clip.csv --hardware --ip IP --goto-start` | MoveJ only | reach the clip's first pose |
+| `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
+| `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
+
+Every move names its target, `--sim` or `--hardware`. `--hardware` defaults
+to 30 % of the envelope (`--speed`) and a 10 % MoveJ, prints the plan and
+waits for `yes` (`--yes` skips it). `--record` writes the actual joints one
+row per clip row, at the clip's own times (playback time ÷ time scale), in
+the export format — so **Output → Import CSV** keys it frame-for-frame
+against the design, controller lag included.
+
+On SimMachine FR20 (the WebApp shows the VM's internal 192.168.58.2; the
+host reaches it at its VMware NAT address): the scene's 240-frame clip,
+2666 ServoJ at 125 Hz, 0 skips, ~40 ms follow lag, 0.065° tracking once
+aligned; `--wiggle 6 5 4 2`, 36 ms lag, 0.012°; `--check` matches the URDF to
+0.015 mm / 0.0004°. A physical arm will differ in latency and dynamics:
+check, goto-start, wiggle, then the clip at `--speed 0.3` → `0.6` → `1.0`,
+with an operator at the E-stop. Segment-by-segment sending, as
+td-robot-twin's worker does, is later.
 
 ## Conventions
 

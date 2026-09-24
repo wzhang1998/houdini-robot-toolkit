@@ -25,12 +25,18 @@ Transport is the controller's XML-RPC on port 20003 -- what the official SDK
 the standard library.
 
 Usage:
-    python scripts/fairino_player.py clip.csv --ip 192.168.116.128 --sim
     python scripts/fairino_player.py --self-test
+    python scripts/fairino_player.py clip.csv --dry-run
+    python scripts/fairino_player.py --check --ip IP
+    python scripts/fairino_player.py clip.csv --sim --record actual.csv
+    python scripts/fairino_player.py clip.csv --hardware --ip IP --goto-start
+    python scripts/fairino_player.py --hardware --ip IP --wiggle 6 5 4 2
+    python scripts/fairino_player.py clip.csv --hardware --ip IP --speed 0.3 --record actual.csv
 
---sim is required: this has only been run against SimMachine. A physical
-arm needs a risk assessment, reduced dynamics and an operator at the E-stop
-first, and will get its own flag when that has been done.
+Every move names its target: --sim or --hardware. --hardware defaults to 30 %
+of the velocity / acceleration envelope and a 10 % MoveJ, prints what it is
+about to do and waits for "yes" (skip with --yes). It is no substitute for a
+risk assessment, a clear workspace and an operator at the E-stop.
 """
 
 import argparse
@@ -260,23 +266,33 @@ def _wait_until(deadline):
         time.sleep(left - 0.0015 if left > 0.002 else 0)
 
 
-def play(ctrl, feedback_ip, samples, dt, start_tol_deg=2.0, move_vel_pct=20.0):
-    """Move to the first sample, stream the rest. Returns the timing report
-    and the per-send log."""
+def _require_no_error(ctrl, when):
     err = ctrl.error_code()
     if list(err)[:3] != [0, 0, 0]:
-        raise RuntimeError("controller reports an error before playback: %s" % (err,))
+        raise RuntimeError("controller reports an error %s: %s" % (when, err))
+
+
+def goto(ctrl, q, move_vel_pct, tol_deg=2.0, timeout_s=60.0):
+    """Controller-planned MoveJ to q, then wait until the arm is within
+    tol_deg of it on every joint."""
+    _require_no_error(ctrl, "before moving")
     ctrl.prepare()
-    ctrl.move_to(samples[0], move_vel_pct)
-    t_end = time.time() + 30.0
+    ctrl.move_to(q, move_vel_pct)
+    t_end = time.time() + timeout_s
     while True:
-        cur = ctrl.joints()
-        off = max(abs(a - b) for a, b in zip(cur, samples[0]))
-        if off <= start_tol_deg:
-            break
+        off = max(abs(a - b) for a, b in zip(ctrl.joints(), q))
+        if off <= tol_deg:
+            return off
         if time.time() > t_end:
-            raise RuntimeError("did not reach the first pose: %.2f deg off" % off)
+            raise RuntimeError("did not reach the pose: %.2f deg off" % off)
         time.sleep(0.1)
+
+
+def play(ctrl, feedback_ip, samples, dt, start_tol_deg=2.0, move_vel_pct=20.0):
+    """Move to the first sample, stream the rest. Returns (report, start,
+    feedback) -- start is the playback clock's zero, feedback the actual
+    joints as (perf_counter, q) for record_aligned()."""
+    goto(ctrl, samples[0], move_vel_pct, start_tol_deg)
 
     fb = Feedback(feedback_ip)
     fb.start()
@@ -323,7 +339,8 @@ def play(ctrl, feedback_ip, samples, dt, start_tol_deg=2.0, move_vel_pct=20.0):
               "send_ms_max": round(st[-1], 2),
               "feedback_samples": len(fb.samples)}
     report.update(tracking(start, samples, dt, fb.samples))
-    return report
+    report["controller_error_after"] = list(ctrl.error_code())
+    return report, start, fb.samples
 
 
 def tracking(start, samples, dt, feedback):
@@ -361,6 +378,106 @@ def tracking(start, samples, dt, feedback):
             "best_lag_ms": round(best[0] * 1000, 1),
             "tracking_after_lag_max_deg": round(best[1], 4),
             "tracking_after_lag_rms_deg": round(best[2], 4)}
+
+
+# --------------------------------------------------------------------------
+# test clips, recording, read-only check
+# --------------------------------------------------------------------------
+
+def wiggle_clip(q0, joint, amp_deg, period_s, cycles, limits, rate_hz=50.0):
+    """One joint (1-based) goes q0 -> q0 + amp -> q0 each period, at rest at
+    every return (raised cosine); every other joint holds q0. For a first
+    ServoJ test on hardware: small, slow, one joint, starting where the arm
+    already is."""
+    n = int(round(period_s * cycles * rate_hz))
+    t = [k / rate_hz for k in range(n + 1)]
+    q = []
+    for tk in t:
+        row = list(q0)
+        row[joint - 1] = q0[joint - 1] + amp_deg * (1.0 - math.cos(2.0 * math.pi * tk / period_s)) / 2.0
+        q.append(row)
+    validate(t, q, limits)
+    return t, q
+
+
+def record_aligned(src_t, time_scale, start, feedback):
+    """Actual joints at each SOURCE row's time, in the export format, so the
+    asset's Import CSV keys it frame-for-frame against the clip that was
+    designed. Source time ts was commanded at playback time ts * time_scale;
+    the actual joints there are interpolated from feedback. The controller's
+    lag stays in -- that is what is being looked at."""
+    fb = [(t - start, q) for t, q in feedback]
+    if not fb:
+        raise RuntimeError("no feedback to record")
+    times = [x[0] for x in fb]
+    rows = []
+    t0 = src_t[0]
+    for i, ts in enumerate(src_t):
+        s_ = (ts - t0) * time_scale
+        k = bisect.bisect_left(times, s_)
+        if k <= 0:
+            q = fb[0][1]
+        elif k >= len(fb):
+            q = fb[-1][1]
+        else:
+            (ta, qa), (tb, qb) = fb[k - 1], fb[k]
+            f = (s_ - ta) / (tb - ta) if tb > ta else 0.0
+            q = [a + f * (b - a) for a, b in zip(qa, qb)]
+        rows.append([i + 1, ts - t0] + list(q))
+    return rows
+
+
+def write_csv(path, rows):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["frame", "time_s"] + ["j%d_deg" % i for i in range(1, 7)])
+        for r in rows:
+            w.writerow([r[0], "%.4f" % r[1]] + ["%.6f" % x for x in r[2:]])
+
+
+def _rot(axis, deg):
+    c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return {"x": ((1, 0, 0), (0, c, -s_), (0, s_, c)),
+            "y": ((c, 0, s_), (0, 1, 0), (-s_, 0, c)),
+            "z": ((c, -s_, 0), (s_, c, 0), (0, 0, 1))}[axis]
+
+
+def check(ctrl, prof):
+    """Read-only: which controller, is it in error, where is the arm, and does
+    its forward kinematics agree with the profile's URDF. Nothing moves."""
+    import urdf_rig as U
+    root = os.path.dirname(HERE)
+    rep = {"software_version": ctrl.rpc.GetSoftwareVersion(),
+           "error_code": list(ctrl.error_code()),
+           "current_joints_deg": [round(x, 3) for x in ctrl.joints()],
+           "tcp_offset": list(ctrl.rpc.GetTCPOffset(0))}
+    urdf = prof["rig"].get("urdf")
+    if urdf:
+        chain = U.parse_urdf(os.path.join(root, urdf))["chain"]
+        flange = float(prof["rig"].get("flange_offset_m", 0.0))
+        poses = [rep["current_joints_deg"], [0.0] * 6, [30, -90, 90, -90, -90, 0],
+                 [-45, -60, 110, -30, 60, 45], [100, -120, 60, -150, 40, -80]]
+        worst_p = worst_r = 0.0
+        for q in poses:
+            r = ctrl.rpc.GetForwardKin([float(x) for x in q])
+            if r[0] != 0:
+                continue
+            x, y, z, rx, ry, rz = r[1:7]
+            fk = U.forward_kinematics(chain, q)
+            ours = U.flange_point(fk, flange)
+            worst_p = max(worst_p, math.dist([v * 1000 for v in ours], [x, y, z]))
+            R = U._mat_mul(_rot("z", rz), U._mat_mul(_rot("y", ry), _rot("x", rx)))
+            Rq = fk[-1]["link_R"]
+            M = [[sum(Rq[k][i] * R[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+            c = (M[0][0] + M[1][1] + M[2][2] - 1) / 2
+            sn = 0.5 * math.sqrt((M[2][1] - M[1][2]) ** 2 + (M[0][2] - M[2][0]) ** 2
+                                 + (M[1][0] - M[0][1]) ** 2)
+            worst_r = max(worst_r, math.degrees(math.atan2(sn, c)))
+        rep["fk_vs_urdf"] = {"poses": len(poses), "max_position_mm": round(worst_p, 4),
+                             "max_orientation_deg": round(worst_r, 5),
+                             "verdict": "match" if worst_p < 0.1 and worst_r < 0.01
+                             else "MISMATCH -- do not play"}
+    return rep
 
 
 # --------------------------------------------------------------------------
@@ -415,6 +532,21 @@ def self_test():
             check("rejects " + label, False)
         except TrajectoryError as e:
             check("rejects " + label, True, str(e))
+    q0 = [10, -80, 70, -80, -90, 5]
+    tw, qw = wiggle_clip(q0, 6, 5.0, 4.0, 2, lim)
+    others = max(abs(r[j] - q0[j]) for r in qw for j in range(5))
+    check("wiggle: one joint, q0 -> q0+amp -> q0",
+          qw[0] == q0 and max(abs(a - b) for a, b in zip(qw[-1], q0)) < 1e-9
+          and abs(max(r[5] for r in qw) - (q0[5] + 5.0)) < 1e-6 and others == 0.0,
+          "%d rows, %.1f s" % (len(qw), tw[-1]))
+    src_t = [i / 24.0 for i in range(10)]
+    scale, start = 2.0, 100.0
+    fb = [(start + k * 0.01, [k * 0.01 * 3.0] * 6) for k in range(200)]
+    rows = record_aligned(src_t, scale, start, fb)
+    err = max(abs(r[2] - src_t[i] * scale * 3.0) for i, r in enumerate(rows))
+    check("record_aligned: one row per source row, at source time",
+          len(rows) == len(src_t) and [r[1] for r in rows] == src_t and err < 1e-9,
+          "max error %.2e deg" % err)
     print()
     if failures:
         print("FAILED: %s" % "; ".join(failures))
@@ -427,49 +559,111 @@ def self_test():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", nargs="?")
+    ap.add_argument("csv", nargs="?", help="joint CSV exported from the asset")
     ap.add_argument("--ip", default="192.168.116.128")
     ap.add_argument("--profile", default="fr20")
+    tgt = ap.add_mutually_exclusive_group()
+    tgt.add_argument("--sim", action="store_true", help="the target is SimMachine")
+    tgt.add_argument("--hardware", action="store_true",
+                     help="the target is a physical arm: reduced speed by default, asks to confirm")
+    ap.add_argument("--speed", type=float, default=None,
+                    help="fraction of the velocity / acceleration envelope; default 1.0 sim, 0.3 hardware")
     ap.add_argument("--rate", type=float, default=125.0, help="ServoJ rate, Hz (cmdT = 1/rate)")
     ap.add_argument("--vel-limit", type=float, default=None,
                     help="deg/s for every joint; default: the profile's per-joint max_velocity_deg_s")
-    ap.add_argument("--acc-limit", type=float, default=300.0, help="deg/s^2")
-    ap.add_argument("--move-vel", type=float, default=20.0, help="MoveJ speed %% to the first pose")
-    ap.add_argument("--sim", action="store_true", help="required: the target is SimMachine")
+    ap.add_argument("--acc-limit", type=float, default=300.0, help="deg/s^2, before --speed")
+    ap.add_argument("--move-vel", type=float, default=None,
+                    help="MoveJ speed %% to the first pose; default 20 sim, 10 hardware")
+    ap.add_argument("--check", action="store_true", help="read-only: identity, errors, pose, FK vs URDF")
+    ap.add_argument("--goto-start", action="store_true", help="only MoveJ to the clip's first pose")
+    ap.add_argument("--wiggle", nargs=4, metavar=("JOINT", "AMP_DEG", "PERIOD_S", "CYCLES"),
+                    help="play a generated one-joint swing from the current pose instead of a CSV")
+    ap.add_argument("--record", help="write the actual joints, aligned to the clip's rows, as a CSV")
     ap.add_argument("--dry-run", action="store_true", help="condition and report only; no robot I/O")
+    ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation prompt")
     ap.add_argument("--report", help="write the JSON report here")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
 
     if a.self_test:
         return self_test()
-    if not a.csv:
-        ap.error("csv is required")
 
     import robot_profile
     prof = robot_profile.load(a.profile, os.path.join(os.path.dirname(HERE), "profiles"))
     limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
-    vel = [a.vel_limit] * 6 if a.vel_limit else robot_profile.velocity_limits(prof)
+    target = "hardware" if a.hardware else "sim" if a.sim else None
+    report = {"profile": a.profile, "target": target}
 
-    t, q = load_csv(a.csv)
-    samples, dt, report = condition(t, q, a.rate, vel, a.acc_limit, limits)
-    report = {"csv": os.path.abspath(a.csv), "profile": a.profile, "conditioning": report}
+    def done():
+        text = json.dumps(report, indent=1)
+        print(text)
+        if a.report:
+            with open(a.report, "w") as f:
+                f.write(text)
+        return 0
+
+    ctrl = None
     if not a.dry_run:
-        if not a.sim:
-            ap.error("refusing to stream without --sim: only SimMachine has been tested")
         ctrl = Controller(a.ip)
         model = ctrl.model()
         report["controller_model"] = model
-        want = prof.get("id", a.profile).upper()
-        if want not in model.upper():
-            raise SystemExit("controller reports %r, profile is %r -- refusing" % (model, want))
-        report["playback"] = play(ctrl, a.ip, samples, dt, move_vel_pct=a.move_vel)
-    text = json.dumps(report, indent=1)
-    print(text)
-    if a.report:
-        with open(a.report, "w") as f:
-            f.write(text)
-    return 0
+        if a.profile.upper() not in model.upper():
+            raise SystemExit("controller reports %r, profile is %r -- refusing" % (model, a.profile))
+
+    if a.check:
+        report["check"] = check(ctrl, prof)
+        return done()
+
+    if a.wiggle:
+        if ctrl is None:
+            ap.error("--wiggle needs the robot (it starts from the current pose)")
+        j, amp, per, cyc = int(a.wiggle[0]), float(a.wiggle[1]), float(a.wiggle[2]), int(a.wiggle[3])
+        t, q = wiggle_clip(ctrl.joints(), j, amp, per, cyc, limits)
+        report["clip"] = "wiggle J%d %+g deg, %g s x %d" % (j, amp, per, cyc)
+    elif a.csv:
+        t, q = load_csv(a.csv)
+        report["clip"] = os.path.abspath(a.csv)
+    else:
+        ap.error("give a CSV, --wiggle, or --check")
+
+    speed = a.speed if a.speed is not None else (0.3 if a.hardware else 1.0)
+    if not 0.0 < speed <= 1.0:
+        ap.error("--speed must be in (0, 1]")
+    vel = [a.vel_limit] * 6 if a.vel_limit else robot_profile.velocity_limits(prof)
+    vel = [v * speed for v in vel]
+    samples, dt, cond = condition(t, q, a.rate, vel, a.acc_limit * speed, limits)
+    cond["speed"] = speed
+    report["conditioning"] = cond
+    if a.dry_run:
+        return done()
+    if target is None:
+        ap.error("say where this goes: --sim or --hardware")
+
+    move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
+    if a.hardware and not a.yes:
+        cur = ctrl.joints()
+        print("HARDWARE  %s at %s" % (report["controller_model"], a.ip))
+        print("  clip      %s" % report["clip"])
+        print("  speed     %.0f %% of the envelope -> plays %.1f s (scale %.2f)"
+              % (speed * 100, cond["played_duration_s"], cond["time_scale"]))
+        print("  now       %s" % [round(x, 1) for x in cur])
+        print("  start     %s  (MoveJ at %g %%, largest joint move %.1f deg)"
+              % ([round(x, 1) for x in samples[0]], move_vel,
+                 max(abs(x - y) for x, y in zip(cur, samples[0]))))
+        if input("Clear workspace, hand on the E-stop. Type yes to move: ").strip().lower() != "yes":
+            report["aborted"] = "not confirmed"
+            return done()
+
+    if a.goto_start:
+        report["goto_start_off_deg"] = round(goto(ctrl, samples[0], move_vel), 3)
+        return done()
+
+    pb, start_t, feedback = play(ctrl, a.ip, samples, dt, move_vel_pct=move_vel)
+    report["playback"] = pb
+    if a.record:
+        write_csv(a.record, record_aligned(t, cond["time_scale"], start_t, feedback))
+        report["recorded"] = os.path.abspath(a.record)
+    return done()
 
 
 if __name__ == "__main__":

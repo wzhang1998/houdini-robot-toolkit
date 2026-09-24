@@ -1,0 +1,25 @@
+# Playback settings for scripts/play.py -- edit, save, pick a step.
+# The file is re-read before every step, so there is no need to restart.
+
+[robot]
+target = "sim"              # "sim" (SimMachine) or "hardware" (the real arm)
+ip = "192.168.116.128"      # SimMachine's VMware NAT address; the real controller's IP for hardware
+profile = "fr20"
+
+[clip]
+csv = "tests/csv/fr20_curve_240.csv"   # absolute, or relative to the toolkit root
+record = true               # save the actual joints next to the clip: <clip>_actual_<target>_<time>.csv
+report = true               # save the JSON report next to the clip:   <clip>_<target>_<time>.json
+
+[motion]
+speed = 1.0                 # fraction of the velocity/acceleration envelope. Hardware: start at 0.3
+rate_hz = 125               # ServoJ rate
+acc_limit = 300             # deg/s^2 at speed 1.0
+move_vel = 20               # MoveJ % to the clip's first pose. Hardware: 10
+confirm = true              # hardware only: ask before moving (keep true)
+
+[wiggle]                    # step "wiggle": one joint out and back from where the arm is
+joint = 6
+amp_deg = 5
+period_s = 4
+cycles = 2
