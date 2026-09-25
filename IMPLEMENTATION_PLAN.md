@@ -117,10 +117,14 @@ touch-off points agree with the controller's TCP; the cell in Houdini.
 (FAIL at frame 101), UF850 (not applicable).
 **Status**: Complete in software -- all of the above pass; probe vs
 controller TCP 0.004 mm on SimMachine; `scenes/FR20_cell.hiplc`. The room
-(`envs/volvox_lab.json`) is still an ESTIMATE from one photo, and its
-orientation (the arm's front towards the TV wall) is assumed: measure it
-with `probe_env.py` on the real arm. OAK-D point clouds as an obstacle
-source: not started.
+is MEASURED (2026-09-25): floor and the two near walls probed on the real
+FR20 (`probe_ui.py`; URDF vs controller TCP ~1.1 mm on every point), the
+ceiling grid by tape (2.16 m -- the raised arm reaches it), the rest from a
+RoomPlan scan aligned to the probed walls (`scan_to_env.py`, the walls
+agree to 0.47 deg); the arm is mounted turned ~11 deg on a plate square to
+the room. Still estimated: the plant's size, the base plate's size; the
+operator's place as marked by the user (+-0.2 m). The factory's clips were
+checked against the old estimate: re-cook against the measured room.
 
 Later (noted 2026-09-25, not started): robot_arm's input 5 "Collision
 (reserved, unused)" as the room's geometry, replacing Setup > Cell
