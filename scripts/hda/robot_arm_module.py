@@ -162,10 +162,107 @@ def fbik_range(lo, hi):
 def fk_value(node, joint):
     """Joint_controller jN: the typed FK angle, robot frame, clamped to the
     profile's limits. The slider templates no longer carry one robot's
-    limits, so the clamp lives here."""
+    limits, so the clamp lives here.
+
+    With Pose Source on Imported CSV it is the imported file's angle at this
+    frame instead (import_value) -- read live, not keyed onto a node, so it
+    works on a locked instance -- and not clamped: Import checks the file's
+    limits, and a clamp would export something other than the file."""
     asset = asset_of(node)
+    if int(asset.evalParm("pose_source")) == 2:
+        v = import_value(asset, joint)
+        if v is not None:
+            return v
     lo, hi = profile(asset)["robot"]["limits_deg"][joint - 1]
     return min(max(asset.evalParm("fk_j%d" % joint), lo), hi)
+
+
+# --------------------------------------------------------------------------
+# Imported CSV: the file, read live
+# --------------------------------------------------------------------------
+
+_IMPORT = {}
+
+
+def read_clip(path):
+    """(times, joints) of a joint CSV (frame, time_s, j1_deg..) or a clip
+    JSON (motionlab.clip/1); times from the first row, degrees, robot frame."""
+    import csv as _csv
+    import json as _json
+    if path.lower().endswith(".json"):
+        with open(path) as f:
+            c = _json.load(f)
+        t = [float(p["t"]) for p in c["points"]]
+        q = [[float(x) for x in p["q"]] for p in c["points"]]
+    else:
+        with open(path, newline="") as f:
+            rows = list(_csv.DictReader(f))
+        if not rows:
+            raise ValueError("%s has no rows" % path)
+        cols = sorted((c for c in rows[0] if c and c.startswith("j") and c.endswith("_deg")),
+                      key=lambda c: int(c[1:-4]))
+        if not cols:
+            raise ValueError("%s has no j1_deg .. columns" % path)
+        if "time_s" in rows[0]:
+            t = [float(r["time_s"]) for r in rows]
+        else:
+            t = [i / hou.fps() for i in range(len(rows))]
+        q = [[float(r[c]) for c in cols] for r in rows]
+    if len(t) < 1:
+        raise ValueError("%s is empty" % path)
+    t0 = t[0]
+    t = [x - t0 for x in t]
+    # a fixed frame rate written with 4 decimals (1/24 -> 0.0417): exact
+    # frame times, as fairino_player reads them
+    n = len(t)
+    if n > 2:
+        dt = sum(i * t[i] for i in range(n)) / float(sum(i * i for i in range(n)))
+        if dt > 0 and all(abs(t[i] - i * dt) < 1e-4 for i in range(n)):
+            fps = round(1.0 / dt)
+            if fps and abs(1.0 / dt - fps) < 0.01:
+                dt = 1.0 / fps
+            t = [i * dt for i in range(n)]
+    return t, q
+
+
+def import_clip(node):
+    """The file named in Import CSV, cached by path and modification time --
+    replace the file and the next cook reads the new one. None when unset."""
+    asset = asset_of(node)
+    p = asset.parm("import_csv")
+    path = p.eval().strip() if p is not None else ""
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        raise hou.NodeError("Import CSV: no file at %s" % path)
+    key = (path, os.path.getmtime(path))
+    hit = _IMPORT.get(asset.path())
+    if hit is None or hit[0] != key:
+        hit = (key, read_clip(path))
+        _IMPORT[asset.path()] = hit
+    return hit[1]
+
+
+def import_value(node, joint, frame=None):
+    """The imported file's angle of joint (1-based) at frame: frame Start
+    Frame is the file's first row, then by its time_s, linear between rows,
+    held at both ends."""
+    clip = import_clip(node)
+    if clip is None:
+        return None
+    t, q = clip
+    asset = asset_of(node)
+    sp = asset.parm("import_start")
+    start = sp.eval() if sp is not None else 1
+    s = ((frame if frame is not None else hou.frame()) - start) / hou.fps()
+    if s <= t[0] or len(t) == 1:
+        return q[0][joint - 1]
+    if s >= t[-1]:
+        return q[-1][joint - 1]
+    import bisect
+    i = bisect.bisect_right(t, s) - 1
+    f = (s - t[i]) / (t[i + 1] - t[i])
+    return q[i][joint - 1] + f * (q[i + 1][joint - 1] - q[i][joint - 1])
 
 
 def fk_rotation(node, joint, axis):

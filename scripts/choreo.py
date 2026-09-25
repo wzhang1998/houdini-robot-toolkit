@@ -392,10 +392,14 @@ def _travel(seg, tt, k, flow):
     return s, det
 
 
-def _sample(segs, total, k, flow):
-    ts = [i / FPS for i in range(int(math.ceil(total * FPS)) + 1)]
+def _sample(segs, total, k, flow, scale=1.0):
+    """24 fps frames of the phrase played `scale` times slower: frame i is at
+    i / FPS, and shows the plan at i / FPS / scale. (Stretching the frame
+    times instead gave a slowed phrase frames at 17 fps -- fine for the
+    player, which goes by time, but not what an exported clip should be.)"""
+    ts = [i / FPS for i in range(int(math.ceil(total * scale * FPS)) + 1)]
     qs = []
-    for tt in ts:
+    for tt in (t / scale for t in ts):
         q = list(HOME)
         for seg in segs:
             if "to" in seg:
@@ -419,8 +423,7 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
         segs, total = _plan(spec, kin, rng)
         k, bpm_scale = 1.0, 1.0
         for _ in range(8):
-            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0))
-            ts = [x * bpm_scale for x in ts]
+            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale)
             if any(not lo + 1.0 < x < hi - 1.0 for q in qs for x, (lo, hi) in zip(q, kin.limits)):
                 k *= 0.7
                 continue

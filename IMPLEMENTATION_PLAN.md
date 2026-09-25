@@ -145,7 +145,8 @@ with transitions, checked like any clip), the Houdini round trip (exact,
 through FK). Open: Ruckig (a new dependency, ask first); FR20 jerk limit
 unknown; the real acceleration limit (`accel_probe.py` on hardware) -- it
 decides how dynamic phrases can be; per-bar label accuracy; an OAK-D
-capture script; the asset's Import CSV on locked instances.
+capture script. Fixed: the asset's Import CSV (reads the file live; works
+on locked instances; exact round trip on FR20 and UF850).
 
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config

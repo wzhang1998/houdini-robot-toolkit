@@ -1132,11 +1132,74 @@ def _find_rest_source(node):
     return (ins[0] if ins else cfg), cfg
 
 
+def _robot_arm_owner(node):
+    """The wenyi::robot_arm this node sits in, or None (standalone)."""
+    n = node.parent()
+    while n is not None:
+        if n.type().name().startswith("wenyi::robot_arm"):
+            return n
+        n = n.parent()
+    return None
+
+
 def import_animation(kwargs):
-    """Read a CSV and key its joint angles onto an FK Rig Pose."""
+    """Import CSV. Inside a wenyi::robot_arm: check the file and switch Pose
+    Source to Imported CSV -- the asset then reads the file live, frame by
+    frame (robot_arm_module.import_value), so nothing is created or keyed
+    inside the asset and a locked instance imports too. It used to build a
+    Rig Pose node inside the asset ("Cannot create a node inside a locked
+    asset"), and the Pose Source switch read an embedded test clip's
+    keyframes whatever file was imported. Standalone: the old keying."""
     node = kwargs["node"]
     global _HOST
     _HOST = node
+    owner = _robot_arm_owner(node)
+    if owner is not None:
+        return _import_live(node, owner)
+    return _import_to_rigpose(node)
+
+
+def _import_live(node, owner):
+    path = node.parm("import_csv").eval().strip()
+    if not path or not os.path.isfile(path):
+        _notify("Import CSV not found:\n%s" % path, severity=hou.severityType.Error, title="No Input File")
+        return
+    try:
+        t, q = owner.hdaModule().read_clip(path)
+    except Exception as e:
+        _notify("Could not read %s:\n%s" % (path, e), severity=hou.severityType.Error, title="Import CSV")
+        return
+    if any(len(r) != NUM_JOINTS for r in q):
+        _notify("Expected %d joints per row (j1_deg .. j%d_deg)." % (NUM_JOINTS, NUM_JOINTS),
+                severity=hou.severityType.Error, title="CSV Format Error")
+        return
+    if any(t[i + 1] <= t[i] for i in range(len(t) - 1)):
+        _notify("time_s is not strictly increasing.", severity=hou.severityType.Error, title="CSV Format Error")
+        return
+    lim = [tuple(r) for r in _profile(node)["robot"]["limits_deg"]]
+    over = [(i + 1, j + 1, a) for i, r in enumerate(q) for j, a in enumerate(r)
+            if not lim[j][0] - 1e-6 <= a <= lim[j][1] + 1e-6]
+    fps = hou.fps()
+    sp = owner.parm("import_start")
+    start = int(sp.eval()) if sp is not None else 1
+    end = start + int(round(t[-1] * fps))
+    hou.playbar.setFrameRange(start, end)
+    hou.playbar.setPlaybackRange(start, end)
+    owner.parm("pose_source").set(2)
+    cache = getattr(owner.hdaModule(), "_IMPORT", None)
+    if cache is not None:
+        cache.pop(owner.path(), None)
+    msg = "Imported %d rows (%.2f s) from %s, read live -> frames %d-%d" % (
+        len(q), t[-1], os.path.basename(path), start, end)
+    if over:
+        msg += "; %d values outside the joint limits (first: row %d J%d = %.1f)" % (len(over),) + over[0]
+    _out_parm(node, "status").set(msg)
+    _notify(msg + ("\n\nPre-Flight will fail on the out-of-limit values." if over else ""),
+            severity=hou.severityType.Warning if over else hou.severityType.Message, title="Import CSV")
+
+
+def _import_to_rigpose(node):
+    """Standalone robot_anim_csv_io: key the CSV onto an FK Rig Pose."""
 
     path = node.parm("import_csv").eval().strip()
     if not path or not os.path.isfile(path):

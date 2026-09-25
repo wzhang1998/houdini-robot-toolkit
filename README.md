@@ -500,9 +500,10 @@ join gets a minimum-jerk transition in joint space sized to the joint
 limits. The show is measured as the player plays it, checked against the
 cell and labelled like any clip.
 
-`hython scripts/roundtrip_check.py [clip]` sends a clip through robot_arm
-(FK joints read frame by frame) and back out of the asset's exporter: a
-dance clip and `tests/csv/fr20_test.csv` both come back to 0.00000 deg.
+`hython scripts/roundtrip_check.py [clip] [--profile uf850] [--fk]` sends a
+clip through robot_arm's Import CSV (or FK expressions) and back out of the
+asset's exporter, on a locked instance: FR20 CSV, dance clip JSON and UF850
+CSV all come back to 0.00000 deg.
 
 ## From a person to the arm
 
@@ -759,10 +760,14 @@ deadlocks scripted and bridge-driven runs.
   a literal 150 default had left UF850 instances on FR20's acceleration,
   since only a profile *change* wrote it. UF850: 1146 deg/s^2, UFACTORY's
   published joint acceleration for the series.
-- **Import CSV fails on a locked instance**: the importer creates nodes
-  inside the asset, which Houdini refuses on a locked (matched) instance --
-  every current scene's. Drive the FK joints from the clip instead (the
-  Dance Phrase node, the cell scene and `roundtrip_check.py` do).
+- **Import CSV reads the file live** (Output > Import CSV: a joint CSV or a
+  clip JSON, Start Frame, Import). Import checks the file, sets the frame
+  range and switches Pose Source to Imported CSV; the FK joints then read
+  the file at each frame. It used to build a Rig Pose node inside the asset
+  -- refused on a locked instance, i.e. on every matched one -- and the Pose
+  Source switch played an old test clip's 1201 keyframes embedded in the
+  definition, whatever file was imported. `roundtrip_check.py`: FR20 CSV,
+  dance clip JSON and UF850 CSV all come back exact through Import.
 - **Retime is ~4x faster** (FR20 scene: 106 s -> 27 s, same result): 90 % of
   each IK solve was `urdf_rig`'s generic 3x3 product inside the Newton
   polish; unrolled and with joint-origin rotations cached, forward
