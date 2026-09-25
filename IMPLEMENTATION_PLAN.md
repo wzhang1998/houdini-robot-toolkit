@@ -1,7 +1,8 @@
 # Implementation plan — motion lab
 
 Architecture and reasoning: `docs/motion-lab-architecture.md`.
-Delete this file when every stage is Complete.
+Delete this file when every stage is Complete -- first copy the measured
+numbers from each Status into `docs/results.md` (kept for good).
 
 ## Stage 1: FR20 closed-form IK inside Houdini
 **Goal**: A UR-type closed-form IK (`scripts/ur_ik.py`, no hou dependency)

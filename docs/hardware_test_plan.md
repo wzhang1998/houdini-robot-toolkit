@@ -9,6 +9,11 @@
 表里标 🟢 的不动，🟡 小幅动，🔴 大幅动。
 所有命令都在仓库根目录运行，`<IP>` 换成真机 IP。
 
+**拍视频（作品集素材）**：每次在真机上**第一次**跑一个新东西（第一个舞蹈片段、HOME、wiggle、被碰撞检查拒绝的片段），开跑前先架好手机：
+- 横拍 10–30 s，固定机位，整条手臂和底座都在画面里，最好能看到屏幕或 Houdini；
+- 再从同一视角录一段 Houdini 视口，方便以后并排剪；
+- 文件名写日期、片段、速度，如 `20260925_d17_speed0.6.mp4`，记到 `docs/results.md` 的 Media index。
+
 ---
 
 ## 0. 准备（不动）
@@ -30,7 +35,7 @@ python scripts/collision.py
 | Target | Hardware | 界面会显示红字警告 |
 | Controller IP | 真机 IP | |
 | Speed (0-1) | **0.3** | 先慢速；真机上每一步动作前界面都会先问你 |
-| Acc limit deg/s² | **150** | FR20 profile 的值；Houdini 的 Retime 和 Pre-Flight 都按 150 规划 |
+| Acc cap | **0** | 0 = 用 profile 的实测值（J1–J3 300、J4–J6 600），和 Houdini 的 Retime、Pre-Flight 一致 |
 | MoveJ % | **10** | 去起点、回 HOME 用 |
 | Wiggle | J1, 3°, 4 s, 1 次 | J6 转 5° 看不出来 |
 
