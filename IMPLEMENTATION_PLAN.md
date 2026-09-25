@@ -122,6 +122,18 @@ orientation (the arm's front towards the TV wall) is assumed: measure it
 with `probe_env.py` on the real arm. OAK-D point clouds as an obstacle
 source: not started.
 
+Later (noted 2026-09-25, not started): robot_arm's input 5 "Collision
+(reserved, unused)" as the room's geometry, replacing Setup > Cell
+Environment when connected. Pieces by prim `name`; `role` (obstacle /
+keep_out / slow / work, default obstacle); optional `margin`.
+1. Simple shapes -> oriented box / cylinder fits, so Pre-Flight and Curve
+   Check use collision.py's exact distances (same results as the JSON).
+2. Any mesh (OAK-D / phone scan, furniture) -> VDB SDF, sampled along the
+   arm's capsule axes -- no hand simplification of scans.
+3. A Write Env JSON button, so PDG factory / atlas / clip library keep one
+   room file.
+Start with 1 + 3; 2 when a scan exists.
+
 ## Stage 3: Motion clip contract + PDG factory
 **Goal**: A clip format (JointTrajectory-shaped JSON: times, joint positions,
 TCP path, style parameters, metadata -- spatial bounds, duration, tags,
