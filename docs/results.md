@@ -94,7 +94,8 @@ matching Houdini viewport capture from the same angle, and list them here.
 
 | File | Where | What |
 |---|---|---|
-| IMG_0346.mov (Wenyi's phone, Downloads; 1280x720, 23 s, handheld) | real FR20, 2026-09-25 16:14 | `fr20_test_inside_wall_fast.csv` playing (re-shoot on a tripod planned) |
+| IMG_0349.MOV (Downloads; 1280x720, 16 s) -- **main**; stabilised on the website as fr20-real.mp4 | real FR20, 2026-09-25 16:24 | `fr20_test_inside_wall_fast.csv` playing. A later run than the recorded one (16:22): the numbers above are from the recorded run |
+| IMG_0346.mov (Downloads; 1280x720, 23 s, handheld) -- spare | real FR20, 2026-09-25 16:14 | the same clip, an earlier run |
 | IMG_0345.jpg (Downloads) | real FR20 lab | the lab: arm, TV wall, control cart |
 | tests/csv/fr20_test_inside_wall_fast_actual_hardware_20260925-162248.csv (local, gitignored) | real FR20 | the recorded joints of that run |
 | docs/images/portfolio/review_contact_sheet_1600.jpg | Houdini (OpenGL, clean) | the review contact sheet, 1600 px: 98 clips, rejected framed red |
