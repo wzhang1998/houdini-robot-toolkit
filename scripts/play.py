@@ -72,7 +72,9 @@ def build_argv(cfg, step):
         argv = [csv] + argv
 
     argv += ["--speed", str(m.get("speed", 0.3)), "--rate", str(m.get("rate_hz", 125)),
-             "--acc-limit", str(m.get("acc_limit", 150)), "--move-vel", str(m.get("move_vel", 20))]
+             "--move-vel", str(m.get("move_vel", 20))]
+    if float(m.get("acc_limit", 0) or 0) > 0:       # a cap on the profile's per-joint limits; 0 = the profile's
+        argv += ["--acc-limit", str(m["acc_limit"])]
     if step == "dry-run":
         return argv + ["--dry-run"]
 
@@ -94,11 +96,13 @@ def header(cfg):
     tgt = r.get("target", "?").upper()
     warn = "   <<< REAL ARM" if tgt == "HARDWARE" else ""
     w = cfg.get("wiggle", {})
-    return ("\n%s  %s  profile %s%s\n  clip   %s\n  speed  %g   rate %g Hz   acc %g   MoveJ %g %%\n"
+    acc = float(m.get("acc_limit", 0) or 0)
+    return ("\n%s  %s  profile %s%s\n  clip   %s\n  speed  %g   rate %g Hz   acc %s   MoveJ %g %%\n"
             "  wiggle J%s %+g deg, %g s x %s"
             % (tgt, r.get("ip"), r.get("profile", "fr20"), warn,
                os.path.basename(c.get("csv", "") or "(none)"),
-               m.get("speed", 0.3), m.get("rate_hz", 125), m.get("acc_limit", 150), m.get("move_vel", 20),
+               m.get("speed", 0.3), m.get("rate_hz", 125), ("cap %g" % acc) if acc > 0 else "profile",
+               m.get("move_vel", 20),
                w.get("joint", 6), w.get("amp_deg", 5), w.get("period_s", 4), w.get("cycles", 2)))
 
 
@@ -160,6 +164,9 @@ def self_test():
     check("home: --goto-home with the MoveJ speed, no clip",
           "--goto-home" in ah and "--move-vel" in ah and not any(x.endswith(".csv") for x in ah), ah)
     check("wiggle takes its joint/amp/period/cycles", a[a.index("--wiggle") + 1:a.index("--wiggle") + 5] == ["6", "5", "4", "2"], a)
+    ap = build_argv(dict(cfg, motion=dict(cfg["motion"], acc_limit=0)), "play")
+    check("acc_limit 0: no --acc-limit, the player uses the profile's per-joint limits", "--acc-limit" not in ap, ap)
+    check("acc_limit 300 is passed (the player caps with it)", "--acc-limit" in a and a[a.index("--acc-limit") + 1] == "300", a)
     bad = dict(cfg, robot=dict(cfg["robot"], target="real"))
     try:
         build_argv(bad, "play")

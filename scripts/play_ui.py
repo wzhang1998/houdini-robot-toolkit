@@ -46,7 +46,7 @@ report = {report}               # save the JSON report next to the clip
 [motion]
 speed = {speed}                 # fraction of the velocity/acceleration envelope; 0.3 default, 1.0 = as designed
 rate_hz = {rate_hz}               # ServoJ rate
-acc_limit = {acc_limit}             # deg/s^2 at speed 1.0
+acc_limit = {acc_limit}             # deg/s^2 cap on the profile's per-joint limits; 0 = the profile's (FR20: J1-3 300, J4-6 600)
 move_vel = {move_vel}               # MoveJ % to the clip's first pose. Hardware: 10
 confirm = true              # hardware only: ask before moving (keep true)
 
@@ -127,7 +127,7 @@ class App:
             "report": tk.BooleanVar(value=c.get("report", True)),
             "speed": tk.DoubleVar(value=m.get("speed", 0.3)),
             "rate_hz": tk.DoubleVar(value=m.get("rate_hz", 125)),
-            "acc_limit": tk.DoubleVar(value=m.get("acc_limit", 150)),
+            "acc_limit": tk.DoubleVar(value=m.get("acc_limit", 0)),
             "move_vel": tk.DoubleVar(value=m.get("move_vel", 20)),
             "joint": tk.IntVar(value=w.get("joint", 6)),
             "amp_deg": tk.DoubleVar(value=w.get("amp_deg", 5)),
@@ -166,7 +166,7 @@ class App:
         mf = ttk.LabelFrame(f, text="Motion", padding=6)
         mf.grid(row=row, column=0, columnspan=4, sticky="we", pady=6)
         for i, (key, label, width) in enumerate((("speed", "Speed (0-1)", 6), ("move_vel", "MoveJ %", 6),
-                                                 ("acc_limit", "Acc limit deg/s²", 7), ("rate_hz", "Rate Hz", 6))):
+                                                 ("acc_limit", "Acc cap (0 = profile)", 7), ("rate_hz", "Rate Hz", 6))):
             ttk.Label(mf, text=label).grid(row=0, column=2 * i, sticky="e", padx=(8 if i else 0, 2))
             ttk.Entry(mf, textvariable=self.v[key], width=width).grid(row=0, column=2 * i + 1, sticky="w")
         ttk.Checkbutton(mf, text="Record actual joints", variable=self.v["record"]).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))

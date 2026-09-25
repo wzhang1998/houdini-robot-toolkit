@@ -179,8 +179,8 @@ else:
                 cum, lambda c, R=retime_topp, p=path, f=fps: R.frames(c, p, f), need_of)
             # Those frames are estimates. The real ones -- keyed, eased, cooked
             # -- are measured and fitted below, after keying.
-            planner = "velocity + acceleration (plan %g deg/s^2, robot %g; corners fitted in %d pass%s)" % (
-                plan_acc[0], acc[0], passes, "" if passes == 1 else "es")
+            planner = "velocity + acceleration (plan %s deg/s^2, robot %s; corners fitted in %d pass%s)" % (
+                "/".join("%g" % x for x in plan_acc), "/".join("%g" % x for x in acc), passes, "" if passes == 1 else "es")
 
         total = cum[-1]
         f0 = int(hou.playbar.frameRange()[0])

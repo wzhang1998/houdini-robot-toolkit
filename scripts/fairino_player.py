@@ -712,7 +712,8 @@ def main(argv=None):
     ap.add_argument("--vel-limit", type=float, default=None,
                     help="deg/s for every joint; default: the profile's per-joint max_velocity_deg_s")
     ap.add_argument("--acc-limit", type=float, default=None,
-                    help="deg/s^2 for every joint, before --speed; default: the profile's max_acceleration_deg_s2")
+                    help="deg/s^2: caps every joint's limit (never raises it), before --speed; "
+                         "default: the profile's per-joint max_acceleration_deg_s2")
     ap.add_argument("--move-vel", type=float, default=None,
                     help="MoveJ speed %% to the first pose; default 20 sim, 10 hardware")
     ap.add_argument("--check", action="store_true", help="read-only: identity, errors, pose, FK vs URDF")
@@ -805,7 +806,10 @@ def main(argv=None):
         ap.error("--speed must be in (0, 1]")
     vel = [a.vel_limit] * 6 if a.vel_limit else robot_profile.velocity_limits(prof)
     vel = [v * speed for v in vel]
-    acc = [a.acc_limit] * 6 if a.acc_limit else (robot_profile.acceleration_limits(prof) or [300.0] * 6)
+    # the profile's per-joint limits; --acc-limit caps them (never raises them)
+    acc = robot_profile.acceleration_limits(prof) or [300.0] * 6
+    if a.acc_limit:
+        acc = [min(x, a.acc_limit) for x in acc]
     acc = [x * speed for x in acc]
     samples, dt, cond = condition(t, q, a.rate, vel, acc, limits)
     if cond["time_scale"] > 1.0:

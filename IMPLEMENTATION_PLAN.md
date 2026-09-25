@@ -161,10 +161,15 @@ retargeting (direct and effort) all pass their tests; every dance and
 factory clip dry-runs at time scale 1.0. Also done: the Dance Phrase HDA (make / preview / export / load phrases in
 Houdini), the clip library (search by measured labels, chain into a show
 with transitions, checked like any clip), the Houdini round trip (exact,
-through FK). Open: Ruckig (a new dependency, ask first); FR20 jerk limit
-unknown; the real acceleration limit (`accel_probe.py` on hardware) -- it
-decides how dynamic phrases can be; per-bar label accuracy; an OAK-D
-capture script. Fixed: the asset's Import CSV (reads the file live; works
+through FK). The real acceleration limits are measured (2026-09-25,
+`accel_ui.py`: clean to 900 deg/s^2 on every joint; planned at J1-J3 300,
+J4-J6 600) and the factories re-cooked with them against the measured
+room: dance 48/48 ok, primitives 24/50 (was 20); d32 37.6 -> 25.8 s. Open:
+the labels' calibration (motion_labels CAL) was made at 150 -- at the new
+limits the measured sequences drift (d32 generated float-slash-press-float,
+measured flick-wring-punch-slash): recalibrate; Ruckig (a new dependency,
+ask first); FR20 jerk limit unknown; J1-J3 higher once the base is fixed
+to spec; an OAK-D capture script. Fixed: the asset's Import CSV (reads the file live; works
 on locked instances; exact round trip on FR20 and UF850).
 
 ## Follow-ups: standard tools evaluation (2026-09-25)

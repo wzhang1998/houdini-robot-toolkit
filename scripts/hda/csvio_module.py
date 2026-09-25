@@ -666,13 +666,16 @@ def _cell_check(node, angles, dt, f0):
 
 
 def _acc_limits(node):
-    """Per-joint acceleration limits: the asset's Max Joint Acceleration if
-    it has one (set from the profile on a profile change), else the
-    profile's robot.max_acceleration_deg_s2, else None (no check)."""
+    """Per-joint acceleration limits: the profile's
+    robot.max_acceleration_deg_s2 (one per joint), capped by the asset's Max
+    Joint Acceleration when it has one; None without either (no check).
+    Same rule as robot_arm_module.acceleration_limits, which Retime uses."""
+    acc = robot_profile.acceleration_limits(_profile(node))
     p = _parm_upward(node, "max_acceleration")
-    if p is not None and float(p.eval()) > 0:
-        return [float(p.eval())] * NUM_JOINTS
-    return robot_profile.acceleration_limits(_profile(node))
+    cap = float(p.eval()) if p is not None else 0.0
+    if acc is None:
+        return [cap] * NUM_JOINTS if cap > 0 else None
+    return [min(a, cap) for a in acc] if cap > 0 else acc
 
 
 def _parm_upward(node, name):

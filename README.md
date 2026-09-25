@@ -459,10 +459,11 @@ Moves: kinesphere travels by IK (level x direction x reach, tool aimed out,
 down, up or at the audience), sudden jabs, proximal / distal travelling
 waves, sway, bounce, twist, look, hold. Phrases stay on the beat grid: a
 travel takes the fewest beats its distance allows at the joint limits, and
-oscillation amplitudes are capped by a / w^2. At FR20's 150 deg/s^2 a big
-move cannot be quick, so a sudden move is a short jab; with a measured,
-higher limit (`Kin(acc=...)`, see `accel_probe.py`) jabs grow with it -- at
-450 a punch phrase reaches 1.3 m/s instead of 0.6. Every phrase starts and
+oscillation amplitudes are capped by a / w^2. The limits are FR20's
+measured ones (J1-J3 300, J4-J6 600 deg/s^2, `accel_ui.py`, 2026-09-25):
+twice the manual's 150 on the big joints, four times on the wrist, so jabs
+are bigger and phrases shorter (d32: 37.6 s -> 25.8 s); `Kin(acc=...)`
+plans with others. Every phrase starts and
 ends at rest in HOME, plays at its own speed and clears the cell.
 
 `scripts/motion_labels.py` measures the efforts back from any clip --
@@ -765,10 +766,13 @@ the CSV I/O asset's embedded copy has no Python module, and Retime, Export and I
 - **Joint acceleration: a clip that passes Pre-Flight plays at its own
   speed.** Houdini used to budget velocity only, and the player — which
   also holds an acceleration limit — slowed the whole clip for one sharp
-  stretch (the FR20 test clip x8.5). Now one limit, profile
-  `robot.max_acceleration_deg_s2` (FR20 150: the only figure in Fairino's
-  manual, for extended load; no zero-load figure is published) capped by
-  Max Joint Acceleration, is used by all three. Pre-Flight's **Robot
+  stretch (the FR20 test clip x8.5). Now one set of limits, profile
+  `robot.max_acceleration_deg_s2` -- one per joint; FR20 measured on the arm
+  with `accel_ui.py` (2026-09-25): clean to 900 on every joint, planned at
+  J1-J3 300 (they shake; the base is below spec), J4-J6 600 -- capped by the
+  asset's Max Joint Acceleration, is used by all three (the player's
+  `--acc-limit` / playback.toml `acc_limit` is a cap too; 0 = the
+  profile's). Pre-Flight's **Robot
   playback** check runs the player's own conditioning and warns when it
   would slow the clip (a warning, not a block: slower is safe). **Retime** plans velocity and acceleration together
   (`scripts/retime_topp.py`, at rest at both ends), then measures the frames

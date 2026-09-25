@@ -14,7 +14,7 @@ report = true               # save the JSON report next to the clip:   <clip>_<t
 [motion]
 speed = 0.3                 # fraction of the velocity/acceleration envelope; 1.0 = as designed in Houdini
 rate_hz = 125               # ServoJ rate
-acc_limit = 150             # deg/s^2 at speed 1.0 -- FR20 profile, what Houdini checks
+acc_limit = 0               # deg/s^2 cap on the profile's per-joint limits; 0 = the profile's (FR20: J1-3 300, J4-6 600, measured)
 move_vel = 20               # MoveJ % to the clip's first pose. Hardware: 10
 confirm = true              # hardware only: ask before moving (keep true)
 

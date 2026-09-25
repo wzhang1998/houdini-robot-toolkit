@@ -563,15 +563,26 @@ def velocity_limits(node):
 
 
 def acceleration_limits(node):
-    """Per-joint acceleration limits, deg/s^2: the asset's Max Joint
-    Acceleration (set from the profile on a profile change, editable), else
-    the profile's, else None. Retime plans with it and Pre-Flight checks it;
-    fairino_player.py defaults to the profile's value, so keep them equal."""
+    """Per-joint acceleration limits, deg/s^2: the profile's
+    (robot.max_acceleration_deg_s2, one per joint), capped by the asset's
+    Max Joint Acceleration -- like velocity. Its default is the profile's
+    highest, so it does not bind unless lowered. None without a profile
+    figure. Retime plans with these, Pre-Flight checks them, and
+    fairino_player.py plays with the profile's -- the same numbers."""
     asset = asset_of(node)
+    acc = _robot_profile().acceleration_limits(profile(asset))
     p = asset.parm("max_acceleration")
-    if p is not None and float(p.eval()) > 0:
-        return [float(p.eval())] * profile(asset)["robot"]["num_joints"]
-    return _robot_profile().acceleration_limits(profile(asset))
+    cap = float(p.eval()) if p is not None else 0.0
+    if acc is None:
+        return [cap] * profile(asset)["robot"]["num_joints"] if cap > 0 else None
+    return [min(a, cap) for a in acc] if cap > 0 else acc
+
+
+def acc_limit(node, joint):
+    """Joint `joint`'s (1-based) acceleration limit, for the Retime folder's
+    read-only per-joint display; 0 without one."""
+    acc = acceleration_limits(node)
+    return acc[joint - 1] if acc else 0.0
 
 
 def profile_max_velocity(node):
