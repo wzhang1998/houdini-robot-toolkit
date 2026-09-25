@@ -25,7 +25,7 @@ python scripts/fairino_player.py --check --hardware --ip 192.168.58.2
 
 ## 1b. 回 HOME（会动，MoveJ）
 
-HOME = `[0, -90, 90, -90, -90, 0]`：大臂朝上、小臂朝前、工具朝下，TCP 在底座前约 0.85 m、高约 1.1 m。**不要回全零**：全零时 FR20 平躺，TCP 离底板只有约 8 cm。移动前会先检查从当前姿态到 HOME 的关节空间路径会不会撞到房间里的东西，会撞就拒绝执行。UI 里是"6 Go HOME"：
+HOME = `[0, -90, 90, -90, -90, 0]`：大臂朝上、小臂朝前、工具朝下，TCP 在底座前约 0.85 m、高约 1.1 m。**不要回全零**：全零时 FR20 平躺，TCP 离底板只有约 8 cm。路径检查暂停（碰撞只在 Houdini 的 Pre-Flight 里查），所以第一次回 HOME 时 MoveJ % 调低，盯着看。UI 里是"6 Go HOME"：
 
 ```bash
 python scripts/fairino_player.py --hardware --ip 192.168.58.2 --goto-home

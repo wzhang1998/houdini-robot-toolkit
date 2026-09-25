@@ -479,9 +479,11 @@ def tracking(start, samples, dt, feedback):
 def home_path_check(q_from, q_home, env_path, robot="fr20", steps=60):
     """The MoveJ to HOME, as the controller moves: every joint interpolated
     together (joint space), sampled and checked against the cell
-    (collision.py). Returns (ok, one line). No env file: (True, "not checked")."""
+    (collision.py). Returns (ok, one line). No env file: (True, "not checked").
+    ON HOLD (off unless --env is given): no tool capsule, 61 samples however
+    far the move, and the room is an estimate."""
     if not env_path or not os.path.exists(env_path):
-        return True, "no cell file; path not checked"
+        return True, "not checked (on hold; cells are checked in Houdini's Pre-Flight)"
     import collision
     model = collision.load_model(robot)
     env = collision.load_env(env_path)
@@ -717,8 +719,10 @@ def main(argv=None):
     ap.add_argument("--goto-start", action="store_true", help="only MoveJ to the clip's first pose")
     ap.add_argument("--goto-home", action="store_true",
                     help="only MoveJ to the profile's HOME pose (robot.home_deg), path checked against --env first")
-    ap.add_argument("--env", default=os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json"),
-                    help="cell file for --goto-home's path check ('' to skip)")
+    ap.add_argument("--env", default="",
+                    help="cell file (envs/*.json) to check --goto-home's joint-space path against first. "
+                         "Off by default, on hold: a hand-built check (capsules, no tool, 61 samples) against an "
+                         "estimated room -- collision is checked in Houdini's Pre-Flight for now")
     ap.add_argument("--wiggle", nargs=4, metavar=("JOINT", "AMP_DEG", "PERIOD_S", "CYCLES"),
                     help="play a generated one-joint swing from the current pose instead of a CSV")
     ap.add_argument("--record", help="write the actual joints, aligned to the clip's rows, as a CSV")
