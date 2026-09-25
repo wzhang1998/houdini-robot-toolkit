@@ -499,22 +499,49 @@ def tracking(start, samples, dt, feedback):
 # test clips, recording, read-only check
 # --------------------------------------------------------------------------
 
-def home_path_check(q_from, q_home, env_path, robot="fr20", steps=60):
-    """The MoveJ to HOME, as the controller moves: every joint interpolated
-    together (joint space), sampled and checked against the cell
-    (collision.py). Returns (ok, one line). No env file: (True, "not checked").
-    ON HOLD (off unless --env is given): no tool capsule, 61 samples however
-    far the move, and the room is an estimate."""
+def move_plan(q_from, q_to, env_path, robot="fr20"):
+    """The controller MoveJ(s) from q_from to q_to, checked against the cell
+    with move margins (safe_move.py): (waypoints ending at q_to, one line),
+    or (None, why) when no clear route is found. No env file: a single
+    unchecked move."""
     if not env_path or not os.path.exists(env_path):
-        return True, "not checked (on hold; cells are checked in Houdini's Pre-Flight)"
+        return [list(q_to)], "not checked (no --env)"
     import collision
-    model = collision.load_model(robot)
-    env = collision.load_env(env_path)
-    qs = [[a + (b - a) * k / float(steps) for a, b in zip(q_from, q_home)] for k in range(steps + 1)]
-    ts = [k * 0.1 for k in range(steps + 1)]                  # timing does not matter here:
-    zones = dict(env, objects=[o for o in env.get("objects", []) if o["role"] in ("obstacle", "keep_out")])
-    rep = collision.check(model, zones, ts, qs)               # obstacles and keep-out only
-    return rep["ok"], collision.describe(rep)
+    import safe_move
+    lim = robot_profile_limits(robot)
+    return safe_move.route(q_from, q_to, collision.load_env(env_path), collision.load_model(robot), lim)
+
+
+def robot_profile_limits(robot):
+    import robot_profile
+    prof = robot_profile.load(robot, os.path.join(os.path.dirname(HERE), "profiles"))
+    return [tuple(x) for x in prof["robot"]["limits_deg"]]
+
+
+def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label):
+    """MoveJ to target through move_plan()'s waypoints. confirm(text) -> bool
+    asks on hardware. Returns the final offset (deg) or None when refused."""
+    cur = ctrl.joints()
+    path, line = move_plan(cur, target, env_path, robot)
+    report[key + "_path"] = line
+    if path is None:
+        report["aborted"] = "%s: %s" % (label, line)
+        print("REFUSED: the move to %s -- %s" % (label, line))
+        return None
+    report[key + "_waypoints"] = [[round(x, 2) for x in w] for w in path]
+    text = ["  now       %s" % [round(x, 1) for x in cur]]
+    for k, w in enumerate(path):
+        text.append("  %-9s %s" % (label if k == len(path) - 1 else "via %d" % (k + 1), [round(x, 1) for x in w]))
+    text.append("  MoveJ at %g %%, largest joint move %.1f deg; %s"
+                % (move_vel, max(abs(x - y) for x, y in zip(cur, path[0])), line))
+    print("\n".join(text))
+    if confirm and not confirm("\n".join(text)):
+        report["aborted"] = "not confirmed"
+        return None
+    off = None
+    for w in path:
+        off = goto(ctrl, w, move_vel)
+    return off
 
 
 def wiggle_clip(q0, joint, amp_deg, period_s, cycles, limits, rate_hz=50.0):
@@ -663,10 +690,12 @@ def self_test():
           max(abs(a - b) for a, b in zip(snapped, t30)) < 1e-12, "0.0417 -> %.6f" % snapped[1])
     envp = os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json")
     if os.path.exists(envp):
-        ok_a, line_a = home_path_check([-10.6, -78.1, 97.3, -12.2, 83.3, -0.8], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
-        ok_b, line_b = home_path_check([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
-        check("path to HOME: clear from the test clip's start, refused from all-zero (arm flat on the plate)",
-              ok_a and not ok_b, "%s / %s" % (line_a, line_b))
+        path_a, line_a = move_plan([-10.6, -78.1, 97.3, -12.2, 83.3, -0.8], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
+        path_b, line_b = move_plan([102.869, -125.575, -29.215, -209.768, -63.033, 2.070],
+                                   [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
+        check("move to HOME: straight from the old test clip's start; a detour from the inside-wall clip "
+              "(its straight MoveJ passed 6 cm under the ceiling)",
+              path_a is not None and len(path_a) == 1 and path_b is not None and len(path_b) > 1, "%s / %s" % (line_a, line_b))
     uneven = [0.0, 0.05, 0.08, 0.2]
     check("uneven times are left as they are", _snap_uniform(uneven) == uneven)
     # a smooth motion that turns around must not read as a jolt: 24 fps
@@ -769,9 +798,9 @@ def main(argv=None):
     ap.add_argument("--goto-home", action="store_true",
                     help="only MoveJ to the profile's HOME pose (robot.home_deg), path checked against --env first")
     ap.add_argument("--env", default="",
-                    help="cell file (envs/*.json) to check --goto-home's joint-space path against first. "
-                         "Off by default, on hold: a hand-built check (capsules, no tool, 61 samples) against an "
-                         "estimated room -- collision is checked in Houdini's Pre-Flight for now")
+                    help="cell file (envs/*.json): every MoveJ (to a clip's start, to HOME) is checked against it "
+                         "with move margins (safe_move.py) and detoured or refused; play.py passes the lab's. "
+                         "Empty: moves unchecked")
     ap.add_argument("--wiggle", nargs=4, metavar=("JOINT", "AMP_DEG", "PERIOD_S", "CYCLES"),
                     help="play a generated one-joint swing from the current pose instead of a CSV")
     ap.add_argument("--record", help="write the actual joints, aligned to the clip's rows, as a CSV")
@@ -789,6 +818,13 @@ def main(argv=None):
     limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
     target = "hardware" if a.hardware else "sim" if a.sim else None
     report = {"profile": a.profile, "target": target}
+
+    def ask(text):
+        """Hardware without --yes: the plan on screen, then type yes."""
+        if not a.hardware or a.yes:
+            return True
+        print("HARDWARE  %s at %s" % (report.get("controller_model"), a.ip))
+        return input("Clear workspace, hand on the E-stop. Type yes to move: ").strip().lower() == "yes"
 
     def done():
         text = json.dumps(report, indent=1)
@@ -816,25 +852,11 @@ def main(argv=None):
             ap.error("profile %s has no robot.home_deg" % a.profile)
         if target is None or ctrl is None:
             ap.error("--goto-home moves the arm: say --sim or --hardware (not --dry-run)")
-        cur = ctrl.joints()
-        ok, line = home_path_check(cur, home, a.env, a.profile)
         report["home"] = home
-        report["home_path"] = line
-        if not ok:
-            report["aborted"] = "path to HOME: " + line
-            print("REFUSED: the MoveJ to HOME would " + line)
-            return done()
         move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
-        if a.hardware and not a.yes:
-            print("HARDWARE  %s at %s" % (report["controller_model"], a.ip))
-            print("  now       %s" % [round(x, 1) for x in cur])
-            print("  HOME      %s  (MoveJ at %g %%, largest joint move %.1f deg)"
-                  % ([round(x, 1) for x in home], move_vel, max(abs(x - y) for x, y in zip(cur, home))))
-            print("  path      %s" % line)
-            if input("Clear workspace, hand on the E-stop. Type yes to move: ").strip().lower() != "yes":
-                report["aborted"] = "not confirmed"
-                return done()
-        report["goto_home_off_deg"] = round(goto(ctrl, home, move_vel), 3)
+        off = move_checked(ctrl, home, a.env, a.profile, move_vel, report, "home", ask, "HOME")
+        if off is not None:
+            report["goto_home_off_deg"] = round(off, 3)
         return done()
 
     if a.wiggle:
@@ -870,23 +892,18 @@ def main(argv=None):
         ap.error("say where this goes: --sim or --hardware")
 
     move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
+    print("clip      %s\nspeed     %.0f %% of the envelope -> plays %.1f s (scale %.2f)"
+          % (report["clip"], speed * 100, cond["played_duration_s"], cond["time_scale"]))
+    off = move_checked(ctrl, samples[0], a.env, a.profile, move_vel, report, "start", ask, "start")
+    if off is None:
+        return done()
+    if a.goto_start:
+        report["goto_start_off_deg"] = round(off, 3)
+        return done()
     if a.hardware and not a.yes:
-        cur = ctrl.joints()
-        print("HARDWARE  %s at %s" % (report["controller_model"], a.ip))
-        print("  clip      %s" % report["clip"])
-        print("  speed     %.0f %% of the envelope -> plays %.1f s (scale %.2f)"
-              % (speed * 100, cond["played_duration_s"], cond["time_scale"]))
-        print("  now       %s" % [round(x, 1) for x in cur])
-        print("  start     %s  (MoveJ at %g %%, largest joint move %.1f deg)"
-              % ([round(x, 1) for x in samples[0]], move_vel,
-                 max(abs(x - y) for x, y in zip(cur, samples[0]))))
-        if input("Clear workspace, hand on the E-stop. Type yes to move: ").strip().lower() != "yes":
+        if input("At the start. Type yes to play: ").strip().lower() != "yes":
             report["aborted"] = "not confirmed"
             return done()
-
-    if a.goto_start:
-        report["goto_start_off_deg"] = round(goto(ctrl, samples[0], move_vel), 3)
-        return done()
 
     pb, start_t, feedback = play(ctrl, a.ip, samples, dt, move_vel_pct=move_vel)
     report["playback"] = pb
