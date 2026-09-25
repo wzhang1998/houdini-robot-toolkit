@@ -21,6 +21,7 @@ Only **real FR20** rows describe something the arm has actually done.
 | 2026-09-25 | At speed 1.0 the clip played at its designed length, 13.4 s, not slowed (peak J5 acceleration 148.8 of 150 deg/s^2) | the same curve's earlier export needed x8.54 | bdfa47c |
 | 2026-09-25 | Tracking after removing the controller's ~114 ms lag: max 0.80 / 0.76 deg, RMS 0.29 / 0.26 deg (speed 1.0); two runs agree within 0.23 deg, end pose 0.035 deg | raw, un-aligned error ~7 deg (all lag) | -- |
 | 2026-09-25 | Speed 0.3 run: 26.5 s (x1.97, since speed scales the acceleration limit, not the time), max 0.43 deg, RMS 0.11 deg | -- | -- |
+| 2026-09-25 16:22 | `fr20_test_inside_wall_fast.csv` (test curve inside the left wall, retimed at the measured 300/600 limits; 336 frames, 14.0 s) on the real arm: no controller error. Recorded vs commanded, lag-aligned (102 ms of clip time): max 0.85 deg (J4), RMS 0.23 deg; end pose within 0.11 deg. Video: IMG_0346.mov | -- | c7cd6ff (clip) |
 | 2026-09-25 | Room probed with the arm (`probe_ui.py`): our URDF TCP vs the controller's TCP ~1.1 mm on every point | SimMachine: 0.004 mm | c92509d, 9d73d98 |
 | 2026-09-25 | Measured room: floor, two walls (arm mounted turned 11.28 deg to the room), ceiling 2.16 m by tape; the rest from a RoomPlan scan aligned to the probed walls (agree to 0.47 deg) | an estimated room | 9d73d98, 1f9c43c |
 | 2026-09-25 | Acceleration probe (`accel_ui.py`), every joint to 900 deg/s^2 with no controller error; tracking 150 -> 900: J1 0.20 -> 0.38, J2 0.24 -> 0.49, J3 0.26 -> 0.63, J4 0.30 -> 0.69, J5 0.29 -> 0.67, J6 0.38 -> 1.34 deg. J1-J3 visibly shake (arm + plywood base) | planned at 150 on every joint | 074bdd0, 0087660 |
@@ -93,6 +94,9 @@ matching Houdini viewport capture from the same angle, and list them here.
 
 | File | Where | What |
 |---|---|---|
+| IMG_0346.mov (Wenyi's phone, Downloads; 1280x720, 23 s, handheld) | real FR20, 2026-09-25 16:14 | `fr20_test_inside_wall_fast.csv` playing (re-shoot on a tripod planned) |
+| IMG_0345.jpg (Downloads) | real FR20 lab | the lab: arm, TV wall, control cart |
+| tests/csv/fr20_test_inside_wall_fast_actual_hardware_20260925-162248.csv (local, gitignored) | real FR20 | the recorded joints of that run |
 | docs/images/portfolio/review_contact_sheet_1600.jpg | Houdini (OpenGL, clean) | the review contact sheet, 1600 px: 98 clips, rejected framed red |
 | geo/review/contact_sheet.png | Houdini | every clip, one frame, rejected framed red |
 | geo/review/page_*.mp4, overview.mp4 | Houdini | clip review videos |
