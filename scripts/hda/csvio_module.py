@@ -781,9 +781,11 @@ def _preflight_checks(node, data):
     elif pb["scale_needed"] > 1.001:
         unit = "deg/s^2" if pb["kind"] == "acceleration" else "deg/s"
         lim = pb["acc_limit"] if pb["kind"] == "acceleration" else data["vel_limits"][pb["joint"] - 1]
-        out.append((False, "FAIL", "Robot playback",
+        # advisory, not blocking: the player conditions the clip and slows it
+        # as a whole to stay within the limits -- safe, just slower
+        out.append((True, "WARN", "Robot playback",
                     "plays %.2fx slower than designed: J%d %s %.1fx its %g %s at frame %d "
-                    "-- Retime, or smooth the path there"
+                    "-- the player slows the whole clip; Retime, or smooth the path there"
                     % (pb["scale_needed"], pb["joint"], pb["kind"], pb["ratio"], lim, unit, pb["frame"])))
     else:
         out.append((True, "OK", "Robot playback",
@@ -901,10 +903,8 @@ def _preflight_failures(data):
     if wv and wv[3] > 1.0:
         fails.append("Joint velocity: J%d at %.1f deg/s exceeds its %.0f (frame %d)"
                      % (wv[1], wv[2], data["vel_limits"][wv[1] - 1], wv[0]))
-    pb = data.get("playback")
-    if pb and "error" not in pb and pb["scale_needed"] > 1.001:
-        fails.append("Robot playback: %.2fx slower than designed (J%d %s, frame %d)"
-                     % (pb["scale_needed"], pb["joint"], pb["kind"], pb["frame"]))
+    # Robot playback is not a blocking reason: the player slows the clip to
+    # fit the limits (export reports it as a warning)
     cell = data.get("cell")
     if cell and "ok" in cell and not cell["ok"]:
         fails.append("Cell: %s (frame %d)" % (cell["line"].split(" at frame")[0],
@@ -1051,6 +1051,12 @@ def export_animation(kwargs):
         msg += "\n".join(limit_hits[:15])
         if len(limit_hits) > 15:
             msg += "\n... and %d more" % (len(limit_hits) - 15)
+    pb = data.get("playback")
+    if pb and "error" not in pb and pb["scale_needed"] > 1.001:
+        sev = hou.severityType.Warning
+        msg += ("\n\nROBOT PLAYBACK: plays %.2fx slower than designed (J%d %s, frame %d) -- "
+                "the player slows the whole clip to stay within the limits. Retime to fix."
+                % (pb["scale_needed"], pb["joint"], pb["kind"], pb["frame"]))
     if speed_hits:
         sev = hou.severityType.Warning
         msg += "\n\nSPEED WARNINGS above %d%% of each joint's limit (%s deg/s) (%d):\n" % (

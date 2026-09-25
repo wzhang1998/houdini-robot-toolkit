@@ -682,7 +682,7 @@ validates exactly what ships.
 | Angle continuity — any step over 180° | **FAIL** |
 | Unwrap enabled | **FAIL** |
 | Joint velocity vs profile max | **FAIL** |
-| Robot playback: the player would slow the clip (acceleration) | **FAIL** |
+| Robot playback: the player would slow the clip (acceleration) -- safe, the player slows the whole clip; the export message says by how much | warn |
 | Cell: a link or the tool within an obstacle's margin, inside a keep-out zone, the TCP too fast in a slow zone or outside the work zone (Setup > Cell Environment) | **FAIL** |
 | Wrist branch resolved | warn |
 | Frame range vs playbar | warn |
@@ -742,12 +742,16 @@ deadlocks scripted and bridge-driven runs.
   `robot.max_acceleration_deg_s2` (FR20 150: the only figure in Fairino's
   manual, for extended load; no zero-load figure is published) capped by
   Max Joint Acceleration, is used by all three. Pre-Flight's **Robot
-  playback** check runs the player's own conditioning and fails when it
-  would slow the clip. **Retime** plans velocity and acceleration together
+  playback** check runs the player's own conditioning and warns when it
+  would slow the clip (a warning, not a block: slower is safe). **Retime** plans velocity and acceleration together
   (`scripts/retime_topp.py`, at rest at both ends), then measures the frames
   as the player will and slows only where they still break the robot's
   limit, verified on cooked frames; any small remainder is a uniform
-  stretch shown in the status line. Its Max Velocity / Max Acceleration are
+  stretch shown in the status line. Last, the KEYED frames -- eased, cooked
+  in order -- are measured with Pre-Flight's own check and the plan slowed
+  until they pass ("verified on the keyed frames" in the status line): the
+  fit's measure read a few % under Pre-Flight's, which left a retimed FR20
+  clip at 1.04x (J4 acceleration by the wrist). Its Max Velocity / Max Acceleration are
   read-only: robot limit x Safety. Keep **Resample Length** fine (5 mm on
   FR20): the goal curve is followed as a polyline, and at 5 cm its corners,
   amplified by the wrist near its singularity, cost the FR20 clip 30 s

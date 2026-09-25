@@ -177,42 +177,10 @@ else:
                        P.need_profile(ts, qs, 125.0, v, a))
             cum, passes, _ok = retime_topp.fit(
                 cum, lambda c, R=retime_topp, p=path, f=fps: R.frames(c, p, f), need_of)
-
-            def _cook(c, R=retime_topp, f=fps, n=NS, prog=prog, src=src, extract=extract, axis_of=axis_of,
-                      memo=memo, aik=aik, key_prev=key_prev):
-                ts, qs = [], []
-                for fi, x in enumerate(R.frame_u(c, f)):
-                    prog.set(min(1.0, x / n))
-                    a = extract(src.geometry(), axis_of)
-                    if qs:
-                        a = [p + (b - p) - 360.0 * round((b - p) / 360.0) for p, b in zip(qs[-1], a)]
-                    ts.append(fi / f)
-                    qs.append(a)
-                    if memo is not None and aik is not None and aik.geometry().findGlobalAttrib("ik_q"):
-                        memo[key_prev] = list(aik.geometry().attribValue("ik_q"))
-                return ts, qs
-
-            cum, rounds, fitted_ok = retime_topp.fit(cum, _cook, need_of, max_iter=4)
-            # What the local fit leaves is small (a few %); moving the frames
-            # shifts where they fall on each corner, so it does not always
-            # close. Finish with the stretch the player would apply -- here,
-            # where it shows -- and verify on the cooked frames again.
-            uniform = 1.0
-            for _ in range(3):
-                if fitted_ok:
-                    break
-                _s = fairino_player.limiting(*_cook(cum), 125.0, _velocity_limits(node, geo), acc)["scale_needed"]
-                if _s <= 1.0:
-                    fitted_ok = True
-                    break
-                uniform *= _s * 1.01
-                cum = [c * _s * 1.01 for c in cum]
-            if mod is not None and hasattr(mod, "clear_ik_memo"):
-                mod.clear_ik_memo(geo)
-            planner = "velocity + acceleration (plan %g deg/s^2, robot %g; corners fitted in %d + %d pass%s%s%s)" % (
-                plan_acc[0], acc[0], passes, rounds, "" if rounds == 1 else "es",
-                ", then x%.3f overall" % uniform if uniform > 1.0 else "",
-                "" if fitted_ok else " -- NOT converged, see Pre-Flight")
+            # Those frames are estimates. The real ones -- keyed, eased, cooked
+            # -- are measured and fitted below, after keying.
+            planner = "velocity + acceleration (plan %g deg/s^2, robot %g; corners fitted in %d pass%s)" % (
+                plan_acc[0], acc[0], passes, "" if passes == 1 else "es")
 
         total = cum[-1]
         f0 = int(hou.playbar.frameRange()[0])
@@ -230,56 +198,95 @@ else:
         ease_out = max(0.0, _value(node, geo, "retime_ease_out", 0.0))
         note = ""
 
-        if int(node.parm("retime_mode").eval()) == 0:
-            # Preserve Duration: keep the existing frame count and only
-            # REDISTRIBUTE time, so hard stretches get more frames and easy
-            # ones fewer. Time-optimal mode instead runs everything up to the
-            # limit, which shortens the clip -- useful for cycle time, but not
-            # what you want when the motion is already within limits.
-            nframes = max(1, f1 - f0)
-            want = nframes / fps
-            # the ramps take (in + out) / 2 of extra time; the plan gets the rest
-            covered = (ease_in + ease_out) / 2.0
-            if covered > want / 2.0:
-                k = (want / 2.0) / covered
-                ease_in, ease_out, covered = ease_in * k, ease_out * k, want / 2.0
-            if total > 1e-9:
-                scale = (want - covered) / total
-                if scale < 1.0 and acc:
-                    # squeezing would break the limits: lengthen instead
-                    nframes = max(1, int(math.ceil(retime_ease.eased_duration(total, ease_in, ease_out) * fps)))
-                    note = "; lengthened from %d frames to stay within the limits" % (f1 - f0 + 1)
-                else:
-                    cum = [c * scale for c in cum]
-                    total = cum[-1]
-        else:
-            nframes = max(1, int(math.ceil(retime_ease.eased_duration(total, ease_in, ease_out) * fps)))
-
-        prog.deleteAllKeyframes()
-        k_index = 0
-        for fi in range(nframes + 1):
-            tt = retime_ease.source_time(fi / fps, total, ease_in, ease_out)
-            if tt >= total:
-                u = 1.0
+        # Fit on what the robot will actually play: the keyed frames, eased,
+        # cooked in order (as Recache does), measured as the player measures
+        # them (need_profile), and slowed locally where they still break a
+        # limit. Measuring anything else misleads: the player resamples the
+        # whole clip on a grid set by its length, so the same curve reads a
+        # few % differently in a clip of another length -- frames fitted
+        # before the ease was added passed, then failed Pre-Flight at 1.04x
+        # (J4 acceleration by the wrist). A uniform slow-down does not
+        # converge either: it moves the grid again (1.04x became 1.18x).
+        lengthen = False
+        verify = ""
+        rounds = 0
+        for attempt in range(8):
+            if int(node.parm("retime_mode").eval()) == 0:
+                # Preserve Duration: keep the existing frame count and only
+                # REDISTRIBUTE time, so hard stretches get more frames and easy
+                # ones fewer. Time-optimal mode instead runs everything up to the
+                # limit, which shortens the clip -- useful for cycle time, but not
+                # what you want when the motion is already within limits.
+                nframes = max(1, f1 - f0)
+                want = nframes / fps
+                # the ramps take (in + out) / 2 of extra time; the plan gets the rest
+                covered = (ease_in + ease_out) / 2.0
+                if covered > want / 2.0:
+                    k = (want / 2.0) / covered
+                    ease_in, ease_out, covered = ease_in * k, ease_out * k, want / 2.0
+                if total > 1e-9:
+                    scale = (want - covered) / total
+                    if (scale < 1.0 and acc) or lengthen:
+                        # squeezing would break the limits: lengthen instead
+                        nframes = max(1, int(math.ceil(retime_ease.eased_duration(total, ease_in, ease_out) * fps)))
+                        note = "; lengthened from %d frames to stay within the limits" % (f1 - f0 + 1)
+                    else:
+                        cum = [c * scale for c in cum]
+                        total = cum[-1]
             else:
-                while k_index < NS - 1 and cum[k_index + 1] <= tt:
-                    k_index += 1
-                span = cum[k_index + 1] - cum[k_index]
-                frac = 0.0 if span <= 0 else (tt - cum[k_index]) / span
-                u = min(1.0, (k_index + frac) * du)
-            key = hou.Keyframe()
-            key.setFrame(f0 + fi)
-            key.setValue(u)
-            key.setExpression("linear()", hou.exprLanguage.Hscript)
-            prog.setKeyframe(key)
+                nframes = max(1, int(math.ceil(retime_ease.eased_duration(total, ease_in, ease_out) * fps)))
 
+            prog.deleteAllKeyframes()
+            k_index = 0
+            for fi in range(nframes + 1):
+                tt = retime_ease.source_time(fi / fps, total, ease_in, ease_out)
+                if tt >= total:
+                    u = 1.0
+                else:
+                    while k_index < NS - 1 and cum[k_index + 1] <= tt:
+                        k_index += 1
+                    span = cum[k_index + 1] - cum[k_index]
+                    frac = 0.0 if span <= 0 else (tt - cum[k_index]) / span
+                    u = min(1.0, (k_index + frac) * du)
+                key = hou.Keyframe()
+                key.setFrame(f0 + fi)
+                key.setValue(u)
+                key.setExpression("linear()", hou.exprLanguage.Hscript)
+                prog.setKeyframe(key)
+
+            if not acc:
+                break
+            if mod is not None and hasattr(mod, "clear_ik_memo"):
+                mod.clear_ik_memo(geo)
+            vt, vq = [], []
+            for fi in range(nframes + 1):
+                a = extract(src.geometryAtFrame(f0 + fi), axis_of)
+                if vq:
+                    a = [pv + (b - pv) - 360.0 * round((b - pv) / 360.0) for pv, b in zip(vq[-1], a)]
+                vt.append(fi / fps)
+                vq.append(a)
+            if mod is not None and hasattr(mod, "clear_ik_memo"):
+                mod.clear_ik_memo(geo)
+            bad = [(retime_ease.source_time(t, total, ease_in, ease_out), n)
+                   for t, n in need_of(vt, vq) if n > 1.0]
+            if not bad:
+                verify = "; keyed frames fitted in %d round%s" % (rounds, "" if rounds == 1 else "s")
+                break
+            if attempt == 7:
+                _s = fairino_player.limiting(vt, vq, 125.0, _velocity_limits(node, geo), acc)["scale_needed"]
+                verify = "; keyed frames NOT converged: plays %.2fx slower, see Pre-Flight" % _s
+                break
+            cum = retime_topp.stretch(cum, bad)
+            total = cum[-1]
+            rounds += 1
+            lengthen = True
         fend = f0 + nframes
         if node.parm("retime_set_range").eval():
             hou.playbar.setFrameRange(f0, fend)
             hou.playbar.setPlaybackRange(f0, fend)
 
-        node.parm("retime_status").set("Retimed to %d frames (%d-%d), %s, ease %g / %g s%s"
-                                       % (nframes + 1, f0, fend, planner, ease_in, ease_out, note))
+        node.parm("retime_status").set("Retimed to %d frames (%d-%d), %s, ease %g / %g s%s%s"
+                                       % (nframes + 1, f0, fend, planner, ease_in, ease_out, note, verify))
         if hou.isUIAvailable():
             hou.ui.displayMessage(
                 "Retimed to %d frames (%d-%d) at %g%% of each joint's limit (%s deg/s).\n"
