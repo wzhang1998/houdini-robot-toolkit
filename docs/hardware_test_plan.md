@@ -95,9 +95,9 @@ python scripts/probe_ui.py
 
 | 名字 | 点 |
 |---|---|
-| `floor:plane` | 地面 3 个点，散开 |
-| `wall_tv:plane` | 电视墙 3 个点 |
-| `partition_left:plane` | 左侧隔断 3 个点 |
+| `floor:level` | 地面 3 个点，散开；法兰面尽量放平（倾斜时边缘先着地，读数偏高） |
+| `wall_tv:wall` | 电视墙，沿墙水平方向散开 2–3 个点（按竖直墙拟合） |
+| `partition_left:wall` | 左侧隔断，同上 |
 | `control_cart:box` | 红色小车台面 4 个角 |
 | `operator:cylinder` | 操作员站位的地面，绕一圈 4–5 个点 |
 | `stage:point` | 表演区域的几个角，仅作参考 |

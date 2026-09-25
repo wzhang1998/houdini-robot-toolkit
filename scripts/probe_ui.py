@@ -42,8 +42,8 @@ import probe_env  # noqa: E402
 
 POINTS = os.path.join(ROOT, "envs", "volvox_lab_points.json")
 ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
-NEED = {"plane": 3, "box": 3, "cylinder": 3, "point": 1, "bottom": 1, "top": 1}
-PRESETS = ["floor:plane", "wall_tv:plane", "partition_left:plane", "control_cart:box",
+NEED = {"plane": 3, "wall": 2, "level": 1, "box": 3, "cylinder": 3, "point": 1, "bottom": 1, "top": 1}
+PRESETS = ["floor:level", "wall_tv:wall", "partition_left:wall", "control_cart:box",
            "control_cart:bottom", "operator:cylinder", "stage:point"]
 
 
@@ -152,7 +152,7 @@ class App:
                   command=self.record).grid(row=0, column=2, padx=6)
         ttk.Button(rf, text="Undo last", command=self.undo).grid(row=0, column=3)
         ttk.Button(rf, text="Delete selected", command=self.delete).grid(row=0, column=4, padx=4)
-        ttk.Label(rf, text="kinds: plane (3+ spread wide, a 4th to check the fit), box (3+ top corners; :bottom one on its base "
+        ttk.Label(rf, text="kinds: wall (vertical, 2+ along it), level (floor, 1+), plane (any tilt, 3+ spread), box (3+ top corners; :bottom one on its base "
                            "if not on the floor), cylinder (3+ round its foot), point",
                   foreground="#555").grid(row=1, column=0, columnspan=5, sticky="w", pady=(2, 0))
         root.bind("<Return>", lambda e: self.record())
@@ -218,8 +218,13 @@ class App:
         lines = []
         for n, c, need in group_status(self.data["points"]):
             state = "ok" if c >= need else "needs %d more" % (need - c)
+            pts = [p["tcp_m"] for p in self.data["points"] if p["name"] == n]
+            if n.endswith(":wall") and c >= 2:
+                w = EFP.fit_wall(pts)[1]
+                if w < EFP.MIN_WIDTH_M:
+                    state = "points too close along the wall (%.2f m): spread them out" % w
             if n.endswith(":plane") and c >= 3:
-                w = EFP.plane_width([p["tcp_m"] for p in self.data["points"] if p["name"] == n])
+                w = EFP.plane_width(pts)
                 if w < EFP.MIN_WIDTH_M:
                     state = "points in a line (%.2f m wide): spread them out" % w
             lines.append("%s  %d/%d %s" % (n, c, need, state))

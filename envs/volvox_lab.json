@@ -2,20 +2,21 @@
  "schema": "motionlab.env/1",
  "name": "volvox_lab",
  "frame": "FR20 base (URDF): Z up from the base's mounting face; the arm's zero pose points along -X, which is the robot's working front; metres",
- "source": "ESTIMATED from photos, 2026-09-24/25. Orientation corroborated by a photo of the arm at tests/csv/fr20_test.csv's first pose (commit 01b95f2: J1 -10.6, J2 -78.1, J3 97.3): the forearm points away from the control cart towards the TV wall, slightly to the robot's right (the AC unit) -- so the working front (-X) faces the TV wall, +Y is the robot's right. Distances are still guesses (+-0.3 m): measure with scripts/probe_env.py -> scripts/env_from_points.py.",
+ "source": "MEASURED 2026-09-25 with scripts/probe_ui.py on the real FR20: floor (level), left partition and TV wall (vertical fits), ceiling by tape (2.16 m). The room is square (walls 90.5 deg apart) and turned ~11 deg from the robot's axes. Still ESTIMATED: tv, furniture_back, plant, chairs (re-placed against the measured TV wall), shelves_right, control_cart (known wrong), operator zones, base_plate. The first estimate was from photos, 2026-09-24.",
  "margin_m": 0.05,
  "objects": [
   {
    "name": "floor",
+   "role": "obstacle",
+   "note": "level, at the one floor point probed with the flange flat (tilt 2 deg): z -0.0048. The two taken with the flange tilted ~7 deg read 1-2 cm high (the rim touches first) -- a pointed probe tool would remove this. The floor cannot be above the plate the base stands on (z 0).",
    "type": "halfspace",
    "normal": [
-    0,
-    0,
-    1
+    0.0,
+    0.0,
+    1.0
    ],
-   "offset": -0.02,
-   "role": "obstacle",
-   "note": "base stands on a ~2 cm plywood plate"
+   "offset": -0.0048,
+   "measured": true
   },
   {
    "name": "base_plate",
@@ -36,38 +37,36 @@
   },
   {
    "name": "ceiling",
+   "role": "obstacle",
+   "note": "tape-measured 2.16 m above the floor, 2026-09-25 -- the raised arm reaches 2.16 m: this plane is in play",
    "type": "halfspace",
    "normal": [
-    0,
-    0,
-    -1
+    -0.0,
+    -0.0,
+    -1.0
    ],
-   "offset": -2.6,
-   "role": "obstacle",
-   "note": "beams / projector mount, ~2.6 m above the plate"
+   "offset": -2.1552,
+   "measured": "tape"
   },
   {
    "name": "wall_tv",
-   "type": "box",
-   "center": [
-    -2.7,
-    -0.0,
-    1.3
-   ],
-   "size": [
-    0.2,
-    6.0,
-    2.7
-   ],
    "role": "obstacle",
-   "note": "carved panel wall with the TV"
+   "note": "carved panel wall with the TV; vertical fit, probed 2026-09-25 (rms 6.4 mm)",
+   "type": "halfspace",
+   "normal": [
+    0.980679,
+    -0.195625,
+    0.0
+   ],
+   "offset": -1.76355,
+   "measured": true
   },
   {
    "name": "tv",
    "type": "box",
    "center": [
-    -2.55,
-    -0.1,
+    -1.7692,
+    -0.1098,
     1.55
    ],
    "size": [
@@ -75,39 +74,39 @@
     1.5,
     0.9
    ],
-   "role": "obstacle"
+   "role": "obstacle",
+   "yaw_deg": -11.28,
+   "note": "on the TV wall; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
   },
   {
    "name": "furniture_back",
    "type": "box",
    "center": [
-    -2.25,
-    0.2,
+    -1.2248,
+    1.3413,
     0.45
    ],
    "size": [
     0.6,
-    3.6,
+    1.2,
     0.9
    ],
    "role": "obstacle",
-   "note": "drawer cart, AC unit, heater, side table in front of the wall"
+   "note": "drawer cart / AC / heater: the TV wall was touched at y -0.19..0.68 below 0.9 m, so kept only at y > 0.8; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure",
+   "yaw_deg": -11.28
   },
   {
    "name": "partition_left",
-   "type": "box",
-   "center": [
-    -0.6,
-    -2.1,
-    1.3
-   ],
-   "size": [
-    4.0,
-    0.1,
-    2.6
-   ],
    "role": "obstacle",
-   "note": "wood-framed glass partition"
+   "note": "wood-framed glass partition; vertical fit, probed 2026-09-25 (rms 2.9 mm)",
+   "type": "halfspace",
+   "normal": [
+    0.187527,
+    0.982259,
+    0.0
+   ],
+   "offset": -1.11864,
+   "measured": true
   },
   {
    "name": "shelves_right",
@@ -128,8 +127,8 @@
    "name": "chairs",
    "type": "box",
    "center": [
-    -1.5,
-    1.8,
+    -0.9489,
+    1.7022,
     0.45
    ],
    "size": [
@@ -137,19 +136,22 @@
     0.9,
     0.9
    ],
-   "role": "obstacle"
+   "role": "obstacle",
+   "yaw_deg": -11.28,
+   "note": "ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
   },
   {
    "name": "plant",
    "type": "cylinder",
    "center": [
-    -1.9,
-    1.2,
+    -1.1666,
+    1.1218,
     0.0
    ],
    "radius": 0.35,
    "height": 1.9,
-   "role": "obstacle"
+   "role": "obstacle",
+   "note": "in front of the TV wall; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
   },
   {
    "name": "control_cart",
@@ -165,7 +167,7 @@
     1.1
    ],
    "role": "obstacle",
-   "note": "red cart: laptop, E-stop"
+   "note": "red cart: laptop, E-stop. ESTIMATE, and a floor probe point at (0.72, 1.02) lies inside it: its place is wrong -- measure"
   },
   {
    "name": "operator",
@@ -198,17 +200,18 @@
    "name": "stage",
    "type": "box",
    "center": [
-    -0.7,
-    -0.3,
-    1.15
+    -0.4659,
+    0.2619,
+    1.0026
    ],
    "size": [
-    2.6,
-    3.2,
-    2.3
+    2.2136,
+    2.2686,
+    2.0052
    ],
    "role": "work",
-   "note": "where the TCP performs"
+   "note": "where the TCP performs: room-aligned, 0.15 m inside the measured walls, 0.15 m under the ceiling",
+   "yaw_deg": -11.28
   }
  ]
 }

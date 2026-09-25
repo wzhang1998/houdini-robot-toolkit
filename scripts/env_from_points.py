@@ -5,7 +5,11 @@
 Points are grouped by name "object:kind" (probe_env.py's prompt):
 
     plane      >= 3 points -> halfspace, least-squares fit, oriented so the
-               robot's shoulder is on the free side (walls, floor, ceiling)
+               robot's shoulder is on the free side (any tilt)
+    wall       >= 2 points (3 to check) -> a VERTICAL halfspace: a line fit
+               seen from above -- few points, spread along the wall
+    level      >= 1 point (3 to check) -> a HORIZONTAL halfspace at their
+               mean height (a floor; a ceiling or table top above the shoulder)
     box        >= 3 top corners (+ optional "object:bottom" points; default
                the floor) -> box, yaw from the smallest-area rectangle
     cylinder   >= 3 points round its foot -> cylinder (height: an
@@ -82,6 +86,35 @@ def plane_width(pts):
 MIN_WIDTH_M = 0.3                   # plane points narrower than this: warn
 
 
+def fit_wall(pts):
+    """A vertical plane: a least-squares line through the points seen from
+    above, normal towards SHOULDER. Returns (geo, horizontal spread m)."""
+    c = _mean(pts)
+    sxx = sum((p[0] - c[0]) ** 2 for p in pts)
+    syy = sum((p[1] - c[1]) ** 2 for p in pts)
+    sxy = sum((p[0] - c[0]) * (p[1] - c[1]) for p in pts)
+    a = 0.5 * math.atan2(2 * sxy, sxx - syy)          # direction of the line
+    d = (math.cos(a), math.sin(a))
+    n = [-d[1], d[0], 0.0]
+    off = n[0] * c[0] + n[1] * c[1]
+    if n[0] * SHOULDER[0] + n[1] * SHOULDER[1] < off:
+        n, off = [-n[0], -n[1], 0.0], -off
+    rms = math.sqrt(sum((n[0] * p[0] + n[1] * p[1] - off) ** 2 for p in pts) / len(pts))
+    along = [d[0] * p[0] + d[1] * p[1] for p in pts]
+    return ({"type": "halfspace", "normal": [round(n[0], 6), round(n[1], 6), 0.0], "offset": round(off, 5),
+             "_fit_rms_m": round(rms, 5), "_n": len(pts)}, max(along) - min(along))
+
+
+def fit_level(pts):
+    """A horizontal plane at the points' mean height, solid on the side away
+    from SHOULDER (a floor below, a ceiling or table top above)."""
+    z = sum(p[2] for p in pts) / len(pts)
+    rms = math.sqrt(sum((p[2] - z) ** 2 for p in pts) / len(pts))
+    up = SHOULDER[2] > z
+    return {"type": "halfspace", "normal": [0.0, 0.0, 1.0 if up else -1.0], "offset": round(z if up else -z, 5),
+            "_fit_rms_m": round(rms, 5), "_n": len(pts)}
+
+
 def fit_box(top, bottom_z):
     """Smallest-area rectangle round the top points' footprint (0.25 deg steps)."""
     best = None
@@ -151,6 +184,11 @@ def shapes(points, floor_z):
             n, off, rms = fit_plane(pts)
             out[name] = {"type": "halfspace", "normal": n, "offset": off, "_fit_rms_m": round(rms, 5),
                          "_width_m": round(plane_width(pts), 4), "_n": len(pts)}
+        elif kind == "wall" and len(pts) >= 2:
+            geo, spread = fit_wall(pts)
+            out[name] = dict(geo, _width_m=round(spread, 4))
+        elif kind == "level" and len(pts) >= 1:
+            out[name] = fit_level(pts)
         elif kind == "box" and len(pts) >= 3:
             bottom = groups.get((name, "bottom"))
             out[name] = fit_box(pts, min(p[2] for p in bottom) if bottom else floor_z)
@@ -183,7 +221,7 @@ def merge(env, new):
         if geo.get("_width_m") is not None and geo["_width_m"] < MIN_WIDTH_M:
             lines[-1] += ("  -- WARNING: %s's points are nearly in a line (%.2f m wide), its tilt is not "
                           "measured; spread them out" % (name, geo["_width_m"]))
-        elif geo.get("_n") == 3:
+        elif geo.get("_n") == 3 and "_fit_rms_m" in geo and geo["_fit_rms_m"] < 1e-9:
             lines[-1] += "  (3 points: an exact fit, nothing to check it by -- a 4th point gives a residual)"
         elif "_fit_rms_m" in geo:
             lines[-1] += "  (fit rms %.1f mm)" % (1000 * geo["_fit_rms_m"])
@@ -299,6 +337,19 @@ def self_test():
     check("... and the change line warns", any("in a line" in m for m in msg), "; ".join(msg))
     spread = [{"name": "floor:plane", "tcp_m": p} for p in ([0.0, 1.2, 0.0], [0.8, -1.0, 0.0], [-1.0, 0.0, 0.0])]
     check("a triangle of floor points is wide", shapes(spread, 0.0)["floor"].get("_width_m", 0) > 1.0)
+    # walls are vertical, floors level: fitting them so needs fewer points and
+    # stops a narrow take tilting them (the real TV-wall take: 0.17 m across,
+    # read as leaning 3.9 deg)
+    tvw = [{"name": "wall_tv:wall", "tcp_m": p} for p in
+           ([-1.71796, 0.35703, 0.77859], [-1.66866, 0.67874, 0.75272], [-1.83939, -0.18924, 0.29644])]
+    w = shapes(tvw, 0.0)["wall_tv"]
+    check("a wall fit is vertical and faces the robot", w["type"] == "halfspace" and w["normal"][2] == 0.0
+          and w["normal"][0] > 0.9 and -1.9 < w["offset"] < -1.7, "%s" % w)
+    check("... its spread is measured along the floor", w["_width_m"] > 0.8, "%.2f m" % w["_width_m"])
+    lv = shapes([{"name": "floor:level", "tcp_m": p} for p in
+                 ([0.09903, 1.22593, 0.00989], [0.71598, 1.02004, 0.01836], [-0.29773, 0.80754, -0.0048])], 0.0)["floor"]
+    check("a level fit is horizontal, at the points' mean height, solid below",
+          lv["normal"] == [0.0, 0.0, 1.0] and abs(lv["offset"] - 0.00782) < 1e-4, "%s" % lv)
     # the ceiling is out of reach: a tape-measured height above the measured
     # floor, parallel to it
     tilted = [{"name": "floor:plane", "tcp_m": p} for p in
