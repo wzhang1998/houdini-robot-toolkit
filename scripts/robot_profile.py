@@ -105,6 +105,13 @@ def _check_profile(p, fp):
                              % (fp, len(a), n))
         if not all(x > 0 for x in avals):
             raise ValueError("%s: robot.max_acceleration_deg_s2 must be positive" % fp)
+    jk = p["robot"].get("max_jerk_deg_s3")
+    if jk is not None:
+        jvals = jk if isinstance(jk, list) else [jk]
+        if isinstance(jk, list) and len(jk) != n:
+            raise ValueError("%s: robot.max_jerk_deg_s3 has %d entries, expected %d" % (fp, len(jk), n))
+        if not all(x > 0 for x in jvals):
+            raise ValueError("%s: robot.max_jerk_deg_s3 must be positive" % fp)
 
 
 def acceleration_limits(prof):
@@ -116,6 +123,16 @@ def acceleration_limits(prof):
         return None
     n = prof["robot"]["num_joints"]
     return [float(x) for x in a] if isinstance(a, list) else [float(a)] * n
+
+
+def jerk_limits(prof):
+    """Per-joint jerk limits, deg/s^3, from robot.max_jerk_deg_s3, or None
+    (FR20: Fairino publishes none)."""
+    j = prof["robot"].get("max_jerk_deg_s3")
+    if j is None:
+        return None
+    n = prof["robot"]["num_joints"]
+    return [float(x) for x in j] if isinstance(j, list) else [float(j)] * n
 
 
 def velocity_limits(prof):

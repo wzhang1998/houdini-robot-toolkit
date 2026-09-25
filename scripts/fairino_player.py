@@ -75,7 +75,27 @@ def load_csv(path):
         raise TrajectoryError("%s: missing columns %s" % (path, missing))
     t = [float(r["time_s"]) for r in rows]
     q = [[float(r[n]) for n in names] for r in rows]
-    return t, q
+    return _snap_uniform(t), q
+
+
+def _snap_uniform(t):
+    """Exact frame times when the CSV's are a fixed rate rounded to 4
+    decimals (the asset writes %.4f: 1/24 s -> 0.0417). The rounding
+    jitters every interval by up to 0.1 %, and acceleration from second
+    differences amplifies that: a factory clip made to play at its own
+    speed read x1.027 from its CSV. Uneven times are left alone."""
+    n = len(t)
+    if n < 3:
+        return t
+    # least-squares interval through t[0]: the end times are rounded too, so
+    # (t[-1] - t[0]) / (n - 1) drifts past the tolerance on a long clip
+    dt = sum(i * (t[i] - t[0]) for i in range(n)) / float(sum(i * i for i in range(n)))
+    if dt > 0 and all(abs(t[i] - (t[0] + i * dt)) < 1e-4 for i in range(n)):
+        fps = round(1.0 / dt)
+        if fps and abs(1.0 / dt - fps) < 0.01:          # a whole frame rate: 24, 25, 30 ...
+            dt = 1.0 / fps
+        return [t[0] + i * dt for i in range(n)]
+    return t
 
 
 def validate(t, q, limits):
@@ -569,6 +589,13 @@ def self_test():
     p = Path(t, q)
     check("path passes through every sample",
           max(abs(a - b) for ti, qi in zip(t, q) for a, b in zip(p.at(ti), qi)) < 1e-9)
+    t30 = [i / 24.0 for i in range(30)]
+    rounded = [float("%.4f" % x) for x in t30]           # 1.2083 at the end: v40_line's case
+    snapped = _snap_uniform(rounded)
+    check("24 fps times written with 4 decimals are read back exact",
+          max(abs(a - b) for a, b in zip(snapped, t30)) < 1e-12, "0.0417 -> %.6f" % snapped[1])
+    uneven = [0.0, 0.05, 0.08, 0.2]
+    check("uneven times are left as they are", _snap_uniform(uneven) == uneven)
     # a smooth motion that turns around must not read as a jolt: 24 fps
     # samples of 20 sin(2 pi t) have a true peak acceleration of 20 (2 pi)^2
     tt = [i / 24.0 for i in range(49)]

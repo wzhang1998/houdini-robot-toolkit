@@ -112,7 +112,19 @@ stays within the velocity / acceleration / jerk limits; the manifest lists
 rejected variants with the reason.
 **Tests**: Schema validation; limit check on every clip; round-trip clip →
 Houdini import → same poses.
-**Status**: Not Started
+**Status**: In Progress — `scripts/motion_clip.py` (schema, from_csv /
+to_csv, validate, safety measured as the player plays it, jerk where the
+profile has a limit: UF850 28647 deg/s^3 from UFACTORY, FR20 none
+published; manifest) and `scripts/clip_factory.py` (primitive x style ->
+Stage 2 measures -> continuous IK -> the Retime pipeline -> clip) pass
+their tests. `scenes/FR20_clip_factory.hiplc` (built by
+`build_factory_scene.py`): 50 variants in 18 s in parallel (76 s serial),
+manifest 30 ok / 20 rejected (16 unreachable with their tool direction, 4
+branch flips); all 30 ok clips dry-run at time scale 1.0 in the player.
+Found on the way: CSV times written with 4 decimals jittered the player's
+accelerations (one clip read x1.027) -- the player now snaps fixed-rate
+times. Open: Ruckig (a new dependency -- ask first), the Houdini import
+round-trip, filtering with the baked atlas instead of direct measures.
 
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config

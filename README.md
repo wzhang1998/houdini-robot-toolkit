@@ -20,6 +20,7 @@ names — see [Profiles drive the asset](#profiles-drive-the-asset).
 | `assets/fbx/` | Source geometry |
 | `assets/fairino_description/` | FR20 URDF and link STLs, copied unmodified from FAIR-INNOVATION/frcobot_ros2 (`fairino_description/`), which declares no license; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
 | `tests/csv/` | Reference fixtures for export/import validation |
+| `docs/images/` | Pictures the README shows |
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
 
@@ -339,6 +340,34 @@ sample it: `f@headroom = volumesample(1, "headroom", @P);` in a wrangle with
 `atlas_check.py` compares 200 random voxels with a direct measurement at
 their centres (exact), checks beyond-reach is 0 and the shoulder singularity
 above the base reads 0, and that every viewer cooks.
+
+## Motion clips and the clip factory
+
+A **clip** (`scripts/motion_clip.py`) is one JSON file shaped like ROS
+`JointTrajectory` — `points: [{t, q}]`, `joint_names` — plus the TCP path
+(URDF FK), bounds, tags, the style that made it, and a **safety** block
+measured the way `fairino_player.py` plays it: peaks per joint, the playback
+time scale (1.0 = plays at its own speed), jerk against the profile's limit
+where it has one, `ok` and the `reasons` when not. `from_csv()` turns an
+asset export into a clip; `to_csv()` gives the player's input back;
+`write_manifest(dir)` lists every clip with ok / rejected and why.
+
+The **factory** (`scripts/clip_factory.py`) makes clips from a primitive
+(line, circle, figure-8) and a style (size, centre, plane, tool direction,
+safety): it checks the path against the Stage 2 measures (reachable with the
+tool direction, clear of the wrist singularity), solves IK continuously,
+times it with the Retime pipeline (velocity + acceleration, corners fitted
+on the frames) and writes the clip — rejected ones too, with the reason.
+`wedge(n)` draws n variants from a fixed seed.
+
+```
+hython scripts/build_factory_scene.py --cook
+```
+
+builds `scenes/FR20_clip_factory.hiplc` and runs its TOP network: a Wedge of
+50 variants, one out-of-process Python work item each (18 s for all 50),
+then the manifest in `geo/clips/manifest.json`. Last run: 30 ok, 16
+unreachable with their tool direction, 4 branch flips.
 
 ## Playback on a Fairino arm
 

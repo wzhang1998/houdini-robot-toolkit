@@ -33,7 +33,8 @@
     "max_velocity_deg_s": 180.0,
 
     "_comment_acceleration": "UFACTORY's 'Guide to run robotic arm at the maximum speed' (docs.supportarticle.ufactory.cc): joint speed 0-180 deg/s, joint acceleration 1146 deg/s^2 (20 rad/s^2), jerk 28647 deg/s^3, for the series, not per model. td-robot-twin's Go worker had used 1000. Houdini (Retime, Pre-Flight) reads it.",
-    "max_acceleration_deg_s2": 1146.0
+    "max_acceleration_deg_s2": 1146.0,
+    "max_jerk_deg_s3": 28647.0
   },
 
   "rig": {
