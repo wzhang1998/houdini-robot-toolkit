@@ -85,14 +85,21 @@ frames. Retime's Max Velocity / Max Acceleration are read-only displays of
 limit x Safety. Not yet run on hardware.
 
 ## Stage 2: Capability atlas
-**Goal**: FR20 reachability, manipulability, joint-limit margin and speed
-headroom baked as VDB fields over the workspace, via PDG, readable by other
-SOPs (path tools, simulations) as constraints.
-**Success Criteria**: Field values at 200 random sample points match a direct
-Stage 1 solve within one voxel; a documented bake time and resolution.
-**Tests**: Point-sample comparison against direct IK; known unreachable
-regions (inside the base, beyond 1854 mm) read unreachable.
-**Status**: Not Started
+**Goal**: FR20 reachability, singularity distance, joint-limit margin and
+speed headroom baked as volumes over the workspace, via PDG, readable by
+other SOPs (path tools, simulations) as constraints.
+**Success Criteria**: Field values at 200 random voxels match a direct
+measurement at their centres; beyond the reach reads unreachable; a
+singular region reads 0 headroom; documented bake time and resolution; a
+way to look at it in Houdini.
+**Tests**: `python scripts/capability.py` (FK-made targets reachable, headroom
+= brute-force worst direction, ~0 at wrist / elbow singularities, limit
+margin); `hython scripts/atlas_check.py` after `build_atlas_scene.py --bake`.
+**Status**: In Progress — core, PDG bake (10 cm: 43x34x43, 89 s of work in
+23 s over 8 work items), merge, viewers (half shell + headroom slice) and
+both test scripts pass. Next: sample the atlas on robot_arm's goal curve
+(colour the curve by headroom before solving); Capability mode bake timing;
+finer voxels; tool length from the asset's tool.
 
 ## Stage 3: Motion clip contract + PDG factory
 **Goal**: A clip format (JointTrajectory-shaped JSON: times, joint positions,
