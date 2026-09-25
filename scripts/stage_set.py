@@ -81,7 +81,9 @@ def build(facing=FACING_DEG, source=SOURCE, out_clips=OUT_CLIPS, out_csv=OUT_CSV
         s = c.setdefault("safety", {})
         s["ok"], s["reasons"] = ok, reasons
         if rep:
-            s["collision"], s["min_clearance_m"] = C.describe(rep), rep["min_clearance_m"]
+            # as the factories write them: the room, and the arm to itself
+            s["collision"], s["min_clearance_m"] = C.describe(rep), rep["min_env_clearance_m"]
+            s["min_self_clearance_m"] = rep["min_self_clearance_m"]
         M.save(c, os.path.join(out_clips, c["id"] + ".json"))
         if ok:
             M.to_csv(c, os.path.join(out_csv, c["id"] + ".csv"))
