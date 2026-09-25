@@ -11,6 +11,8 @@ press Record (or Enter). Points go to the same file probe_env.py writes
     Live         the arm's TCP by this toolkit's URDF and by the controller,
                  and how far apart they are (the FK cross-check, every pose)
     Objects      how many points each object has and how many its fit needs
+    Ceiling      out of reach: its height above the floor by tape, kept in the
+                 points file; the fit makes it a plane parallel to the floor
     Preview fit  what env_from_points.py would change, without writing
     Write env    fit and write the env file (the old one kept as .bak)
 
@@ -82,9 +84,9 @@ def group_status(points):
     return [(n, count[n], NEED.get(n.partition(":")[2] or "point", 1)) for n in order]
 
 
-def preview(env, points):
+def preview(env, points, ceiling_height_m=None):
     """What Write env would do: (change lines, validation errors). env is untouched."""
-    return EFP.update_env(copy.deepcopy(env), points)
+    return EFP.update_env(copy.deepcopy(env), points, ceiling_height_m)
 
 
 def load_ip():
@@ -106,6 +108,7 @@ class App:
                   "points": tk.StringVar(value=POINTS),
                   "env": tk.StringVar(value=ENV),
                   "name": tk.StringVar(value=PRESETS[2]),
+                  "ceiling": tk.StringVar(value=""),
                   "live": tk.BooleanVar(value=True)}
 
         f = ttk.Frame(root, padding=10)
@@ -119,6 +122,13 @@ class App:
         ttk.Entry(f, textvariable=self.v["ip"], width=18).grid(row=r, column=1, sticky="w")
         ttk.Label(f, text="Tool length m").grid(row=r, column=2, sticky="e")
         ttk.Entry(f, textvariable=self.v["tool_len"], width=7).grid(row=r, column=3, sticky="w")
+        r += 1
+        ttk.Label(f, text="Ceiling m").grid(row=r, column=0, sticky="w")
+        ce = ttk.Entry(f, textvariable=self.v["ceiling"], width=7)
+        ce.grid(row=r, column=1, sticky="w")
+        ce.bind("<FocusOut>", lambda e: self._set_ceiling())
+        ttk.Label(f, text="height above the floor, by tape (out of reach); empty = keep the env's",
+                  foreground="#555").grid(row=r, column=1, columnspan=3, sticky="w", padx=(70, 0))
         r += 1
         for key, label in (("points", "Points file"), ("env", "Env file")):
             ttk.Label(f, text=label).grid(row=r, column=0, sticky="w")
@@ -189,6 +199,8 @@ class App:
             with open(p) as fh:
                 self.data = json.load(fh)
             self.v["tool_len"].set(self.data.get("tool_len_m", 0.0))
+        h = self.data.get("ceiling_height_m")
+        self.v["ceiling"].set("" if h is None else "%g" % h)
         self._refresh()
 
     def _save(self):
@@ -211,7 +223,29 @@ class App:
                 if w < EFP.MIN_WIDTH_M:
                     state = "points in a line (%.2f m wide): spread them out" % w
             lines.append("%s  %d/%d %s" % (n, c, need, state))
+        if self.data.get("ceiling_height_m"):
+            lines.append("ceiling  %g m above the floor (tape)" % self.data["ceiling_height_m"])
         self.groups.config(text="Objects:  " + ("   |   ".join(lines) if lines else "none yet"))
+
+    def _set_ceiling(self):
+        """The Ceiling field -> the points file (so env_from_points.py uses it too)."""
+        t = self.v["ceiling"].get().strip()
+        try:
+            h = float(t) if t else None
+        except ValueError:
+            self.status.config(text="Ceiling: a height in metres, or empty")
+            return False
+        if h is not None and not 1.5 < h < 10.0:
+            self.status.config(text="Ceiling %g m? Enter the height above the floor in metres" % h)
+            return False
+        if self.data.get("ceiling_height_m") != h:
+            if h is None:
+                self.data.pop("ceiling_height_m", None)
+            else:
+                self.data["ceiling_height_m"] = h
+            self._save()
+            self._refresh()
+        return True
 
     def _say(self, text):
         self.log.insert("end", text + "\n")
@@ -262,8 +296,10 @@ class App:
             return json.load(fh)
 
     def preview(self):
+        if not self._set_ceiling():
+            return
         try:
-            lines, errs = preview(self._env(), self.data["points"])
+            lines, errs = preview(self._env(), self.data["points"], self.data.get("ceiling_height_m"))
         except Exception as e:
             self._say("!! preview failed: %s" % e)
             return
@@ -275,9 +311,11 @@ class App:
 
     def write_env(self):
         path = self.v["env"].get()
+        if not self._set_ceiling():
+            return
         try:
             env = self._env()
-            lines, errs = EFP.update_env(env, self.data["points"])
+            lines, errs = EFP.update_env(env, self.data["points"], self.data.get("ceiling_height_m"))
         except Exception as e:
             self._say("!! fit failed: %s" % e)
             return

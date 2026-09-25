@@ -12,6 +12,10 @@ Points are grouped by name "object:kind" (probe_env.py's prompt):
                "object:top" point, else 2.0 m)
     point      kept as reference points only
 
+The ceiling is out of the arm's reach: put its tape-measured height above
+the floor in the points file as "ceiling_height_m" (probe_ui.py has a field)
+and it becomes a plane parallel to the floor.
+
 An object already in the env keeps its role, note and slow-zone speed; only
 its geometry is replaced, and the change is printed (how far the estimate
 was off). New objects are obstacles, keep_out when the name says operator /
@@ -188,12 +192,41 @@ def merge(env, new):
     return lines
 
 
-def update_env(env, points):
-    """Fit the points and merge them into env (in place). Returns
-    (change lines, validation errors); the caller writes the file."""
+def set_ceiling(env, height_m):
+    """The ceiling, out of the arm's reach, from a tape-measured height above
+    the floor: a plane parallel to the env's floor, height_m above it, solid
+    above. Returns the change line."""
+    floor = next((o for o in env["objects"] if o["name"] == "floor" and o["type"] == "halfspace"), None)
+    if floor is None:
+        n, d = [0.0, 0.0, 1.0], 0.0
+    else:
+        L = math.sqrt(sum(x * x for x in floor["normal"]))
+        n, d = [x / L for x in floor["normal"]], floor["offset"] / L
+    geo = {"type": "halfspace", "normal": [round(-x, 6) for x in n], "offset": round(-(d + height_m), 5)}
+    o = next((o for o in env["objects"] if o["name"] == "ceiling"), None)
+    if o is None:
+        o = {"name": "ceiling", "role": "obstacle"}
+        env["objects"].append(o)
+        line = "added ceiling %.2f m above the floor" % height_m
+    else:
+        line = "ceiling %.2f m above the floor (plane offset %+.0f mm)" % (
+            height_m, 1000 * (geo["offset"] - o.get("offset", geo["offset"])))
+        for k in ("center", "size", "yaw_deg", "radius", "height", "normal", "offset", "type"):
+            o.pop(k, None)
+    o.update(geo)
+    o["measured"] = "tape"
+    return line + ("" if floor else "  -- no floor in the env: assumed at the base (z = 0)")
+
+
+def update_env(env, points, ceiling_height_m=None):
+    """Fit the points and merge them into env (in place); then the ceiling
+    from its tape height, when given (after the floor, which it follows).
+    Returns (change lines, validation errors); the caller writes the file."""
     import collision as CL
     floor = next((o for o in env["objects"] if o["name"] == "floor" and o["type"] == "halfspace"), None)
     lines = merge(env, shapes(points, floor["offset"] if floor else 0.0))
+    if ceiling_height_m:
+        lines.append(set_ceiling(env, float(ceiling_height_m)))
     return lines, CL.validate_env(env)
 
 
@@ -207,8 +240,8 @@ def main(argv=None):
     if a.self_test:
         return self_test()
     env = json.load(open(a.env))
-    pts = json.load(open(a.points))["points"]
-    lines, errs = update_env(env, pts)
+    data = json.load(open(a.points))
+    lines, errs = update_env(env, data["points"], data.get("ceiling_height_m"))
     if errs:
         print("env would be invalid:", errs)
         return 1
@@ -266,6 +299,21 @@ def self_test():
     check("... and the change line warns", any("in a line" in m for m in msg), "; ".join(msg))
     spread = [{"name": "floor:plane", "tcp_m": p} for p in ([0.0, 1.2, 0.0], [0.8, -1.0, 0.0], [-1.0, 0.0, 0.0])]
     check("a triangle of floor points is wide", shapes(spread, 0.0)["floor"].get("_width_m", 0) > 1.0)
+    # the ceiling is out of reach: a tape-measured height above the measured
+    # floor, parallel to it
+    tilted = [{"name": "floor:plane", "tcp_m": p} for p in
+              ([0.0, 1.2, -0.02], [0.8, -1.0, -0.02 + 0.018], [-1.0, 0.0, -0.02 - 0.01])]
+    env3 = {"schema": "motionlab.env/1", "objects": []}
+    msg3, errs3 = update_env(env3, tilted, ceiling_height_m=2.7)
+    fl3 = next(o for o in env3["objects"] if o["name"] == "floor")
+    ce = next((o for o in env3["objects"] if o["name"] == "ceiling"), None)
+    ok = (ce is not None and not errs3 and ce["type"] == "halfspace"
+          and all(abs(a + b) < 1e-9 for a, b in zip(ce["normal"], fl3["normal"]))
+          and abs(-ce["offset"] - fl3["offset"] - 2.7) < 1e-6 and ce.get("measured") == "tape")
+    check("ceiling = floor + tape height, parallel, solid side above", ok, "%s; %s" % (ce, msg3))
+    import collision as CL
+    check("... the robot's shoulder is on its free side, a point at 2.8 m inside it",
+          CL.sdf(ce, (0.0, 0.0, 0.5)) > 2.0 and CL.sdf(ce, (0.0, 0.0, 2.8)) < 0, "")
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
