@@ -28,7 +28,7 @@ sys.path.insert(0, HERE)
 import play  # noqa: E402  (build_argv, load, CONFIG, ROOT)
 
 PLAYER = os.path.join(HERE, "fairino_player.py")
-MOVING = {"goto-start", "wiggle", "play"}
+MOVING = {"goto-start", "wiggle", "play", "home"}
 
 TEMPLATE = """# Playback settings for scripts/play.py and scripts/play_ui.py.
 # play_ui.py rewrites this file when you run a step.
@@ -98,6 +98,10 @@ def summary(text):
         line += "\nwiggle: J%d moved %.2f deg (commanded %+g)" % (wa["joint"], wa["actual_travel_deg"], wa["commanded_deg"])
     if rep.get("recorded"):
         line += "\nrecorded: " + rep["recorded"]
+    if "goto_home_off_deg" in rep:
+        line += "  |  at HOME (%.2f deg off); path %s" % (rep["goto_home_off_deg"], rep.get("home_path"))
+    elif rep.get("home_path") and rep.get("aborted"):
+        line += "\nREFUSED -- " + rep["aborted"]
     if "goto_start_off_deg" in rep:
         line += "  |  at start pose (%.2f deg off)" % rep["goto_start_off_deg"]
     return line
@@ -181,7 +185,8 @@ class App:
         bf.grid(row=row, column=0, columnspan=4, sticky="we", pady=8)
         self.buttons = []
         for step, label in (("check", "1  Check (read-only)"), ("dry-run", "2  Dry run"),
-                            ("goto-start", "3  Go to start"), ("wiggle", "4  Wiggle"), ("play", "5  Play clip")):
+                            ("goto-start", "3  Go to start"), ("wiggle", "4  Wiggle"), ("play", "5  Play clip"),
+                            ("home", "6  Go HOME")):
             b = ttk.Button(bf, text=label, command=lambda s=step: self.run(s))
             b.pack(side="left", padx=(0, 6))
             self.buttons.append(b)
@@ -251,6 +256,7 @@ class App:
             return
         if cfg["robot"]["target"] == "hardware" and step in MOVING:
             what = {"goto-start": "MoveJ to the clip's first pose",
+                    "home": "MoveJ to HOME (upper arm up, forearm forward, tool down)",
                     "wiggle": "wiggle J%d %+g deg" % (cfg["wiggle"]["joint"], cfg["wiggle"]["amp_deg"]),
                     "play": "play " + os.path.basename(cfg["clip"]["csv"])}[step]
             if not messagebox.askyesno(

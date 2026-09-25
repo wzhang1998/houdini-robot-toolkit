@@ -35,7 +35,10 @@
     "max_velocity_deg_s": [120.0, 120.0, 120.0, 180.0, 180.0, 180.0],
 
     "_comment_acceleration": "Fairino's user manual (Installation, FR20 load curve) gives one acceleration figure for FR20: with an extended load of 20-25 kg, turn on time-optimal mode and keep acceleration under 150 deg/s^2. No figure is published for the rated range; this uses 150 as the only documented number. Raise it only after measuring on the arm (player --wiggle, short clips). Houdini (Retime, Pre-Flight) and fairino_player.py all read it, so a clip that passes Pre-Flight plays at its designed speed.",
-    "max_acceleration_deg_s2": 150.0
+    "max_acceleration_deg_s2": 150.0,
+
+    "_comment_home": "HOME: upper arm up, forearm forward, tool down -- TCP ~0.85 m in front of the base, 1.1 m up, clear of the wrist singularity (J5 -90). Every dance phrase starts and ends here; fairino_player.py --goto-home goes here. NOT all zeros: at zero FR20 lies flat, TCP 8 cm above the plate.",
+    "home_deg": [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
   },
 
   "rig": {

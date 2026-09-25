@@ -29,7 +29,11 @@ label(clip, intent=None) -> dict. Pure Python. Tests: python scripts/choreo.py
 
 import math
 
-HOME = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+try:
+    import robot_profile as _RP
+    HOME = _RP.home(_RP.load("fr20")) or [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+except Exception:                               # labels still work without the profiles
+    HOME = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 MASS = [4.0, 4.0, 2.5, 1.0, 1.0, 0.6]          # rough share of the arm each joint moves
 ACTIONS = {
     "punch": (1, 1, 1), "slash": (1, 1, -1), "press": (1, -1, 1), "wring": (1, -1, -1),

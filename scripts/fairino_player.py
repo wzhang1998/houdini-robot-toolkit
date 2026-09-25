@@ -30,6 +30,7 @@ Usage:
     python scripts/fairino_player.py --check --ip IP
     python scripts/fairino_player.py clip.csv --sim --record actual.csv
     python scripts/fairino_player.py clip.csv --hardware --ip IP --goto-start
+    python scripts/fairino_player.py --hardware --ip IP --goto-home
     python scripts/fairino_player.py --hardware --ip IP --wiggle 6 5 4 2
     python scripts/fairino_player.py clip.csv --hardware --ip IP --speed 0.3 --record actual.csv
 
@@ -475,6 +476,22 @@ def tracking(start, samples, dt, feedback):
 # test clips, recording, read-only check
 # --------------------------------------------------------------------------
 
+def home_path_check(q_from, q_home, env_path, robot="fr20", steps=60):
+    """The MoveJ to HOME, as the controller moves: every joint interpolated
+    together (joint space), sampled and checked against the cell
+    (collision.py). Returns (ok, one line). No env file: (True, "not checked")."""
+    if not env_path or not os.path.exists(env_path):
+        return True, "no cell file; path not checked"
+    import collision
+    model = collision.load_model(robot)
+    env = collision.load_env(env_path)
+    qs = [[a + (b - a) * k / float(steps) for a, b in zip(q_from, q_home)] for k in range(steps + 1)]
+    ts = [k * 0.1 for k in range(steps + 1)]                  # timing does not matter here:
+    zones = dict(env, objects=[o for o in env.get("objects", []) if o["role"] in ("obstacle", "keep_out")])
+    rep = collision.check(model, zones, ts, qs)               # obstacles and keep-out only
+    return rep["ok"], collision.describe(rep)
+
+
 def wiggle_clip(q0, joint, amp_deg, period_s, cycles, limits, rate_hz=50.0):
     """One joint (1-based) goes q0 -> q0 + amp -> q0 each period, at rest at
     every return (raised cosine); every other joint holds q0. For a first
@@ -594,6 +611,12 @@ def self_test():
     snapped = _snap_uniform(rounded)
     check("24 fps times written with 4 decimals are read back exact",
           max(abs(a - b) for a, b in zip(snapped, t30)) < 1e-12, "0.0417 -> %.6f" % snapped[1])
+    envp = os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json")
+    if os.path.exists(envp):
+        ok_a, line_a = home_path_check([-10.6, -78.1, 97.3, -12.2, 83.3, -0.8], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
+        ok_b, line_b = home_path_check([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
+        check("path to HOME: clear from the test clip's start, refused from all-zero (arm flat on the plate)",
+              ok_a and not ok_b, "%s / %s" % (line_a, line_b))
     uneven = [0.0, 0.05, 0.08, 0.2]
     check("uneven times are left as they are", _snap_uniform(uneven) == uneven)
     # a smooth motion that turns around must not read as a jolt: 24 fps
@@ -692,6 +715,10 @@ def main(argv=None):
                     help="MoveJ speed %% to the first pose; default 20 sim, 10 hardware")
     ap.add_argument("--check", action="store_true", help="read-only: identity, errors, pose, FK vs URDF")
     ap.add_argument("--goto-start", action="store_true", help="only MoveJ to the clip's first pose")
+    ap.add_argument("--goto-home", action="store_true",
+                    help="only MoveJ to the profile's HOME pose (robot.home_deg), path checked against --env first")
+    ap.add_argument("--env", default=os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json"),
+                    help="cell file for --goto-home's path check ('' to skip)")
     ap.add_argument("--wiggle", nargs=4, metavar=("JOINT", "AMP_DEG", "PERIOD_S", "CYCLES"),
                     help="play a generated one-joint swing from the current pose instead of a CSV")
     ap.add_argument("--record", help="write the actual joints, aligned to the clip's rows, as a CSV")
@@ -728,6 +755,33 @@ def main(argv=None):
 
     if a.check:
         report["check"] = check(ctrl, prof)
+        return done()
+
+    if a.goto_home:
+        home = robot_profile.home(prof)
+        if home is None:
+            ap.error("profile %s has no robot.home_deg" % a.profile)
+        if target is None or ctrl is None:
+            ap.error("--goto-home moves the arm: say --sim or --hardware (not --dry-run)")
+        cur = ctrl.joints()
+        ok, line = home_path_check(cur, home, a.env, a.profile)
+        report["home"] = home
+        report["home_path"] = line
+        if not ok:
+            report["aborted"] = "path to HOME: " + line
+            print("REFUSED: the MoveJ to HOME would " + line)
+            return done()
+        move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
+        if a.hardware and not a.yes:
+            print("HARDWARE  %s at %s" % (report["controller_model"], a.ip))
+            print("  now       %s" % [round(x, 1) for x in cur])
+            print("  HOME      %s  (MoveJ at %g %%, largest joint move %.1f deg)"
+                  % ([round(x, 1) for x in home], move_vel, max(abs(x - y) for x, y in zip(cur, home))))
+            print("  path      %s" % line)
+            if input("Clear workspace, hand on the E-stop. Type yes to move: ").strip().lower() != "yes":
+                report["aborted"] = "not confirmed"
+                return done()
+        report["goto_home_off_deg"] = round(goto(ctrl, home, move_vel), 3)
         return done()
 
     if a.wiggle:

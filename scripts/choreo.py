@@ -63,7 +63,7 @@ import ur_ik  # noqa: E402
 import urdf_rig as U  # noqa: E402
 
 FPS = 24.0
-HOME = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]        # upper arm up, forearm forward, tool down
+HOME = RP.home(RP.load("fr20")) or [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]   # profile robot.home_deg
 ACTIONS = {                                           # (weight, time, space)
     "punch": (1, 1, 1), "slash": (1, 1, -1), "press": (1, -1, 1), "wring": (1, -1, -1),
     "dab": (-1, 1, 1), "flick": (-1, 1, -1), "glide": (-1, -1, 1), "float": (-1, -1, -1),

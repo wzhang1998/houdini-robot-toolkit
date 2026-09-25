@@ -105,6 +105,13 @@ def _check_profile(p, fp):
                              % (fp, len(a), n))
         if not all(x > 0 for x in avals):
             raise ValueError("%s: robot.max_acceleration_deg_s2 must be positive" % fp)
+    hm = p["robot"].get("home_deg")
+    if hm is not None:
+        if len(hm) != n:
+            raise ValueError("%s: robot.home_deg has %d entries, expected %d" % (fp, len(hm), n))
+        for k, (x, (lo, hi)) in enumerate(zip(hm, p["robot"]["limits_deg"]), start=1):
+            if not lo <= x <= hi:
+                raise ValueError("%s: robot.home_deg J%d = %g outside [%g, %g]" % (fp, k, x, lo, hi))
     jk = p["robot"].get("max_jerk_deg_s3")
     if jk is not None:
         jvals = jk if isinstance(jk, list) else [jk]
@@ -123,6 +130,13 @@ def acceleration_limits(prof):
         return None
     n = prof["robot"]["num_joints"]
     return [float(x) for x in a] if isinstance(a, list) else [float(a)] * n
+
+
+def home(prof):
+    """robot.home_deg -- the pose clips start / end at and --goto-home goes
+    to -- or None when the profile names none."""
+    h = prof["robot"].get("home_deg")
+    return [float(x) for x in h] if h is not None else None
 
 
 def jerk_limits(prof):

@@ -26,6 +26,7 @@ STEPS = [
     ("goto-start", "MoveJ to the clip's first pose"),
     ("wiggle", "one joint out and back from the current pose"),
     ("play", "play the clip"),
+    ("home", "MoveJ to the profile's HOME pose (path checked against the cell)"),
 ]
 
 
@@ -48,6 +49,12 @@ def build_argv(cfg, step):
     base = ["--ip", str(r["ip"]), "--profile", r.get("profile", "fr20")]
     if step == "check":
         return base + ["--check"]
+
+    if step == "home":
+        argv = base + ["--move-vel", str(m.get("move_vel", 20)), "--" + target, "--goto-home"]
+        if target == "hardware" and not m.get("confirm", True):
+            argv += ["--yes"]
+        return argv
 
     argv = list(base)
     if step == "wiggle":
@@ -149,6 +156,9 @@ def self_test():
     check("play on hardware: --hardware, speed 0.3, record, asks to confirm",
           "--hardware" in a and a[a.index("--speed") + 1] == "0.3" and "--record" in a and "--yes" not in a, a)
     a = build_argv(cfg, "wiggle")
+    ah = build_argv(cfg, "home")
+    check("home: --goto-home with the MoveJ speed, no clip",
+          "--goto-home" in ah and "--move-vel" in ah and not any(x.endswith(".csv") for x in ah), ah)
     check("wiggle takes its joint/amp/period/cycles", a[a.index("--wiggle") + 1:a.index("--wiggle") + 5] == ["6", "5", "4", "2"], a)
     bad = dict(cfg, robot=dict(cfg["robot"], target="real"))
     try:

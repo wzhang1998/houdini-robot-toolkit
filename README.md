@@ -516,6 +516,7 @@ runs:
 | `clip.csv --dry-run` | no | how much the clip is slowed to fit, peaks per joint |
 | `--check --ip IP` | no | controller model / version / errors, current pose, FK vs the URDF |
 | `clip.csv --hardware --ip IP --goto-start` | MoveJ only | reach the clip's first pose |
+| `--hardware --ip IP --goto-home` | MoveJ only | to the profile's HOME (`robot.home_deg`: upper arm up, forearm forward, tool down); the joint-space path is checked against the cell first and refused if it would hit anything. Not all zeros: at zero FR20 lies flat, 8 cm over the plate |
 | `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
 | `accel_probe.py --hardware --ip IP --joint 6 --amp 3` | small | J6 out and back at rising peak acceleration; the last level that tracks cleanly |
 | `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
