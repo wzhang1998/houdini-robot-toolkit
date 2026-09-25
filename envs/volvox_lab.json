@@ -2,7 +2,7 @@
  "schema": "motionlab.env/1",
  "name": "volvox_lab",
  "frame": "FR20 base (URDF): Z up from the base's mounting face; the arm's zero pose points along -X, which is the robot's working front; metres",
- "source": "MEASURED 2026-09-25 on the real FR20: floor (level), left partition and TV wall (vertical fits) with scripts/probe_ui.py; ceiling grid by tape (2.16 m); tv, furniture_back (side table), control_cart, shelves_right, back and right walls from a RoomPlan scan (Project-2609251250.usdz) aligned to the probed walls with scripts/scan_to_env.py (the two walls agree to 0.47 deg). The room is square and the arm is mounted turned ~11 deg on a plate that is square to it. Still ESTIMATED: plant, operator zones, base_plate size.",
+ "source": "MEASURED 2026-09-25 on the real FR20: floor (level), left partition and TV wall (vertical fits) with scripts/probe_ui.py; ceiling grid by tape (2.16 m); tv, furniture_back (side table), control_cart, shelves_right, back and right walls from a RoomPlan scan (Project-2609251250.usdz) aligned to the probed walls with scripts/scan_to_env.py (the two walls agree to 0.47 deg). The room is square and the arm is mounted turned ~11 deg on a plate that is square to it. Plants and the operator's place marked by the user on a screenshot (+-0.2 m). Still ESTIMATED: plant sizes, base_plate size.",
  "margin_m": 0.05,
  "objects": [
   {
@@ -130,19 +130,6 @@
    "note": "RoomPlan Storage0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
   },
   {
-   "name": "plant",
-   "type": "cylinder",
-   "center": [
-    -1.1666,
-    1.1218,
-    0.0
-   ],
-   "radius": 0.35,
-   "height": 1.9,
-   "role": "obstacle",
-   "note": "not in the RoomPlan scan; ESTIMATE, re-placed against the measured TV wall -- measure"
-  },
-  {
    "name": "control_cart",
    "role": "obstacle",
    "note": "red cart: laptop, E-stop; by the door behind the robot (user confirmed on the scan); RoomPlan Storage1",
@@ -171,7 +158,7 @@
    "radius": 0.4,
    "height": 2.0,
    "role": "keep_out",
-   "note": "where the operator stands, hand on the E-stop -- ESTIMATE from before the scan: the control cart is now known to be behind the robot (RoomPlan); where does the operator stand?"
+   "note": "where the operator stands, hand on the E-stop -- the operator's place confirmed by the user on the scanned room, 2026-09-25"
   },
   {
    "name": "operator_slow",
@@ -185,7 +172,7 @@
    "height": 2.4,
    "role": "slow",
    "tcp_speed_mps": 0.25,
-   "note": "ISO/TS 15066-style reduced speed near the operator -- ESTIMATE from before the scan: the control cart is now known to be behind the robot (RoomPlan); where does the operator stand?"
+   "note": "ISO/TS 15066-style reduced speed near the operator -- the operator's place confirmed by the user on the scanned room, 2026-09-25"
   },
   {
    "name": "stage",
@@ -229,6 +216,32 @@
    "offset": -2.27126,
    "measured": "scan",
    "note": "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); a glass wall: RoomPlan read the glass as a 3.55 m opening (Door0), it is solid (user) -- kept as a solid plane"
+  },
+  {
+   "name": "plant_corner",
+   "type": "cylinder",
+   "center": [
+    -1.074,
+    2.099,
+    0.0
+   ],
+   "radius": 0.3,
+   "height": 1.9,
+   "role": "obstacle",
+   "note": "plant in the front-right corner (TV wall / glass wall); position read off a Houdini screenshot the user marked, 2026-09-25 (+-0.2 m); radius and height estimated"
+  },
+  {
+   "name": "plant_by_cart",
+   "type": "cylinder",
+   "center": [
+    1.453,
+    -0.661,
+    0.0
+   ],
+   "radius": 0.3,
+   "height": 1.9,
+   "role": "obstacle",
+   "note": "plant behind the robot beside the control cart, door side; within the arm's reach; position read off a Houdini screenshot the user marked, 2026-09-25 (+-0.2 m); radius and height estimated"
   }
  ]
 }
