@@ -565,6 +565,7 @@ runs:
 | `--hardware --ip IP --goto-home` | MoveJ only | to the profile's HOME (`robot.home_deg`: upper arm up, forearm forward, tool down). Not all zeros: at zero FR20 lies flat, 8 cm over the plate. `--env envs/x.json` checks the MoveJ's path against a cell first -- on hold (no tool, coarse sampling, estimated room); collision is checked in Houdini's Pre-Flight |
 | `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
 | `accel_probe.py --hardware --ip IP --joint 6 --amp 3` | small | J6 out and back at rising peak acceleration; the last level that tracks cleanly |
+| `accel_ui.py` | small | the same in a window: checks the joint limits and the room from the current pose before anything moves (`accel_probe.py --check-only`), asks before each level on the real arm, STOP; results to `tests/accel/` |
 | `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
 
 Every move names its target, `--sim` or `--hardware`. Speed defaults to 30 %

@@ -120,16 +120,18 @@ python scripts/env_from_points.py envs/volvox_lab_points.json
 - 在 150 下，大幅动作不可能快，“突然”的动作只能是 7–10° 的小刺；
 - 在 450 下，同样的 punch 段落，TCP 速度从 0.6 m/s 提到 1.3 m/s。
 
-从最轻的 J6 开始，小幅度，逐级加速，每一级都会先问你：
+**先确认底座固定**（法奥手册：6 颗 M10、强度 ≥ 8.8 级螺栓，扭矩 ≥ 45 N·m，装在刚性、无共振的底座上，FR20 建议直接固定在地面）。大关节测试会把反作用力传到底板上。
+
+用窗口测（只动一个关节，出发前会检查关节限位和房间；真机上每一级都会先问你）：
+
+```bash
+python scripts/accel_ui.py
+```
+
+先测 J6、J5、J4（3°，手腕和姿态基本无关），再在 HOME 测 J3、J2、J1（2°，结果只适用于和测试姿态相近的姿态）。先按 **1 Check** 看预检，再按 **2 Run levels**。结果存在 `tests/accel/`。命令行版本：
 
 ```bash
 python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report accel_j6.json
-```
-
-然后依次测 J5、J4。最后测 J1–J3，幅度改成 2°：
-
-```bash
-python scripts/accel_probe.py --hardware --ip <IP> --joint 2 --amp 2 --levels 150 225 300 450 --report accel_j2.json
 ```
 
 记下每个关节 “clean up to” 的值。有抖动、异响或报错就停，那一级不算。**这些数先别改进 profile，发给我。**
