@@ -6,7 +6,7 @@ parameter expressions can call it: hou.session.joint(3).
               from /obj/CELL_CTRL's Clip; sampled at the current frame, 24 fps
     env_geo   Python SOP: the environment file as geometry, coloured by role
               (obstacle grey, keep_out red, slow orange, work green; zones
-              see-through)
+              and tall walls see-through, with solid outlines)
     capsule_geo  Python SOP: the robot's collision capsules at this frame,
               each coloured by its clearance (green far .. red at the margin),
               detail attributes min_clearance_m / nearest / violations
@@ -152,6 +152,40 @@ def _cylinder(geo, center, radius, height, cd, alpha, name, sides=24):
         _prim_attrs(geo, poly, cd, alpha, name)
 
 
+def _polyline(geo, xs, cd, name, closed=False):
+    """An opaque line (own points, so promoting Cd / Alpha to points does
+    not blend it with a see-through face). A loop repeats its first point:
+    a closed polygon would draw as a solid face."""
+    xs = list(xs) + ([xs[0]] if closed else [])
+    poly = geo.createPolygon(is_closed=False)
+    for x in xs:
+        p = geo.createPoint()
+        p.setPosition(_h(x))
+        poly.addVertex(p)
+    _prim_attrs(geo, poly, cd, 1.0, name)
+
+
+def _box_outline(geo, center, size, yaw, cd, name):
+    c, s = center, size
+    cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    k = [[(c[0] + cy * dx * s[0] / 2 - sy * dy * s[1] / 2, c[1] + sy * dx * s[0] / 2 + cy * dy * s[1] / 2,
+           c[2] + dz * s[2] / 2) for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))] for dz in (-1, 1)]
+    for ring in k:
+        _polyline(geo, ring, cd, name, closed=True)
+    for a, b in zip(k[0], k[1]):
+        _polyline(geo, (a, b), cd, name)
+
+
+def _cylinder_outline(geo, center, radius, height, cd, name, sides=48, uprights=8):
+    def at(a, z):
+        return (center[0] + radius * math.cos(a), center[1] + radius * math.sin(a), z)
+    for z in (center[2], center[2] + height):
+        _polyline(geo, [at(2 * math.pi * k / sides, z) for k in range(sides)], cd, name, closed=True)
+    for k in range(uprights):
+        a = 2 * math.pi * k / uprights
+        _polyline(geo, (at(a, center[2]), at(a, center[2] + height)), cd, name)
+
+
 def _prim_attrs(geo, prim, cd, alpha, name):
     prim.setAttribValue("Cd", cd)
     prim.setAttribValue("Alpha", alpha)
@@ -176,13 +210,22 @@ def env_geometry(geo, cell):
         if o["role"] == "obstacle" and tall:
             a = 0.22                                          # walls and shelves: see-through, so the robot shows
         n0 = len(geo.prims())
+        # a see-through face alone is all but invisible in the viewport (a
+        # zone at alpha 0.06): see-through objects also get solid outlines
+        edge = (0.8, 0.82, 0.85) if o["role"] == "obstacle" else cd
         if o["type"] == "box":
             _box(geo, o["center"], o["size"], o.get("yaw_deg", 0.0), cd, a, o["name"])
+            if a < 1.0:
+                _box_outline(geo, o["center"], o["size"], o.get("yaw_deg", 0.0), edge, o["name"])
         elif o["type"] == "cylinder":
             _cylinder(geo, o["center"], o["radius"], o["height"], cd, a, o["name"])
+            if a < 1.0:
+                _cylinder_outline(geo, o["center"], o["radius"], o["height"], edge, o["name"])
         elif o["type"] == "sphere":
             c, r = o["center"], o["radius"]
             _cylinder(geo, (c[0], c[1], c[2] - r), r, 2 * r, cd, a, o["name"])
+            if a < 1.0:
+                _cylinder_outline(geo, (c[0], c[1], c[2] - r), r, 2 * r, edge, o["name"])
         elif o["type"] == "halfspace":
             n = CL.U._normalize(o["normal"])
             if abs(n[2]) > 0.9 and n[2] > 0:                 # a floor: a slab under the plane
