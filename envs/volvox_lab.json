@@ -229,6 +229,23 @@
    "height": 1.9,
    "role": "obstacle",
    "note": "the one plant: front-right corner (TV wall / glass wall); position read off a Houdini screenshot the user marked, 2026-09-25 (+-0.2 m); radius and height estimated"
+  },
+  {
+   "name": "controller_zone",
+   "type": "box",
+   "center": [
+    -0.4018,
+    0.6083,
+    0.85
+   ],
+   "size": [
+    2.214,
+    2.964,
+    1.5
+   ],
+   "yaw_deg": -11.28,
+   "role": "work",
+   "note": "the controller's own work area (WebApp interference zone, two-point: X -1620..594, Y -964..2000, Z 100..1600 mm, 2026-09-25). Set in the room-aligned workpiece frame (base turned -11.28 deg, same origin) -- inferred, to confirm. The controller stops the arm when the TCP leaves it (auto mode), so clips and moves keep the TCP inside"
   }
  ]
 }

@@ -12,6 +12,8 @@ Clips are timed and checked in Houdini; these moves are not, so:
                        their own)
     CEILING_MARGIN_M   the ceiling
     keep-out zones     no link inside
+    work zones         the TCP stays WORK_INSET_M inside (the controller's
+                       own work area among them: it stops the arm outside)
 
 route(q_from, q_to, env) returns the straight move when it is clear, else
 one or two waypoints: fold the elbow at the current J1 (the arm lowered, so
@@ -38,6 +40,7 @@ KEEP_OWN = ("floor", "base_plate")  # contact-close by design: their own margins
 # the upper arm's root turns in place about J2, a few cm over the plate and
 # the floor whatever J2 is: only contact counts for it there
 ROOT_LINK = "upperarm_link"
+WORK_INSET_M = 0.03
 SEARCH_STEP_DEG = 6.0               # coarse sampling while searching a detour; the winner is re-checked at STEP_DEG
 
 
@@ -46,7 +49,7 @@ def move_env(env):
     base = float(env.get("margin_m", 0.05))
     objs = []
     for o in env.get("objects", []):
-        if o["role"] not in ("obstacle", "keep_out"):
+        if o["role"] not in ("obstacle", "keep_out", "work"):
             continue
         o = dict(o)
         if o["role"] == "obstacle" and o["name"] not in KEEP_OWN:
@@ -65,9 +68,14 @@ def _samples(a, b, step=STEP_DEG):
 
 def blocked(model, menv, q):
     """(link, object, clearance m) of the first violation at pose q, or None."""
-    caps, _ = C.capsules(model, q)
+    caps, tcp = C.capsules(model, q)
     base = float(menv.get("margin_m", 0.05))
     for o in menv["objects"]:
+        if o["role"] == "work":
+            out = C.sdf(o, tcp) + WORK_INSET_M
+            if out > 0:
+                return "tcp", o["name"] + " (outside)", -out
+            continue
         limit = o.get("margin_m", base) if o["role"] == "obstacle" else 0.0
         for name, a, b, r in caps:
             if name in C.FIXED_LINKS:
@@ -152,16 +160,25 @@ def self_test():
     check("the ceiling gets the ceiling margin", ceil["margin_m"] == CEILING_MARGIN_M, ceil["margin_m"])
     plate = [o for o in menv["objects"] if o["name"] == "base_plate"][0]
     check("the base plate keeps its own margin", plate.get("margin_m") == [o for o in env["objects"] if o["name"] == "base_plate"][0].get("margin_m"))
-    check("slow / work zones are not move obstacles", all(o["role"] in ("obstacle", "keep_out") for o in menv["objects"]))
+    check("slow zones are not move obstacles; work zones are kept", all(o["role"] != "slow" for o in menv["objects"])
+          and any(o["role"] == "work" for o in menv["objects"]))
+    zone = [o for o in env["objects"] if o["name"] == "controller_zone"]
+    if zone:
+        behind = [170.0, -90.0, 90.0, -90.0, -90.0, 0.0]         # HOME turned to face the cart: TCP behind the zone
+        hit = blocked(model, menv, behind)
+        check("a pose with the TCP outside the controller's work area is blocked", hit is not None and "outside" in hit[1], hit)
     # 2026-09-25: from the inside-wall test clip's pose to HOME passed 6 cm under the grid
     b = [102.869, -125.575, -29.215, -209.768, -63.033, 2.070]
     home = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
-    hit = segment_clear(model, menv, b, home)
-    check("the elbow-flip MoveJ that nearly hit the ceiling is blocked", hit is not None and hit[1][1] == "ceiling", hit)
+    no_zone = move_env(dict(env, objects=[o for o in env["objects"] if o["role"] != "work"]))
+    hit = segment_clear(model, no_zone, b, home)
+    check("the elbow-flip MoveJ that nearly hit the ceiling is blocked by the ceiling margin", hit is not None and hit[1][1] == "ceiling", hit)
+    check("... (and, with the controller's zone, by the TCP leaving it first)", segment_clear(model, menv, b, home) is not None)
     path, why = route(b, home, env, model)
-    check("... and a detour is found", path is not None and path[-1] == home, why)
+    check("... and a detour is found, or the move refused", path is None or path[-1] == home, why)
     if path:
         pts = [b] + path
+        check("the detour keeps the TCP inside the work zones", all(blocked(model, menv, w) is None for w in path))
         check("every leg of the detour is clear", all(segment_clear(model, menv, x, y) is None for x, y in zip(pts, pts[1:])))
     path, why = route(home, [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0], env, model)
     check("turning J1 alone at HOME is a straight move", path is not None and len(path) == 1, why)

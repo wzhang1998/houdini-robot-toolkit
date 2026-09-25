@@ -25,7 +25,6 @@
   "s_d14_float-float",
   "s_d15_float-float",
   "s_d16_punch-float",
-  "s_d17_punch-float-punch",
   "s_d18_slash-glide",
   "s_d19_slash-glide-slash",
   "s_d20_press-flick",
@@ -36,11 +35,9 @@
   "s_d25_float-flick-float",
   "s_d26_glide-press",
   "s_d27_glide-punch-slash-flick",
-  "s_d28_float-slash-slash-dab",
   "s_d29_dab-float",
   "s_d30_punch-float-flick",
   "s_d31_wring-dab",
-  "s_d32_float-slash-press-float",
   "s_d33_glide-dab-glide",
   "s_d35_float-press",
   "s_d36_flick-flick-press-punch",
@@ -52,25 +49,40 @@
   "s_d42_float-float-dab-slash",
   "s_d43_float-press-punch",
   "s_d44_press-punch-dab",
-  "s_d45_flick-press-flick",
-  "s_d47_wring-float-flick"
+  "s_d45_flick-press-flick"
  ],
  "dropped": [
   {
    "id": "s_d06_wring-wring",
-   "why": "cell: TCP 3 mm outside work zone stage at frame 357"
+   "why": "cell: TCP 18 mm outside work zone stage at frame 356"
   },
   {
    "id": "s_d07_wring-wring",
-   "why": "cell: TCP 20 mm outside work zone stage at frame 64"
+   "why": "cell: TCP 18 mm outside work zone stage at frame 63"
+  },
+  {
+   "id": "s_d17_punch-float-punch",
+   "why": "cell: TCP 7 mm outside work zone controller_zone at frame 267"
+  },
+  {
+   "id": "s_d28_float-slash-slash-dab",
+   "why": "cell: TCP 22 mm outside work zone controller_zone at frame 240"
+  },
+  {
+   "id": "s_d32_float-slash-press-float",
+   "why": "cell: TCP 13 mm outside work zone controller_zone at frame 246"
   },
   {
    "id": "s_d34_wring-press-slash-press",
-   "why": "cell: TCP 25 mm outside work zone stage at frame 419"
+   "why": "cell: TCP 23 mm outside work zone stage at frame 418"
   },
   {
    "id": "s_d46_wring-wring-wring",
-   "why": "cell: TCP 12 mm outside work zone stage at frame 58"
+   "why": "cell: TCP 13 mm outside work zone stage at frame 57"
+  },
+  {
+   "id": "s_d47_wring-float-flick",
+   "why": "cell: TCP 27 mm outside work zone controller_zone at frame 70"
   }
  ]
 }

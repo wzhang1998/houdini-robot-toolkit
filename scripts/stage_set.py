@@ -38,6 +38,17 @@ OUT_CLIPS = os.path.join(ROOT, "geo", "stage")
 OUT_CSV = os.path.join(ROOT, "tests", "csv", "stage")
 ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
 LIMIT_PAD_DEG = 3.0
+ZONE_INSET_M = 0.03                 # the TCP this far inside the controller's work area (as moves keep it)
+
+
+def inset_zones(env, inset=ZONE_INSET_M):
+    """The env with its work boxes shrunk by inset on every side."""
+    objs = []
+    for o in env["objects"]:
+        if o["role"] == "work" and o["type"] == "box":
+            o = dict(o, size=[max(0.0, x - 2 * inset) for x in o["size"]])
+        objs.append(o)
+    return dict(env, objects=objs)
 
 
 def turned(clip, facing):
@@ -66,7 +77,7 @@ def build(facing=FACING_DEG, source=SOURCE, out_clips=OUT_CLIPS, out_csv=OUT_CSV
     limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
     home = RP.home(prof)
     stage_home = [home[0] + facing] + list(home[1:])
-    model, env = C.load_model("fr20"), C.load_env(ENV)
+    model, env = C.load_model("fr20"), inset_zones(C.load_env(ENV))
     os.makedirs(out_clips, exist_ok=True)
     os.makedirs(out_csv, exist_ok=True)
     for f in glob.glob(os.path.join(out_clips, "*.json")) + glob.glob(os.path.join(out_csv, "*.csv")):
