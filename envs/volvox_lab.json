@@ -101,7 +101,7 @@
   {
    "name": "partition_left",
    "role": "obstacle",
-   "note": "wood-framed glass partition; vertical fit, probed 2026-09-25 (rms 2.9 mm)",
+   "note": "the wall on the robot's left (the 'glass partition' note was a photo guess); vertical fit, probed 2026-09-25 (rms 2.9 mm)",
    "type": "halfspace",
    "normal": [
     0.187527,
@@ -145,7 +145,7 @@
   {
    "name": "control_cart",
    "role": "obstacle",
-   "note": "red cart: laptop, E-stop.; RoomPlan Storage1 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)",
+   "note": "red cart: laptop, E-stop; by the door behind the robot (user confirmed on the scan); RoomPlan Storage1",
    "type": "box",
    "center": [
     1.5562,
@@ -205,7 +205,7 @@
    "yaw_deg": -11.28
   },
   {
-   "name": "scan_wall_0",
+   "name": "wall_back",
    "role": "obstacle",
    "type": "halfspace",
    "normal": [
@@ -215,10 +215,10 @@
    ],
    "offset": -1.85293,
    "measured": "scan",
-   "note": "RoomPlan Wall0+Wall4 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+   "note": "RoomPlan Wall0+Wall4 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); behind the robot, with the door (Door1) the control cart stands by"
   },
   {
-   "name": "scan_wall_1",
+   "name": "wall_right_glass",
    "role": "obstacle",
    "type": "halfspace",
    "normal": [
@@ -228,7 +228,7 @@
    ],
    "offset": -2.27126,
    "measured": "scan",
-   "note": "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+   "note": "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); a glass wall: RoomPlan read the glass as a 3.55 m opening (Door0), it is solid (user) -- kept as a solid plane"
   }
  ]
 }
