@@ -179,6 +179,27 @@ white; the TCP path coloured by intended action) -> ffmpeg burns in intent vs me
 room clearance, player scale (rejected: framed red; unreachable: a card) -> page videos per set, one
 overview video, and an ImageMagick contact sheet. Checked on 4 clips; the full set on the user's OK.
 
+## Stage 3b: a richer library (2026-09-25, from docs/motion_library_survey.md)
+**Goal**: Clips that use the whole stage and a wider vocabulary than lines,
+circles and HOME-centred phrases, placed by the atlas, not rejected by it.
+**Order** (each its own commit; new dependencies -- Ruckig, pyribs -- need
+the user's OK):
+1. Atlas placement: one score field (capability x headroom x wrist distance
+   x clearance, joint-margin threshold), eroded by a path's extent; path
+   centres and tool directions sampled from it; hub stations at several
+   levels. Success: primitive acceptance well above 24/50, coverage of the
+   stage measured before / after.
+2. Hub poses + Ruckig transitions; phrases no longer only HOME-to-HOME.
+3. Path families (Lissajous, rose, spiral, helix, waypoint splines, field
+   flow) with typed parameters (extent, pivot, entry/exit, plane,
+   orientation fixed / tangent / look-at), Choreographer-style.
+4. MAP-Elites (pyribs) over family / phrase parameters, descriptors = the
+   measured labels.
+5. Dances: motif / variation operators, Laban Shape, BPM grid; the label
+   recalibration at 300/600.
+6. Retargeting: AIST++ tests, a PCA mode; later OAK-D + motion matching.
+**Status**: Not Started (survey done)
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
