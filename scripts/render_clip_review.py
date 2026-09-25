@@ -281,7 +281,16 @@ def setup_scene(w=TILE[0], h=TILE[1], room=ROOM):
     cam.parm("winsizey").set(WINDOW)
     cam.parm("resx").set(w)
     cam.parm("resy").set(h)
-    # its headlight: a distant light riding on the camera; a soft ambient
+    viewport_look(cam)
+    return cam
+
+
+def viewport_look(cam):
+    """The viewport's lighting and background for an OpenGL render through
+    cam: its headlight (a distant light riding on the camera), a soft
+    ambient, the grey gradient behind everything."""
+    import hou
+    obj = hou.node("/obj")
     d = hou.Vector3(*HEADLIGHT_DIR).normalized()
     head = obj.createNode("hlight::2.0", "headlight")
     head.setFirstInput(cam)
@@ -308,7 +317,6 @@ def setup_scene(w=TILE[0], h=TILE[1], room=ROOM):
                              "setdetailattrib(0, 'gl_lit', 0);" % (BG_BOTTOM + BG_TOP))
     grad.setDisplayFlag(True)
     grad.setRenderFlag(True)
-    return cam
 
 
 def opengl_settings(rop):

@@ -96,6 +96,7 @@ matching Houdini viewport capture from the same angle, and list them here.
 |---|---|---|
 | IMG_0349.MOV (Downloads; 1280x720, 16 s) -- **main**; stabilised on the website as fr20-real.mp4 | real FR20, 2026-09-25 16:24 | `fr20_test_inside_wall_fast.csv` playing. A later run than the recorded one (16:22): the numbers above are from the recorded run |
 | IMG_0346.mov (Downloads; 1280x720, 23 s, handheld) -- spare | real FR20, 2026-09-25 16:14 | the same clip, an earlier run |
+| geo/review/side_by_side/inside_wall_fast_houdini.mp4 (local, geo/ is gitignored; `scripts/render_real_compare.py` remakes it) | Houdini | the same clip from the CSV, camera lined up by eye with IMG_0349; 1280x720, 30 fps, 16.0 s: CSV frame 1 held 1 s, then played by time_s (video t = 1 s + time_s), last frame held 1 s. Room outlines and zones as the review draws them; the saved scene's goal curve hidden (it is another clip's) |
 | IMG_0345.jpg (Downloads) | real FR20 lab | the lab: arm, TV wall, control cart |
 | tests/csv/fr20_test_inside_wall_fast_actual_hardware_20260925-162248.csv (local, gitignored) | real FR20 | the recorded joints of that run |
 | docs/images/portfolio/review_contact_sheet_1600.jpg | Houdini (OpenGL, clean) | the review contact sheet, 1600 px: 98 clips, rejected framed red |

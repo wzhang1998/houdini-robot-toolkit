@@ -24,9 +24,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE).replace("\\", "/")
 sys.path.insert(0, HERE)
 
-CAM_POS = (1.55, 0.55, 2.05)
-CAM_AIM = (-0.9, 0.35, 0.75)
-CAM_FOCAL = 30.0                      # a phone's main camera, 16:9 video: ~69 deg across
+CAM_POS = (1.7, -0.5, 2.2)
+CAM_AIM = (-1.0, 0.95, 0.25)
+CAM_FOCAL = 24.0                      # lined up by eye against IMG_0349.MOV, 2026-09-25
 HOLD_S = 1.0
 OUT_FPS = 30
 
@@ -55,13 +55,46 @@ def render(csv, frames_dir, frame=None, res=(1280, 720)):
     arm.parm("pose_source").set("2")                        # Imported CSV
     arm.parm("import_csv").set(csv.replace("\\", "/"))
     arm.parm("import_start").set(1)
+    # the saved scene's goal curve, targets and analysis belong to its own
+    # solve, not to the imported clip: next to the real run they would
+    # mislead. The arm only (the room is drawn below).
+    for p in arm.parms():
+        if p.name().startswith("show_") and p.name() not in ("show_robot", "show_cell"):
+            p.set(0)
+    # the room as robot_arm draws it, but see-through faces left out: the
+    # phone stood in the operator's zone, and from inside it the zone's
+    # faces tint everything. Outlines and solid objects stay.
+    if arm.parm("show_cell") is not None and arm.evalParm("show_cell"):
+        arm.parm("show_cell").set(0)
+        env = hou.node("/obj").createNode("geo", "compare_room", run_init_scripts=False)
+        sop = env.createNode("python", "room")
+        sop.parm("python").set("import sys\nsys.path.insert(0, %r)\nimport cell_sop, collision\n"
+                               "cell_sop.env_geometry(hou.pwd().geometry(), collision.load_env(%r))\n"
+                               % (ROOT + "/scripts", ROOT + "/envs/volvox_lab.json"))
+        cut = env.createNode("blast", "outlines")
+        cut.setInput(0, sop)
+        cut.parm("group").set("@Alpha<0.99")
+        cut.parm("grouptype").set(4)
+        cut.setDisplayFlag(True)
+        cut.setRenderFlag(True)
+    # out_viz may merge the scene's own input curves: show the asset alone
+    out_viz = hou.node("/obj/fr20/out_viz")
+    if out_viz is not None and out_viz.isDisplayFlagSet():
+        arm.setDisplayFlag(True)
+        arm.setRenderFlag(True)
     t, _ = P.load_csv(csv)
     last = 1 + int(round(t[-1] * hou.fps()))
     cam = hou.node("/obj").createNode("cam", "compare_cam")
-    cam.setWorldTransform(look_at(CAM_POS, CAM_AIM))
-    cam.parm("focal").set(CAM_FOCAL)
+    pos, aim, focal = CAM_POS, CAM_AIM, CAM_FOCAL
+    if os.environ.get("COMPARE_CAM"):                       # "x y z ax ay az focal", to line it up
+        v = [float(x) for x in os.environ["COMPARE_CAM"].split()]
+        pos, aim, focal = v[0:3], v[3:6], v[6]
+    cam.setWorldTransform(look_at(pos, aim))
+    cam.parm("focal").set(focal)
     cam.parm("resx").set(res[0])
     cam.parm("resy").set(res[1])
+    import render_clip_review
+    render_clip_review.viewport_look(cam)
     rop = hou.node("/out").createNode("opengl")
     rop.parm("camera").set(cam.path())
     rop.parm("tres").set(1)
