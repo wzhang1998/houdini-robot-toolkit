@@ -63,8 +63,9 @@ def clip():
 
 def q_at(frame=None):
     t, q = clip()
-    if not t:
-        return [0.0] * 6
+    if not t:                                  # no motion (a clip rejected before any): HOME, not zero (flat)
+        import robot_profile
+        return list(robot_profile.home(robot_profile.load("fr20")))
     s = ((frame if frame is not None else hou.frame()) - 1.0) / FPS
     if s <= t[0]:
         return list(q[0])

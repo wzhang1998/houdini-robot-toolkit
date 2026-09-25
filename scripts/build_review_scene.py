@@ -15,12 +15,12 @@ ffmpeg / ImageMagick):
         clips        Python Processor: a work item per clip of geo/dance and
                      geo/clips (Ids / Sets / OK Only on the node), with @id
                      @set @clip @dir @ok @nframes
-        has_motion   Split on @nframes > 0: clips rejected before any motion
-                     (unreachable) have nothing to render
-        frames       ROP OpenGL Render: the clip's frames 1-@nframes, one job per
-                     clip (all frames in one batch), the viewport's look
+        frames       ROP OpenGL Render: the clip's frames 1-@nframes, one work
+                     item per clip (single task), the viewport's look; a clip
+                     rejected before any motion renders one still (arm at
+                     HOME, the path it was asked for, unreachable part red)
         tiles        Python Script: ffmpeg burns the text in (red frame when
-                     rejected; a still card for the unreachable), writes
+                     rejected), writes
                      tile.mp4 and a poster frame posters/<id>.png
         all          Wait for All
         videos       Python Script: page videos per set, and every clip in
@@ -119,15 +119,11 @@ def build():
                                         help="Leave out the rejected clips (else rendered, framed red)")])
     gen.parm("generate").set(GENERATE % sub)
 
-    split = tops.createNode("split", "has_motion")
-    split.setInput(0, gen)
-    split.parm("splitexpression").setExpression("@nframes > 0")
-
     ren = tops.createNode("ropopengl", "frames")
-    ren.setInput(0, split, 0)
+    ren.setInput(0, gen)
     ren.parm("framegeneration").set("1")                  # frame range
     ren.parm("f1").set(1)
-    ren.parm("f2").setExpression("@nframes")
+    ren.parm("f2").setExpression("max(@nframes, 1)")      # no motion (rejected early): one still
     ren.parm("f3").set(1)
     ren.parm("singletask").set(1)                         # one work item per clip, all its frames (not an item per frame)
     ren.parm("camera").set(cam.path())
@@ -138,12 +134,8 @@ def build():
     for n, v in (("aamode", "aa4"), ("hqlighting", 1), ("shadows", 0), ("ambocclusion", 0), ("usehdr", 1)):
         ren.parm(n).set(v)
 
-    mrg = tops.createNode("merge", "with_cards")
-    mrg.setInput(0, ren)
-    mrg.setInput(1, split, 1)
-
     tiles = tops.createNode("pythonscript", "tiles")
-    tiles.setInput(0, mrg)
+    tiles.setInput(0, ren)
     tiles.parm("pdg_cooktype").set(2)                     # out of process
     tiles.parm("pythonbin").set(1)                        # PDG Python: ffmpeg, no Houdini licence per item
     tiles.parm("script").set(TILE % sub)

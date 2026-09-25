@@ -82,6 +82,19 @@ def _model():
     return model, chain, fo, vel, RP.acceleration_limits(prof)
 
 
+def reach_along(v, n=120, wrist_min=0.1):
+    """The variant's target path and, per point, whether the arm can hold
+    the tool direction there -- make()'s atlas filter, on every point:
+    [(xyz, ok)]. For showing a clip rejected before any motion was made."""
+    model, chain, fo, vel, _ = _model()
+    R = C.tool_frame(v.get("tool", (0.0, 0.0, -1.0)), v.get("roll", 0.0))
+    out = []
+    for p in path_points(v, n):
+        m = C.measure(model, chain, p, None, fo, vel, frame=R)
+        out.append((p, bool(m["reachable"]) and m["wrist"] >= wrist_min))
+    return out
+
+
 def _solve_along(model, R, pts, fo, prev, max_step):
     """IK per point, nearest branch to the previous; Rejected on no solution
     or a branch flip."""
@@ -232,6 +245,9 @@ if __name__ == "__main__":
         far = make({"id": "too_far", "primitive": "line", "center": [2.2, 0.0, 0.4], "size": 0.1}, tmp)
         check("a path beyond the reach is rejected by the atlas filter",
               not far["safety"]["ok"] and "unreachable" in far["safety"]["reasons"][0], far["safety"]["reasons"][0])
+        ra = reach_along(far["style"], 20)
+        check("a rejected clip's target path can be redrawn, its unreachable points marked",
+              len(ra) == 21 and not any(ok for _, ok in ra), "%d of %d reachable" % (sum(ok for _, ok in ra), len(ra)))
         axis = make({"id": "over_axis", "primitive": "line", "center": [0.0, 0.0, 0.8], "size": 0.3}, tmp)
         check("a line through the J1 axis, tool down, is rejected (the inner cylinder)",
               not axis["safety"]["ok"] and "atlas" in axis["safety"]["reasons"][0], axis["safety"]["reasons"][0])

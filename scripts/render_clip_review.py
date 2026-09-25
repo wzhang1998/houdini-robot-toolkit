@@ -21,7 +21,8 @@ Per clip:
              limit, peak velocity %, room clearance, the player's time scale;
              while it plays, the current bar (intended -> measured). A
              rejected clip is framed red; one rejected before any motion
-             (unreachable) is a still card saying why
+             (unreachable) is a still: the arm at HOME, the path it was
+             asked for, red where the arm cannot hold the tool direction
     poster   one labelled frame of the tile (40 % in), for the contact sheet
 
 All clips: pages (ffmpeg xstack, --grid per page), an overview (every clip
@@ -190,6 +191,17 @@ def review_path(node):
     if not path.lower().endswith(".json") or not os.path.exists(path):
         return
     clip = json.load(open(path))
+    if not clip.get("points") and (clip.get("style") or {}).get("primitive"):
+        # rejected before any motion: the path it was asked for, red where the
+        # arm cannot hold the tool direction (the factory's own check)
+        import clip_factory
+        poly = geo.createPolygon(is_closed=False)
+        for xyz, ok in clip_factory.reach_along(clip["style"], 120):
+            p = geo.createPoint()
+            p.setPosition((xyz[0], xyz[2], -xyz[1]))
+            p.setAttribValue("Cd", (0.85, 0.85, 0.85) if ok else (1.0, 0.2, 0.15))
+            poly.addVertex(p)
+        return
     b = bars(clip)
     poly = geo.createPolygon(is_closed=False)
     for pt, xyz in zip(clip["points"], clip.get("tcp") or []):
@@ -336,10 +348,12 @@ def encode_tile(item, w=TILE[0], h=TILE[1]):
     tile, poster = d + "/tile.mp4", d + "/poster.png"
     vf = tile_filter(clip, d + "/text", w, h)
     frames = sorted(glob.glob(d + "/frames/f_*.png"))
-    if frames:
+    if frames and clip.get("points"):
         start = int(os.path.basename(frames[0])[2:6])
         src = ["-framerate", "%g" % FPS, "-start_number", str(start), "-i", d + "/frames/f_%04d.png"]
-    else:                                                  # rejected before any motion: a still card
+    elif frames:                                           # rejected before any motion: its one still, 3 s
+        src = ["-loop", "1", "-framerate", "%g" % FPS, "-t", "3", "-i", frames[0]]
+    else:
         src = ["-f", "lavfi", "-i", "color=c=0x201010:s=%dx%d:d=3:r=%g" % (w, h, FPS)]
     _run([FFMPEG, "-y", "-loglevel", "error"] + src + ["-vf", vf, "-pix_fmt", "yuv420p", "-c:v", "libx264",
                                                       "-crf", "20", tile])
