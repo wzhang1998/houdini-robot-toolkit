@@ -281,11 +281,11 @@ def cell_pictures():
     end = hou.playbar.frameRange()[1]
     if ONLY == "cell_overview":
         hou.setFrame(int(end * 0.45))
-        cam = _camera("c_cell", (2.2, 3.4, -2.4), (-0.7, 0.75, 0.1), res=(1080, 1080))
+        cam = _camera("c_cell", (1.6, 3.2, 2.6), (-0.7, 0.75, 0.0), res=(1080, 1080))
         _render(cam, OUT + "/cell_overview.png", ["/obj/cell_env", "/obj/fr20", "/obj/capsules"])
     else:
         hou.setFrame(1)
-        cam = _camera("c_ghost", (1.4, 2.6, -2.6), (-0.8, 0.9, 0.0), res=(1080, 1080))
+        cam = _camera("c_ghost", (1.2, 2.6, 2.6), (-0.8, 0.9, 0.0), res=(1080, 1080))
         _render(cam, OUT + "/cell_ghosts.png", ["/obj/cell_env", "/obj/ghosts"])
 
 

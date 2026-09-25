@@ -238,15 +238,15 @@ def capsule_geo(node, frame=None):
     hard = [o for o in cell.get("objects", []) if o["role"] in ("obstacle", "keep_out")]
     worst, nearest = math.inf, ""
     for name, a, b, r in caps:
-        if name in CL.FIXED_LINKS:
-            d = math.inf
-        else:
-            d = min([CL.capsule_distance(o, a, b, r) for o in hard] or [math.inf])
+        slack = math.inf                      # clearance beyond each object's own margin
+        if name not in CL.FIXED_LINKS:
             for o in hard:
                 dd = CL.capsule_distance(o, a, b, r)
+                m = o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
+                slack = min(slack, dd - m)
                 if dd < worst:
                     worst, nearest = dd, "%s to %s" % (name, o["name"])
-        _capsule_mesh(geo, a, b, r, _clear_colour(d, margin) if d < math.inf else (0.7, 0.7, 0.75), name)
+        _capsule_mesh(geo, a, b, r, _clear_colour(slack, 0.0) if slack < math.inf else (0.7, 0.7, 0.75), name)
     geo.addAttrib(hou.attribType.Global, "min_clearance_m", 0.0)
     geo.setGlobalAttribValue("min_clearance_m", worst if worst < math.inf else -1.0)
     geo.addAttrib(hou.attribType.Global, "nearest", "")

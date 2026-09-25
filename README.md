@@ -20,6 +20,9 @@ names — see [Profiles drive the asset](#profiles-drive-the-asset).
 | `assets/fbx/` | Source geometry |
 | `assets/fairino_description/` | FR20 URDF and link STLs, copied unmodified from FAIR-INNOVATION/frcobot_ros2 (`fairino_description/`), which declares no license; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
 | `tests/csv/` | Reference fixtures for export/import validation |
+| `tests/clips/` | Sample clips (JSON) from the dance factory |
+| `tests/keypoints/` | A keypoint take (the retargeting input format) |
+| `envs/` | Cells the robot works in: obstacles, keep-out / slow / work zones |
 | `docs/images/` | Pictures the README shows |
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
@@ -366,14 +369,120 @@ hython scripts/build_factory_scene.py --cook
 
 builds `scenes/FR20_clip_factory.hiplc` and runs its TOP network: a Wedge of
 50 variants, one out-of-process Python work item each (18 s for all 50),
-then the manifest in `geo/clips/manifest.json`. Last run: 30 ok, 16
-unreachable with their tool direction, 4 branch flips.
+then the manifest in `geo/clips/manifest.json`. Last run (with the cell
+check): 20 ok; 14 unreachable with their tool direction, 11 upper arm too
+close to the floor / base plate, 3 too fast in the operator's slow zone, 2
+outside the stage.
 
 `hython scripts/render_previews.py` renders pictures of both into
 `docs/images/previews/`: the atlas from the side and from above, every
 variant's path around the robot, and a sheet of the ok clips.
 
 ![Clip library](docs/images/previews/clips_sheet.png)
+
+## The cell: collision and safety zones (real2sim)
+
+The robot works in a room, so every clip is checked against it.
+`envs/volvox_lab.json` (schema `motionlab.env/1`) lists the room's shapes
+in the robot base frame (URDF, Z up; the arm's working front is -X), each
+with a role:
+
+| Role | Rule |
+|---|---|
+| `obstacle` | no link or tool within the env's `margin_m` (per object `margin_m` overrides; the base plate: 0) |
+| `keep_out` | no link inside at all -- where the operator stands |
+| `slow` | inside it the TCP may not exceed `tcp_speed_mps` (ISO/TS 15066-style) |
+| `work` | the TCP must stay inside -- the stage |
+
+`scripts/collision.py` models FR20 as capsules fitted to its URDF meshes
+(1-3 per link, every vertex inside; a tool capsule from the asset's tool
+offset), with exact capsule-vs-shape clearance and self-collision on the
+link pairs MoveIt's SRDF rules would keep. The capsules are conservative:
+round the wrist the real flange-to-forearm gap is ~3 cm larger than they
+say, and a quarter of the configurations they flag there are within 1 cm
+on the real meshes -- the wrist folding back is a real hazard.
+
+**The room file is an estimate from one photo.** Measure it with the arm
+itself: hand-guide the tool tip onto points and record them (read-only,
+never moves the robot), then fit shapes:
+
+```
+python scripts/probe_env.py --ip IP          # prompt: wall_tv:plane, control_cart:box, operator:cylinder ...
+python scripts/env_from_points.py envs/volvox_lab_points.json
+```
+
+On SimMachine the probe's TCP (this toolkit's URDF FK) agrees with the
+controller's own to 0.004 mm. Planes need 3+ points, boxes their top
+corners (min-area yaw), cylinders 3+ points round the foot (least-squares
+circle); an existing object keeps its role and note, and the change is
+printed.
+
+Where it is used: **Pre-Flight's Cell check** (the asset's Setup > Cell
+Environment, default `$HIP/../envs/volvox_lab.json`; UF850: not applicable,
+no URDF), both clip factories, the dance generator and retargeting, and
+`scenes/FR20_cell.hiplc` (`hython scripts/build_cell_scene.py`): the room
+by role, the FR20 playing any clip CSV / JSON (`/obj/CELL_CTRL`), its
+capsules coloured by clearance, and an onion-skin view of a whole phrase
+(`/obj/ghosts`).
+
+![The cell](docs/images/previews/cell_overview.png)
+
+## Dance phrases and labels
+
+`scripts/choreo.py` writes phrases in Laban's Effort vocabulary. Each bar
+names an action -- punch, slash, press, wring, dab, flick, glide, float --
+and the four Effort axes shape how it moves:
+
+| Axis | Robot |
+|---|---|
+| Weight (strong / light) | which joints lead: whole arm (J1-J3, far kinesphere reaches) vs wrist (J4-J6, near the body) |
+| Time (sudden / sustained) | attack sharpness and tempo |
+| Space (direct / indirect) | detours and wandering harmonics |
+| Flow (bound / free) | held beats between moves vs overlapping, breathing moves |
+
+Moves: kinesphere travels by IK (level x direction x reach, tool aimed out,
+down, up or at the audience), sudden jabs, proximal / distal travelling
+waves, sway, bounce, twist, look, hold. Phrases stay on the beat grid: a
+travel takes the fewest beats its distance allows at the joint limits, and
+oscillation amplitudes are capped by a / w^2. At FR20's 150 deg/s^2 a big
+move cannot be quick, so a sudden move is a short jab; with a measured,
+higher limit (`Kin(acc=...)`, see `accel_probe.py`) jabs grow with it -- at
+450 a punch phrase reaches 1.3 m/s instead of 0.6. Every phrase starts and
+ends at rest in HOME, plays at its own speed and clears the cell.
+
+`scripts/motion_labels.py` measures the efforts back from any clip --
+proximal joint speed, acceleration over speed, TCP stroke directness,
+stillness -- the nearest action per clip and per bar, and descriptors
+(level, direction from the robot's own view, dominant joints, accents,
+loopable, start / end pose) and tags. Intent and measurement are both kept:
+all 8 single-action phrases order their efforts as intended (6/6 pairs),
+7/8 measure as their action; per bar 66/127 (short bars are noisy, and a
+sustained wave's acceleration / speed is its frequency, so float reads as
+flick).
+
+`/obj/dance` in `scenes/FR20_clip_factory.hiplc` makes 48 phrases in PDG
+(each action alone, contrasting pairs AB / ABA, random mixes: 42 s, all
+clear of the lab); `tests/clips/` and `tests/csv/dance_*.csv` hold three to
+play on the arm.
+
+![Dance phrases](docs/images/previews/dance_sheet.png)
+
+## From a person to the arm
+
+`scripts/retarget.py` takes one arm's 3D keypoints per frame
+(`motionlab.keypoints/1`, template in `tests/keypoints/`) -- an OAK-D
+body-pose capture, a BVH export, AIST++ dance data:
+
+- **direct** -- the wrist's motion 1:1 in metres in front of the robot, the
+  tool pointing outward from the shoulder (or along the smoothed forearm);
+  shrunk, then slowed, until FR20 can play it. Slow sweeps keep their size
+  and tempo (TCP within 3 mm of the target path); human-speed jabs fit only
+  at half size and 1.7x slower, and lose their punch.
+- **effort** -- the performer's Laban efforts per 2 s window, relative to
+  the take, become a choreo.py phrase: a style transfer that keeps the
+  qualities (the jabs read as punch) instead of the geometry.
+
+Smooth first: 2 mm of tracker jitter read as 9 m/s^2 at the TCP.
 
 ## Playback on a Fairino arm
 
@@ -408,6 +517,7 @@ runs:
 | `--check --ip IP` | no | controller model / version / errors, current pose, FK vs the URDF |
 | `clip.csv --hardware --ip IP --goto-start` | MoveJ only | reach the clip's first pose |
 | `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
+| `accel_probe.py --hardware --ip IP --joint 6 --amp 3` | small | J6 out and back at rising peak acceleration; the last level that tracks cleanly |
 | `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
 
 Every move names its target, `--sim` or `--hardware`. Speed defaults to 30 %
@@ -516,6 +626,8 @@ validates exactly what ships.
 | Angle continuity — any step over 180° | **FAIL** |
 | Unwrap enabled | **FAIL** |
 | Joint velocity vs profile max | **FAIL** |
+| Robot playback: the player would slow the clip (acceleration) | **FAIL** |
+| Cell: a link or the tool within an obstacle's margin, inside a keep-out zone, the TCP too fast in a slow zone or outside the work zone (Setup > Cell Environment) | **FAIL** |
 | Wrist branch resolved | warn |
 | Frame range vs playbar | warn |
 | Tracking residual vs tolerance | warn |

@@ -101,30 +101,46 @@ both test scripts pass. Next: sample the atlas on robot_arm's goal curve
 (colour the curve by headroom before solving); Capability mode bake timing;
 finer voxels; tool length from the asset's tool.
 
+## Stage 2b: The cell -- real2sim, collision, safety zones
+**Goal**: The room the robot works in, in the robot base frame, checked on
+every clip: obstacles with a margin, keep-out / slow / work zones; the arm
+as capsules from its URDF meshes; measured with the arm itself.
+**Success Criteria**: Every mesh vertex inside its capsule; capsule-box
+clearance matches brute force; floor, self-collision, obstacle, slow and
+work-zone cases caught; Pre-Flight fails a clip that hits the cell;
+touch-off points agree with the controller's TCP; the cell in Houdini.
+**Tests**: `python scripts/collision.py`, `python scripts/env_from_points.py
+--self-test`; hython: Pre-Flight on FR20 (clear), with a crate on the path
+(FAIL at frame 101), UF850 (not applicable).
+**Status**: Complete in software -- all of the above pass; probe vs
+controller TCP 0.004 mm on SimMachine; `scenes/FR20_cell.hiplc`. The room
+(`envs/volvox_lab.json`) is still an ESTIMATE from one photo, and its
+orientation (the arm's front towards the TV wall) is assumed: measure it
+with `probe_env.py` on the real arm. OAK-D point clouds as an obstacle
+source: not started.
+
 ## Stage 3: Motion clip contract + PDG factory
 **Goal**: A clip format (JointTrajectory-shaped JSON: times, joint positions,
-TCP path, style parameters, metadata — spatial bounds, duration, tags,
-safety), jerk-limited time parameterisation with Ruckig against the FR20
-limits, and a PDG network: wedge primitives × style parameters → Stage 1
-solve → filter by Stage 2 fields → write clips and a library manifest.
+TCP path, style parameters, metadata -- spatial bounds, duration, tags,
+safety), clips made in PDG from primitives and from Laban-driven dance
+phrases, labelled by measurement, checked against the robot and the cell;
+people's motion brought in.
 **Success Criteria**: A 50-variant wedge produces valid clips; every clip
-stays within the velocity / acceleration / jerk limits; the manifest lists
-rejected variants with the reason.
-**Tests**: Schema validation; limit check on every clip; round-trip clip →
-Houdini import → same poses.
-**Status**: In Progress — `scripts/motion_clip.py` (schema, from_csv /
-to_csv, validate, safety measured as the player plays it, jerk where the
-profile has a limit: UF850 28647 deg/s^3 from UFACTORY, FR20 none
-published; manifest) and `scripts/clip_factory.py` (primitive x style ->
-Stage 2 measures -> continuous IK -> the Retime pipeline -> clip) pass
-their tests. `scenes/FR20_clip_factory.hiplc` (built by
-`build_factory_scene.py`): 50 variants in 18 s in parallel (76 s serial),
-manifest 30 ok / 20 rejected (16 unreachable with their tool direction, 4
-branch flips); all 30 ok clips dry-run at time scale 1.0 in the player.
-Found on the way: CSV times written with 4 decimals jittered the player's
-accelerations (one clip read x1.027) -- the player now snaps fixed-rate
-times. Open: Ruckig (a new dependency -- ask first), the Houdini import
-round-trip, filtering with the baked atlas instead of direct measures.
+stays within the velocity / acceleration (/ jerk where known) limits and
+clears the cell; the manifest lists rejected variants with the reason;
+measured labels agree with the generator's intent on single-action
+phrases; a keypoint take becomes a playable clip.
+**Tests**: `python scripts/motion_clip.py`, `clip_factory.py`, `choreo.py`,
+`retarget.py`; `hython scripts/build_factory_scene.py --cook`.
+**Status**: In Progress -- clip contract, primitive factory (20/50 ok: 14
+unreachable, 16 cell), dance factory (48/48 ok, 42 s in PDG), measured
+labels (6/6 effort orderings, 7/8 actions per clip, 66/127 per bar), human
+retargeting (direct and effort) all pass their tests; every dance and
+factory clip dry-runs at time scale 1.0. Open: Ruckig (a new dependency,
+ask first); FR20 jerk limit unknown; the real acceleration limit
+(`accel_probe.py` on hardware) -- it decides how dynamic phrases can be;
+per-bar label accuracy; an OAK-D capture script; the Houdini import
+round-trip of a clip.
 
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config
