@@ -172,6 +172,12 @@ ask first); FR20 jerk limit unknown; J1-J3 higher once the base is fixed
 to spec; an OAK-D capture script. Fixed: the asset's Import CSV (reads the file live; works
 on locked instances; exact round trip on FR20 and UF850).
 
+Clip review (2026-09-25): scenes/FR20_review.hiplc (scripts/build_review_scene.py), the usual PDG way --
+a work item per clip -> ROP OpenGL (the user's viewport camera, headlight and grey background; the arm
+white; the TCP path coloured by intended action) -> ffmpeg burns in intent vs measured per bar, acc %,
+room clearance, player scale (rejected: framed red; unreachable: a card) -> page videos per set, one
+overview video, and an ImageMagick contact sheet. Checked on 4 clips; the full set on the user's OK.
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
