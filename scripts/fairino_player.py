@@ -753,6 +753,12 @@ def main(argv=None):
 
     pb, start_t, feedback = play(ctrl, a.ip, samples, dt, move_vel_pct=move_vel)
     report["playback"] = pb
+    if a.wiggle and feedback:
+        # A J6 wiggle turns the flange about its own axis: with no tool on it,
+        # 5 deg is next to invisible. Say what the joint actually did.
+        vals = [fq[j - 1] for _, fq in feedback]
+        report["wiggle_actual"] = {"joint": j, "commanded_deg": amp,
+                                   "actual_travel_deg": round(max(vals) - min(vals), 3)}
     if a.record:
         write_csv(a.record, record_aligned(t, cond["time_scale"], start_t, feedback))
         report["recorded"] = os.path.abspath(a.record)

@@ -93,6 +93,9 @@ def summary(text):
         line += "  |  %d sends, %d skipped, %.1f Hz, lag %s ms, tracking %s deg, controller error after %s" % (
             pb["sends"], pb["skipped"], pb["effective_send_hz"] or 0, pb.get("best_lag_ms"),
             pb.get("tracking_after_lag_max_deg"), pb.get("controller_error_after"))
+    wa = rep.get("wiggle_actual")
+    if wa:
+        line += "\nwiggle: J%d moved %.2f deg (commanded %+g)" % (wa["joint"], wa["actual_travel_deg"], wa["commanded_deg"])
     if rep.get("recorded"):
         line += "\nrecorded: " + rep["recorded"]
     if "goto_start_off_deg" in rep:
