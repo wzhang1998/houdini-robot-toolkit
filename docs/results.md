@@ -102,5 +102,6 @@ dance sheet.
 
 ## Credits
 
-To fill in: whose lab, who operated, collaborators on the installation, who
-owns the FR20.
+- **Wenyi Zhang** -- built everything (Houdini assets, IK, player, cell,
+  factories, review pipeline) and operated the robot.
+- **Volvox Labs** -- owns the FR20 and the lab space.
