@@ -169,6 +169,24 @@ python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report ac
 - `controller_error_after`：应该是 0；
 - 有没有出现 `skipped`。
 
+## 6b. 快速测试舞蹈片段（stage set）🔴
+
+`tests/csv/stage/` 里有 44 个舞蹈片段（`scripts/stage_set.py` 生成）：
+- 整体绕底座转了 −60°，面向工作区中心，都在这个方向 ±90° 以内；
+- 每个都重新检查过房间，都在工作区里；
+- **起点和终点都是同一个 stage home** `[−60, −90, 90, −90, −90, 0]`，所以片段之间切换不用移动。
+
+预览：`geo/review/overview_stage_*.mp4`、`contact_sheet_stage.png`。
+
+**第一次（只做一次）**：
+1. play_ui 选 `tests/csv/stage/_stage_home.csv`，**3 Go to start**，MoveJ 10%。
+2. 如果从别的姿态过来（比如 inside_wall 片段的姿态），直接走会把手肘在竖直状态下翻过去、离天花板只剩 6 cm。播放器现在会自动绕开：先放低上臂再翻手肘，再转过去。窗口里会列出途经点，确认后再执行。第一次看清它怎么走，手放在急停上。
+3. 如果显示 `REFUSED`：说明找不到安全路线，先在 WebApp 里手动点动到接近 stage home 的位置。
+
+**之后每个片段**：选 CSV → **2 Dry run** → **5 Play**（起点就是当前位置，不会大幅移动）。速度 0.3 → 0.6 → 1.0。开始前按 `docs/results.md` 的要求拍视频。
+
+**所有移动都会检查房间**：Go to start / Go HOME 前，播放器会按 `playback.toml` 的 `robot.env`（默认 `envs/volvox_lab.json`）检查整条 MoveJ 路径，离天花板留 0.30 m，离其他障碍留 0.10 m；不够就绕开，绕不开就拒绝。
+
 ## 7. 回看真机轨迹（不动，Houdini）
 
 Record 生成的 `*_actual_*.csv` 可以直接回放：在 robot_arm 的 **Output > Import CSV** 里选它，按 Import。现在锁定的实例也能导入，文件是实时读的。
