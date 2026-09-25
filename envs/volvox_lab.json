@@ -245,7 +245,7 @@
    ],
    "yaw_deg": -11.28,
    "role": "work",
-   "note": "the controller's own work area (WebApp interference zone, two-point: X -1620..594, Y -964..2000, Z 100..1600 mm, 2026-09-25). Set in the room-aligned workpiece frame (base turned -11.28 deg, same origin) -- inferred, to confirm. The controller stops the arm when the TCP leaves it (auto mode), so clips and moves keep the TCP inside"
+   "note": "the controller's own work area (WebApp interference zone, two-point: X -1620..594, Y -964..2000, Z 100..1600 mm, 2026-09-25). Set in the room-aligned workpiece frame (base turned -11.28 deg, same origin) -- confirmed by the user 2026-09-25. The controller stops the arm when the TCP leaves it (auto mode), so clips and moves keep the TCP inside"
   }
  ]
 }
