@@ -101,9 +101,10 @@ def _solve_along(model, R, pts, fo, prev, max_step):
     return qs
 
 
-def make(v, out_dir=None, samples=600, wrist_min=0.1, max_step_deg=20.0):
+def make(v, out_dir=None, samples=600, wrist_min=0.1, max_step_deg=20.0, env=None):
     """Run the pipeline for one variant. Returns the clip (written to
-    out_dir/<id>.json when out_dir is given)."""
+    out_dir/<id>.json when out_dir is given). env: a collision.py cell
+    (dict or path); the clip is rejected when it hits it or breaks a zone."""
     model, chain, fo, vel, acc = _model()
     safety = float(v.get("safety", 0.8))
     tool = v.get("tool", (0.0, 0.0, -1.0))
@@ -156,6 +157,17 @@ def make(v, out_dir=None, samples=600, wrist_min=0.1, max_step_deg=20.0):
         clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
         clip["meta"]["duration_s"] = round(ts[-1], 6)
         M.measure(clip)
+        if env is not None:
+            import collision as CL
+            cell = CL.load_env(env) if isinstance(env, str) else env
+            rep = CL.check(CL.load_model("fr20"), cell, ts, fq)
+            clip["safety"]["collision"] = CL.describe(rep)
+            clip["safety"]["min_clearance_m"] = rep["min_clearance_m"]
+            if not rep["ok"]:
+                clip["safety"]["ok"] = False
+                clip["safety"]["reasons"] = ["cell: " + CL.describe(rep)] + clip["safety"]["reasons"]
+        import motion_labels
+        clip["labels"] = motion_labels.label(clip)
     except Rejected as e:
         clip["safety"] = {"ok": False, "reasons": [str(e)], "playback_scale": None}
     if out_dir:
@@ -178,10 +190,12 @@ def wedge(n=50, seed=3):
         az = rnd.uniform(0, 2 * math.pi)
         tool = (math.sin(math.radians(tilt)) * math.cos(az), math.sin(math.radians(tilt)) * math.sin(az),
                 -math.cos(math.radians(tilt)))
-        r = rnd.uniform(0.2, 1.9)
-        th = rnd.uniform(-math.pi, math.pi)
+        # the stage: in front of the robot (-X, +-100 deg), 0.4 - 1.6 m up --
+        # scattered all round, half the variants hit the floor or the cart
+        r = rnd.uniform(0.4, 1.6)
+        th = math.pi + rnd.uniform(-1.75, 1.75)
         out.append({"id": "v%02d_%s" % (i, prims[i % 3]), "primitive": prims[i % 3],
-                    "center": [round(r * math.cos(th), 3), round(r * math.sin(th), 3), round(rnd.uniform(0.1, 1.0), 3)],
+                    "center": [round(r * math.cos(th), 3), round(r * math.sin(th), 3), round(rnd.uniform(0.4, 1.6), 3)],
                     "size": round(rnd.uniform(0.05, 0.35), 3), "plane": rnd.choice(("xy", "xz", "yz")),
                     "tool": [round(x, 4) for x in tool], "safety": round(rnd.uniform(0.5, 0.9), 2),
                     "tags": [prims[i % 3], "tilt%d" % int(tilt)]})

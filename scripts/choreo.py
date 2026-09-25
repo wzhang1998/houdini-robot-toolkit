@@ -261,7 +261,7 @@ def _plan(spec, kin, rng):
     t = beat                                                  # a beat of stillness first
     cur = list(HOME)
     segs = []
-    for bar in spec["bars"]:
+    for bi, bar in enumerate(spec["bars"]):
         act = bar["action"]
         eff = efforts_of(act, flow)
         moves = list(MENU[act])
@@ -271,7 +271,7 @@ def _plan(spec, kin, rng):
             # travels: two beats, more if the distance needs it
             nb = (4 if eff["time"] < 0 else 2) if kind in OSCILLATORS else 2
             t0, t1 = t, t + nb * beat
-            seg = {"t0": t0, "t1": t1, "kind": kind, "eff": eff, "act": act}
+            seg = {"t0": t0, "t1": t1, "kind": kind, "eff": eff, "act": act, "bar": bi}
             if kind.startswith("travel"):
                 target = _target(kind, eff, act, cur, kin, rng)
                 if target is None:
@@ -293,7 +293,7 @@ def _plan(spec, kin, rng):
             segs.append(seg)
             t = t1
             if flow < -0.3:                                    # bound: a held beat after every move
-                segs.append({"t0": t, "t1": t + beat, "kind": "hold", "eff": eff, "act": act,
+                segs.append({"t0": t, "t1": t + beat, "kind": "hold", "eff": eff, "act": act, "bar": bi,
                              "phase": 0.0, "beat": beat, "cap": [1e9] * 6})
                 t += beat
     # home again, then a beat of stillness
@@ -437,7 +437,7 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
         info.update(intensity=round(k, 3), tempo_scale=round(bpm_scale, 3),
                     bpm_played=round(spec["bpm"] / bpm_scale, 1), segments=[
                         {"t0": round(s["t0"] * bpm_scale, 3), "t1": round(s["t1"] * bpm_scale, 3), "kind": s["kind"],
-                         "action": s["act"]} for s in segs], attempt=attempt)
+                         "action": s["act"], "bar": s.get("bar")} for s in segs], attempt=attempt)
         return ts, qs, info
     return None, None, info
 
@@ -467,7 +467,40 @@ def make_clip(spec, seed=0, env=None, clip_id=None, kin=None, tags=()):
         clip["safety"]["collision"] = CL.describe(info["collision"])
         clip["safety"]["min_clearance_m"] = info["collision"]["min_clearance_m"]
     clip["labels"] = L.label(clip, intent=spec)
+    # one label per bar too: a mixed phrase is a sequence, not an average
+    bars = {}
+    for sg in info["segments"]:
+        if sg.get("bar") is not None:
+            b = bars.setdefault(sg["bar"], [sg["t0"], sg["t1"], sg["action"]])
+            b[0], b[1] = min(b[0], sg["t0"]), max(b[1], sg["t1"])
+    clip["labels"]["bars"] = [dict(L.label_span(clip, t0, t1), intent=a) for _, (t0, t1, a) in sorted(bars.items())]
+    clip["labels"]["bars_agree"] = sum(b["action"] == b["intent"] for b in clip["labels"]["bars"])
+    clip["labels"]["sequence"] = [b["action"] for b in clip["labels"]["bars"]]
     return clip
+
+
+OPPOSITES = [("punch", "float"), ("slash", "glide"), ("press", "flick"), ("wring", "dab")]
+
+
+def dance_wedge(n=48, seed=7):
+    """Variants for the dance factory, from a fixed seed: every action alone
+    (twice), contrasting pairs (A B and A B A -- dynamics come from contrast),
+    then random 2-4 bar phrases. Each: {"id", "spec", "seed", "tags"}."""
+    rng = random.Random(seed)
+    out = []
+    for a in ACTIONS:
+        for k in range(2):
+            out.append({"spec": {"bars": [{"action": a}] * 2, "bpm": 70 if ACTIONS[a][1] < 0 else 110,
+                                 "flow": round(rng.uniform(-0.8, 0.8), 2)}, "tags": ["single", a]})
+    for a, b in OPPOSITES:
+        out.append({"spec": random_spec(rng, actions=[a, b]), "tags": ["contrast", a, b]})
+        out.append({"spec": random_spec(rng, actions=[a, b, a]), "tags": ["contrast", "aba", a, b]})
+    while len(out) < n:
+        out.append({"spec": random_spec(rng), "tags": ["mix"]})
+    for i, v in enumerate(out[:n]):
+        v["seed"] = i
+        v["id"] = "d%02d_%s" % (i, "-".join(b["action"] for b in v["spec"]["bars"]))
+    return out[:n]
 
 
 if __name__ == "__main__":

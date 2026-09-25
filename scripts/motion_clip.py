@@ -226,11 +226,22 @@ def write_manifest(directory):
         # a clip rejected before it was timed has no points: its own reason
         # says why, and "needs at least two points" would only hide it
         errs = validate(c) if c.get("points") else []
-        entries.append({"file": os.path.basename(f), "id": c.get("id"), "robot": c.get("robot"),
-                        "duration_s": c.get("meta", {}).get("duration_s"),
-                        "bounds": c.get("meta", {}).get("bounds"), "tags": c.get("meta", {}).get("tags", []),
-                        "ok": not errs and bool(s.get("ok")),
-                        "reasons": list(s.get("reasons", [])) + errs})
+        e = {"file": os.path.basename(f), "id": c.get("id"), "robot": c.get("robot"),
+             "duration_s": c.get("meta", {}).get("duration_s"),
+             "bounds": c.get("meta", {}).get("bounds"), "tags": c.get("meta", {}).get("tags", []),
+             "ok": not errs and bool(s.get("ok")),
+             "reasons": list(s.get("reasons", [])) + errs}
+        lab = c.get("labels")
+        if lab:
+            m = lab["measured"]
+            e["labels"] = {"action": m["action"], "effort": {k: m[k] for k in ("weight", "time", "space", "flow")},
+                           "tags": lab.get("tags", []), "agrees_with_intent": lab.get("agrees_with_intent")}
+            if lab.get("sequence"):
+                e["labels"]["sequence"] = lab["sequence"]
+                e["labels"]["intent_sequence"] = [b["intent"] for b in lab.get("bars", [])]
+        if "min_clearance_m" in s:
+            e["min_clearance_m"] = s["min_clearance_m"]
+        entries.append(e)
     man = {"schema": "motionlab.manifest/1", "clips": entries,
            "ok": sum(1 for e in entries if e["ok"]), "rejected": sum(1 for e in entries if not e["ok"])}
     with open(os.path.join(directory, "manifest.json"), "w") as f:

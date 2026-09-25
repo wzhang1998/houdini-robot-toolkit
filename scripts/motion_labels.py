@@ -153,3 +153,20 @@ def label(clip, intent=None):
         main = max(set(acts), key=acts.count) if acts else None
         out["agrees_with_intent"] = main == meas["action"] if main else None
     return out
+
+
+def label_span(clip, t0, t1):
+    """Measured effort and action of the part of a clip between t0 and t1
+    (a bar of a phrase): {"t0", "t1", "action", weight, time, space, flow}."""
+    pts = [(p["t"], p["q"], tc) for p, tc in zip(clip["points"], clip.get("tcp") or [None] * len(clip["points"]))
+           if t0 - 1e-9 <= p["t"] <= t1 + 1e-9]
+    if len(pts) < 4:
+        return {"t0": t0, "t1": t1, "action": None}
+    ts, qs, tcp = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
+    raw = raw_measures(ts, qs, tcp if tcp[0] is not None else None)
+    m = {"weight": round(_map(math.log(max(raw["weight"], 1e-6)), "weight"), 3),
+         "time": round(_map(math.log(max(raw["time"], 1e-6)), "time"), 3),
+         "space": round(_map(raw["space"], "space"), 3),
+         "flow": round(-_map(raw["still"], "flow"), 3)}
+    m["action"] = nearest_action(m["weight"], m["time"], m["space"])
+    return dict(m, t0=round(t0, 3), t1=round(t1, 3))
