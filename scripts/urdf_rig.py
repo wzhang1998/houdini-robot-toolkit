@@ -51,6 +51,9 @@ def _scale(a, s):
 
 
 def _dot(a, b):
+    if len(a) == 3:
+        # unrolled: same sum, in the same order, as the general case
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
     return sum(x * y for x, y in zip(a, b))
 
 
@@ -72,12 +75,25 @@ def _normalize(a):
 
 
 def _mat_mul(a, b):
-    return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3))
-                       for j in range(3)) for i in range(3))
+    # Unrolled 3x3: the IK's Newton polish runs forward kinematics ~120 times
+    # a solve, and the generator version was 90 % of Retime's cook time.
+    # Same products summed in the same order, so the results are identical.
+    (a0, a1, a2), (b0, b1, b2) = a, b
+    return ((a0[0] * b0[0] + a0[1] * b1[0] + a0[2] * b2[0],
+             a0[0] * b0[1] + a0[1] * b1[1] + a0[2] * b2[1],
+             a0[0] * b0[2] + a0[1] * b1[2] + a0[2] * b2[2]),
+            (a1[0] * b0[0] + a1[1] * b1[0] + a1[2] * b2[0],
+             a1[0] * b0[1] + a1[1] * b1[1] + a1[2] * b2[1],
+             a1[0] * b0[2] + a1[1] * b1[2] + a1[2] * b2[2]),
+            (a2[0] * b0[0] + a2[1] * b1[0] + a2[2] * b2[0],
+             a2[0] * b0[1] + a2[1] * b1[1] + a2[2] * b2[1],
+             a2[0] * b0[2] + a2[1] * b1[2] + a2[2] * b2[2]))
 
 
 def _mat_vec(m, v):
-    return tuple(_dot(row, v) for row in m)
+    return (m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2])
 
 
 IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -98,10 +114,19 @@ def _rot_z(a):
     return ((c, -s, 0.0), (s, c, 0.0), (0.0, 0.0, 1.0))
 
 
+_RPY_CACHE = {}
+
+
 def rpy_to_matrix(rpy):
-    """URDF fixed-axis roll-pitch-yaw: R = Rz(yaw) Ry(pitch) Rx(roll)."""
-    r, p, y = rpy
-    return _mat_mul(_rot_z(y), _mat_mul(_rot_y(p), _rot_x(r)))
+    """URDF fixed-axis roll-pitch-yaw: R = Rz(yaw) Ry(pitch) Rx(roll).
+    Cached: forward kinematics asks for the same few joint origins
+    thousands of times a solve."""
+    key = tuple(rpy)
+    m = _RPY_CACHE.get(key)
+    if m is None:
+        r, p, y = key
+        m = _RPY_CACHE[key] = _mat_mul(_rot_z(y), _mat_mul(_rot_y(p), _rot_x(r)))
+    return m
 
 
 def axis_angle_matrix(axis, angle):

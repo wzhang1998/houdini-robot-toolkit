@@ -498,10 +498,18 @@ deadlocks scripted and bridge-driven runs.
   FR20): the goal curve is followed as a polyline, and at 5 cm its corners,
   amplified by the wrist near its singularity, cost the FR20 clip 30 s
   instead of 18.
-- `path_metrics` still carries literal `fps` 24 and `speed_cap` 50 (the asset's
-  Speed Cap is 100), and the Colour By `vel_max` scale is one number
-  (`viz_vel_max`). `vel_ratio` is the per-joint measure; not yet a colour
-  option.
+- `path_metrics` reads `fps` from the scene (`$FPS`) and `speed_cap` from the
+  asset's Speed Cap; they were literals 24 and 50 (the asset's is 100). The
+  Colour By `vel_max` scale is still one number (`viz_vel_max`); `vel_ratio`
+  is the per-joint measure, not yet a colour option.
+- **Max Joint Velocity / Acceleration default to the profile** (expressions);
+  a literal 150 default had left UF850 instances on FR20's acceleration,
+  since only a profile *change* wrote it. UF850: 1146 deg/s^2, UFACTORY's
+  published joint acceleration for the series.
+- **Retime is ~4x faster** (FR20 scene: 106 s -> 27 s, same result): 90 % of
+  each IK solve was `urdf_rig`'s generic 3x3 product inside the Newton
+  polish; unrolled and with joint-origin rotations cached, forward
+  kinematics is bit-identical and the solve 14.5 -> 2.9 ms.
 - **Progress** now defaults to `fit($FF, $RFSTART, $RFEND, 0, 1)`, what Reset
   Progress writes; it used to default to a flat 0, so a new instance on curve
   mode never moved unless someone had pressed Reset or Retime.

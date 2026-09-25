@@ -41,10 +41,19 @@ def _root():
 
 
 def _robot_profile():
+    """scripts/robot_profile.py, reloaded when the file changes. Python keeps
+    the first import for the whole session: after acceleration_limits() was
+    added, a session that had imported the module earlier did not have it,
+    and Max Joint Acceleration's default evaluated to an error (0)."""
     scripts = _root() + "/scripts"
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
+    import importlib
     import robot_profile
+    mtime = os.path.getmtime(robot_profile.__file__)
+    if getattr(robot_profile, "_loaded_mtime", None) != mtime:
+        robot_profile = importlib.reload(robot_profile)
+        robot_profile._loaded_mtime = mtime
     return robot_profile
 
 
@@ -449,6 +458,20 @@ def acceleration_limits(node):
     return _robot_profile().acceleration_limits(profile(asset))
 
 
+def profile_max_velocity(node):
+    """Max Joint Velocity's default: the profile's highest per-joint limit,
+    so the cap does not bind unless someone lowers it."""
+    return max(_robot_profile().velocity_limits(profile(node)))
+
+
+def profile_max_acceleration(node):
+    """Max Joint Acceleration's default: the profile's limit. A literal
+    default (150, FR20's) left UF850 instances at FR20's number, since only
+    a profile CHANGE used to write it."""
+    acc = _robot_profile().acceleration_limits(profile(node))
+    return max(acc) if acc else 0.0
+
+
 def vel_limit(node, joint):
     """path_metrics vel_limitN: joint's effective limit (1-based)."""
     return velocity_limits(node)[joint - 1]
@@ -481,8 +504,8 @@ def on_profile_changed(asset):
       * invert_jN from the profile's sign, which joint_angles.py checks;
       * Robot Mesh on when the profile has a body to show (FBX skin or URDF
         links), off when it has neither;
-      * Max Joint Velocity to the profile's highest per-joint limit;
-      * Max Joint Acceleration to the profile's acceleration limit;
+      * Max Joint Velocity / Acceleration back to their defaults, which
+        read the profile;
       * the Configuration presets reset through cfg_reset, which reloads the
         preset ranges from the new profile.
     """
@@ -494,15 +517,13 @@ def on_profile_changed(asset):
     if asset.parm("show_robot") is not None:
         has_body = prof["rig"].get("fbx") is not None or bool(prof["rig"].get("urdf"))
         asset.parm("show_robot").set(1 if has_body else 0)
-    # Max Joint Velocity is a cap on top of the profile's per-joint limits;
-    # start it at the profile's highest so it does not bind by default
-    mv = asset.parm("max_velocity")
-    if mv is not None:
-        mv.set(max(_robot_profile().velocity_limits(prof)))
-    ma = asset.parm("max_acceleration")
-    acc = _robot_profile().acceleration_limits(prof)
-    if ma is not None and acc:
-        ma.set(max(acc))
+    # Max Joint Velocity / Acceleration default to expressions that read the
+    # profile (profile_max_velocity / profile_max_acceleration); reverting
+    # puts the expression back where a typed value had replaced it
+    for name in ("max_velocity", "max_acceleration"):
+        p = asset.parm(name)
+        if p is not None:
+            p.revertToDefaults()
     reset = asset.parm("cfg_reset")
     if reset is not None:
         reset.pressButton()
