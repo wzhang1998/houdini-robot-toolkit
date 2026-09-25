@@ -72,7 +72,7 @@ ROOMS = {
     "solid": 's@role == "obstacle" && f@Alpha >= 0.99 && closed',       # + solid furniture, no lines
     "solid_work": '(s@role == "obstacle" && f@Alpha >= 0.99 && closed) || (s@name == "stage" && !closed)',
 }
-ROOM = "full"
+ROOM = "solid_work"                                         # chosen by the user, 2026-09-25
 
 
 # --------------------------------------------------------------------------
