@@ -27,6 +27,7 @@ asset and has no hdaModule of its own:
 
     hou.pwd().parent().hdaModule().weight(hou.pwd(), 5, "y")
 """
+import math
 import os
 import sys
 
@@ -596,3 +597,137 @@ ANALYTIC_IK_CODE = "hou.pwd().parent().hdaModule().cook_analytic_ik(hou.pwd())\n
 # Python SOP code for urdf_skeleton / urdf_links
 URDF_SKELETON_CODE = "hou.pwd().parent().hdaModule().cook_urdf_skeleton(hou.pwd())\n"
 URDF_LINKS_CODE = "hou.pwd().parent().hdaModule().cook_urdf_links(hou.pwd())\n"
+
+
+# --------------------------------------------------------------------------
+# Curve Check (Analyze): the goal curve, before any timing
+# --------------------------------------------------------------------------
+
+_CURVE_CHECK = {}
+
+
+def _progress_state(parm):
+    """Everything needed to put Progress back as it was."""
+    keys = parm.keyframes()
+    if keys:
+        return ("keys", keys)
+    try:
+        return ("expr", parm.expression(), parm.expressionLanguage())
+    except hou.OperationFailed:
+        return ("value", parm.eval())
+
+
+def _restore_progress(parm, state):
+    parm.deleteAllKeyframes()
+    if state[0] == "keys":
+        parm.setKeyframes(state[1])
+    elif state[0] == "expr":
+        parm.setExpression(state[1], state[2])
+    else:
+        parm.set(state[1])
+
+
+def curve_check(asset):
+    """Analyze > Curve Check: walk Progress 0 -> 1 through the real solve
+    (orient mode, tool, presets as they are) and measure, per sample, what
+    the pose leaves for the robot -- independent of any timing:
+
+        reachable   the closed-form IK found an in-limit pose
+        headroom    m/s: fastest TCP speed, worst direction, before a joint
+                    hits its velocity limit (scripts/capability.py)
+        wrist       |sin q5|: 0 at the wrist singularity
+        margin      degrees to the nearest joint limit
+
+    Progress is put back exactly as it was. FR20 (closed-form IK) only."""
+    asset = asset_of(asset)
+    if ik_solver_index(asset) != 1:
+        raise hou.NodeError("Curve Check needs the closed-form IK (FR20)")
+    scripts = _root() + "/scripts"
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import capability
+    prof = profile(asset)
+    model = _ur_model(asset)
+    chain = model["chain"]
+    fo = float(prof["rig"].get("flange_offset_m", 0.0))
+    ctrl = asset.node("TCP_PATH_CTRL")
+    tool = ctrl.parmTuple("tool_offset").eval() if ctrl is not None and ctrl.parmTuple("tool_offset") else (0, 0, 0)
+    tcp_local = (0.0, 0.0, fo + (sum(x * x for x in tool) ** 0.5))
+    vel = velocity_limits(asset)
+    lim = model["limits"]
+    n = max(20, int(asset.evalParm("curve_check_samples")))
+    prog = asset.parm("progress")
+    state = _progress_state(prog)
+    aik, goal = asset.node("analytic_ik"), asset.node("GOAL_MODE")
+    key_prev = (asset.path(), round(hou.frame() - 1, 4))
+    rows = []
+    try:
+        with hou.InterruptableOperation("Curve Check", open_interrupt_dialog=True) as op:
+            prog.deleteAllKeyframes()
+            for i in range(n + 1):
+                u = i / float(n)
+                prog.set(u)
+                g = aik.geometry()
+                ok = bool(g.attribValue("ik_ok"))
+                q = list(g.attribValue("ik_q"))
+                _IK_MEMO[key_prev] = q                 # the next sample continues from this one
+                P = tuple(goal.geometry().points()[0].position())
+                row = {"u": u, "P": P, "reachable": ok, "headroom": 0.0, "wrist": 0.0, "margin": 0.0}
+                if ok:
+                    row["headroom"] = capability.headroom(chain, q, tcp_local, vel)
+                    row["wrist"] = abs(math.sin(math.radians(q[4])))
+                    row["margin"] = min(min(x - lo, hi - x) for x, (lo, hi) in zip(q, lim))
+                rows.append(row)
+                op.updateProgress(i / float(n))
+    finally:
+        _restore_progress(prog, state)
+        clear_ik_memo(asset)
+    _CURVE_CHECK[asset.path()] = rows
+    bad = [r for r in rows if not r["reachable"]]
+    ok_rows = [r for r in rows if r["reachable"]]
+    parts = ["%d samples" % len(rows)]
+    if bad:
+        parts.append("UNREACHABLE at %d (u %.2f .. %.2f)" % (len(bad), bad[0]["u"], bad[-1]["u"]))
+    if ok_rows:
+        h = min(ok_rows, key=lambda r: r["headroom"])
+        w = min(ok_rows, key=lambda r: r["wrist"])
+        m = min(ok_rows, key=lambda r: r["margin"])
+        parts.append("min headroom %.2f m/s at u %.2f" % (h["headroom"], h["u"]))
+        parts.append("closest to the wrist singularity %.0f deg at u %.2f"
+                     % (math.degrees(math.asin(min(1.0, w["wrist"]))), w["u"]))
+        parts.append("joint-limit margin %.0f deg at u %.2f" % (m["margin"], m["u"]))
+    asset.parm("curve_check_status").set("; ".join(parts))
+    node = asset.node("curve_check")
+    if node is not None:
+        node.cook(force=True)
+    return rows
+
+
+def cook_curve_check(node):
+    """curve_check (Python SOP): the last Curve Check as a coloured polyline --
+    red where unreachable, else green .. red by the worst of headroom (full at
+    1.2 m/s), wrist (full at 20 deg from the singularity) and joint-limit
+    margin (full at 20 deg). Point attributes u, reachable, headroom, wrist,
+    margin, risk (0 fine .. 1 at a limit)."""
+    geo = node.geometry()
+    geo.clear()
+    rows = _CURVE_CHECK.get(asset_of(node).path())
+    if not rows:
+        return
+    for name, default in (("Cd", (1.0, 1.0, 1.0)), ("u", 0.0), ("reachable", 0), ("headroom", 0.0),
+                          ("wrist", 0.0), ("margin", 0.0), ("risk", 1.0)):
+        geo.addAttrib(hou.attribType.Point, name, default)
+    poly = geo.createPolygon(is_closed=False)
+    wfull = math.sin(math.radians(20.0))
+    for r in rows:
+        p = geo.createPoint()
+        p.setPosition(r["P"])
+        good = min(1.0, r["headroom"] / 1.2, r["wrist"] / wfull, r["margin"] / 20.0) if r["reachable"] else 0.0
+        c = hou.Color()
+        c.setHSV((120.0 * good if r["reachable"] else 0.0, 0.9, 1.0 if r["reachable"] else 0.55))
+        p.setAttribValue("Cd", c.rgb())
+        for k in ("u", "headroom", "wrist", "margin"):
+            p.setAttribValue(k, float(r[k]))
+        p.setAttribValue("reachable", int(r["reachable"]))
+        p.setAttribValue("risk", 1.0 - good)
+        poly.addVertex(p)
