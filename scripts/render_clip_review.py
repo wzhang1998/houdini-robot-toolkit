@@ -25,8 +25,8 @@ Per clip:
              asked for, red where the arm cannot hold the tool direction
     poster   one labelled frame of the tile (40 % in), for the contact sheet
 
-All clips: pages (ffmpeg xstack, --grid per page), an overview (every clip
-in one video) and a contact sheet (ImageMagick montage of the posters).
+All clips: pages (ffmpeg xstack, --grid per page), overview pages (every clip, 5 x 5
+per video) and a contact sheet (ImageMagick montage of the posters).
 Output under geo/review/ (not in git).
 """
 
@@ -64,6 +64,15 @@ BG_BOTTOM, BG_TOP = (0.20, 0.20, 0.21), (0.30, 0.30, 0.31)     # the DarkGrey co
 ACTION_RGB = {"punch": (0.95, 0.25, 0.2), "slash": (1.0, 0.6, 0.15), "press": (0.65, 0.2, 0.15),
               "wring": (0.7, 0.35, 0.9), "dab": (1.0, 0.9, 0.2), "flick": (0.25, 0.9, 0.95),
               "glide": (0.3, 0.85, 0.35), "float": (0.55, 0.7, 1.0)}
+# how much of the room a review shows: which cell_sop prims are kept (VEX,
+# per primitive; `closed` is 0 for an outline)
+ROOMS = {
+    "full": 'f@Alpha >= 0.99',                                           # every outline, solid furniture, floor
+    "floor": 's@name == "floor" || s@name == "base_plate"',             # the floor and the base plate only
+    "solid": 's@role == "obstacle" && f@Alpha >= 0.99 && closed',       # + solid furniture, no lines
+    "solid_work": '(s@role == "obstacle" && f@Alpha >= 0.99 && closed) || (s@name == "stage" && !closed)',
+}
+ROOM = "full"
 
 
 # --------------------------------------------------------------------------
@@ -213,9 +222,10 @@ def review_path(node):
         poly.addVertex(p)
 
 
-def setup_scene(w=TILE[0], h=TILE[1]):
+def setup_scene(w=TILE[0], h=TILE[1], room=ROOM):
     """Turn the loaded scenes/FR20_cell.hiplc into the review scene; returns
-    the camera. The clip comes from CELL_CTRL's Clip, as always."""
+    the camera. The clip comes from CELL_CTRL's Clip, as always. room: a
+    ROOMS key -- how much of the room is drawn."""
     import hou
     obj = hou.node("/obj")
     # the TCP path as a tube (a line is a hair at 480 px)
@@ -230,13 +240,14 @@ def setup_scene(w=TILE[0], h=TILE[1]):
     tube.setDisplayFlag(True)
     tube.setRenderFlag(True)
     # see-through faces (walls, zones, the stage) stacked in front of the
-    # camera wash the picture out: in the review, their outlines only
+    # camera wash the picture out: never drawn; the rest per ROOMS
     env_obj = hou.node("/obj/cell_env")
     shown = [c for c in env_obj.children() if c.isDisplayFlagSet()][0]
-    cut = env_obj.createNode("blast", "review_outlines")
+    cut = env_obj.createNode("attribwrangle", "review_room")
     cut.setInput(0, shown)
-    cut.parm("group").set("@Alpha<0.99")
-    cut.parm("grouptype").set(4)                          # primitives
+    cut.parm("class").set(1)                              # primitives
+    cut.parm("snippet").set('int closed = primintrinsic(0, "closed", @primnum);\n'
+                            'if (!(%s)) removeprim(0, @primnum, 1);' % ROOMS[room])
     cut.setDisplayFlag(True)
     cut.setRenderFlag(True)
     # the arm, the subject: drawn once (not the asset's own room), near-white
@@ -307,7 +318,7 @@ def opengl_settings(rop):
             rop.parm(n).set(v)
 
 
-def render_frames(clip_path, frames_dir, w=TILE[0], h=TILE[1]):
+def render_frames(clip_path, frames_dir, w=TILE[0], h=TILE[1], room=ROOM):
     """Without PDG: one clip's frames, in this hython process."""
     import hou
     for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
@@ -315,7 +326,7 @@ def render_frames(clip_path, frames_dir, w=TILE[0], h=TILE[1]):
     hou.hipFile.load(ROOT + "/scenes/FR20_cell.hiplc", suppress_save_prompt=True, ignore_load_warnings=True)
     for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
         hou.hda.installFile(ROOT + "/otls/" + f, force_use_assets=True)
-    cam = setup_scene(w, h)
+    cam = setup_scene(w, h, room)
     hou.node("/obj/CELL_CTRL").parm("clip").set(clip_path)
     n = nframes(json.load(open(clip_path)))
     rop = hou.node("/out").createNode("opengl")
@@ -388,17 +399,17 @@ def stack(tiles, cols, rows, w, h, path, crf=22):
     return path
 
 
-def build_videos(items, grid=(4, 2), overview_tile=384):
-    """Pages per set, and every clip in one overview video."""
+def build_videos(items, grid=(4, 2), overview=(5, 5), overview_tile=432):
+    """Pages per set, and every clip in overview pages of overview[0] x [1]."""
     out = []
     for s in sorted(set(i["set"] for i in items), key=["dance", "clips"].index):
         tiles = [i["dir"] + "/tile.mp4" for i in items if i["set"] == s and os.path.exists(i["dir"] + "/tile.mp4")]
         for k, grp in enumerate(pages(tiles, grid[0] * grid[1])):
             out.append(stack(grp, grid[0], grid[1], TILE[0], TILE[1], "%s/page_%s_%d.mp4" % (OUT, s, k + 1)))
     every = [i["dir"] + "/tile.mp4" for i in items if os.path.exists(i["dir"] + "/tile.mp4")]
-    if every:
-        c, r = grid_for(len(every))
-        out.append(stack(every, c, r, overview_tile, overview_tile, OUT + "/overview.mp4", crf=24))
+    for k, grp in enumerate(pages(every, overview[0] * overview[1])):
+        out.append(stack(grp, overview[0], overview[1], overview_tile, overview_tile,
+                         "%s/overview_%d.mp4" % (OUT, k + 1), crf=24))
     return out
 
 
@@ -464,6 +475,7 @@ def self_test():
           and any(t.startswith("cell") for t, _ in header_lines(bad)))
     check("frames at 24 fps from the clip's last time", nframes(c) == 1 + int(math.ceil(c["points"][-1]["t"] * 24)))
     check("pages of 8", [len(p) for p in pages(list(range(19)), 8)] == [8, 8, 3])
+    check("the review's room style is one of ROOMS, 'full' among them", ROOM in ROOMS and "full" in ROOMS)
     check("98 clips in one square-ish grid", grid_for(98) == (10, 10) and grid_for(3) == (2, 2))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
@@ -474,6 +486,7 @@ if __name__ == "__main__":
         sys.exit(self_test())
     if "--frames" in sys.argv:
         i = sys.argv.index("--frames")
-        render_frames(sys.argv[i + 1], sys.argv[i + 2])
+        room = sys.argv[sys.argv.index("--room") + 1] if "--room" in sys.argv else ROOM
+        render_frames(sys.argv[i + 1], sys.argv[i + 2], room=room)
         sys.exit(0)
     sys.exit(main())

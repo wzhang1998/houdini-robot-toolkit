@@ -24,7 +24,7 @@ ffmpeg / ImageMagick):
                      tile.mp4 and a poster frame posters/<id>.png
         all          Wait for All
         videos       Python Script: page videos per set, and every clip in
-                     one overview video (ffmpeg xstack)
+                     overview pages of 5 x 5 (ffmpeg xstack)
         sheet        ImageMagick montage of the posters (each carries its id,
                      burnt in): contact_sheet.png
 
