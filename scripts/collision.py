@@ -357,6 +357,33 @@ U_BASE = "base_link"
 FIXED_LINKS = ("base_link", "shoulder_link")
 
 
+def pose_clearance(model, env, q, cap=0.5):
+    """(clearance_m, ok) of one pose: the smallest link-to-object clearance
+    beyond each object's margin (obstacles) or 0 (keep-out), capped at `cap`;
+    ok also needs no self-contact. Cheap for a grid of poses: an object whose
+    bounding test is already beyond the best so far skips the exact search."""
+    margin = float(env.get("margin_m", 0.05))
+    caps, _ = capsules(model, q)
+    best = cap
+    for o in env.get("objects", []):
+        if o["role"] not in ("obstacle", "keep_out"):
+            continue
+        m = o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
+        for name, a, b, r in caps:
+            if name in FIXED_LINKS:
+                continue
+            mid = tuple((x + y) / 2.0 for x, y in zip(a, b))
+            half = math.dist(a, b) / 2.0
+            if sdf(o, mid) - half - r - m >= best:          # cannot beat the best so far
+                continue
+            best = min(best, capsule_distance(o, a, b, r) - m)
+    # self-contact decides ok, but is not the clearance reported: the wrist
+    # pair sits ~12 mm apart in ordinary poses and would hide the room's
+    self_ok = all(_seg_seg_dist(caps[i][1], caps[i][2], caps[j][1], caps[j][2]) - caps[i][3] - caps[j][3] >= 0.0
+                  for i, j in model["pairs"])
+    return best, best >= 0.0 and self_ok
+
+
 def describe(report):
     """One line for Pre-Flight / manifests."""
     if report["ok"]:

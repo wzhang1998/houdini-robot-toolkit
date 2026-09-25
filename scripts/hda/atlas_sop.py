@@ -12,6 +12,11 @@ one native volume per field:
     wrist       |sin q5|, 0 = wrist singularity
     margin      degrees to the nearest joint limit
     nsol        branches within limits
+    clear       1 if some in-limit branch reaches it without touching the
+                room or itself (Cell Environment set) -- reachable is not
+                usable: low, far points reach with the upper arm on the floor
+    clearance   m beyond the nearest object's margin, of that branch (capped
+                at 0.5); negative where it touches
     capability  fraction of tool directions that reach the voxel (Mode:
                 Capability only -- 26 directions x 2 rolls, ~50x slower)
 
@@ -21,7 +26,9 @@ bakes everything in one go.
 
 Parameters (spare parms on the SOP): voxel (m), mode (0 fixed direction,
 1 capability), dir (tool direction, Houdini frame), tool_len (m, beyond the
-flange), slab, slabs, ymin, ymax, radius (m, around the Y axis).
+flange), slab, slabs, ymin, ymax, radius (m, around the Y axis), env_file
+(the cell; empty: no clear / clearance fields). Headroom, wrist and margin
+are those of the clear branch when there is one.
 """
 
 import math
@@ -67,6 +74,11 @@ def cook(node):
 
     root = hou.text.expandString("$HIP/..")
     model, chain, fo, vel = C.load_fr20(root)
+    envp = node.parm("env_file").eval().strip() if node.parm("env_file") else ""
+    cell = None
+    if envp and os.path.exists(envp):
+        import collision
+        cell = (collision.load_model("fr20", tool_len=round(tool_len, 3)), collision.load_env(envp))
     reach_max = 1.854 + fo + tool_len + voxel          # FR20 datasheet reach + tool
     n_xz, j0, j1 = grid(voxel, radius, ymin, ymax)
     layers = list(range(j0, j1 + 1))
@@ -81,7 +93,7 @@ def cook(node):
     to_urdf = lambda p: (p[0], -p[2], p[1])
     d_u = to_urdf(d_h)
     dirs = C.sphere_directions(26) if mode == 1 else None
-    names = ["reachable", "headroom", "wrist", "margin", "nsol"] + (["capability"] if mode == 1 else [])
+    names = ["reachable", "headroom", "wrist", "margin", "nsol"] + (["clear", "clearance"] if cell else [])         + (["capability"] if mode == 1 else [])
     data = {n: [] for n in names}
     # shoulder: J2's axis height; points further than the reach from it are out
     sh = C.U.forward_kinematics(chain)[1]["position"]
@@ -96,7 +108,7 @@ def cook(node):
                 if far:
                     m = None
                 else:
-                    m = C.measure(model, chain, pu, d_u, fo, vel, tool_len=tool_len)
+                    m = C.measure(model, chain, pu, d_u, fo, vel, tool_len=tool_len, cell=cell)
                     n_eval += 1
                 ok = bool(m and m["reachable"])
                 data["reachable"].append(1.0 if ok else 0.0)
@@ -104,6 +116,9 @@ def cook(node):
                 data["wrist"].append(m["wrist"] if ok else 0.0)
                 data["margin"].append(m["margin_deg"] if ok else 0.0)
                 data["nsol"].append(float(m["nsol"]) if m else 0.0)
+                if cell:
+                    data["clear"].append(float(m["clear"]) if ok else 0.0)
+                    data["clearance"].append(m["clearance_m"] if ok else -0.5)
                 if mode == 1:
                     data["capability"].append(0.0 if far else C.capability_index(model, chain, pu, fo, dirs, tool_len))
     nx, ny, nz = len(xs), len(layers), len(zs)

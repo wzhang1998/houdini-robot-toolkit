@@ -15,12 +15,14 @@ code changes. What is in it:
         atlas_merge   the slab files the TOP network wrote, as one volume
                       per field (scripts/hda/atlas_sop.py merge())
         to_vdb        the same fields as VDBs
-        reach_shell   iso-surface of `reachable` at 0.5: the space the tool
-                      can reach pointing along Tool Direction; shell_cutaway
+        reach_shell   iso-surface of `clear` at 0.5: the space the tool can
+                      reach pointing along Tool Direction WITHOUT touching the
+                      room (Cell Environment); shell_cutaway
                       keeps the z < 0 half so the inside shows
         slice         a grid through the fields (z = 0: vertical, through
                       the base; move it with Center / Orientation);
-                      slice_look samples the volumes, keeps the reachable part and
+                      slice_look samples the volumes, keeps the reachable part
+                      (dark red where it is reachable only by touching the room) and
                       colours it by headroom: red = slow / near a
                       singularity, green = fast (Green At, m/s)
         OUT           shell + slice, displayed
@@ -86,6 +88,9 @@ def build(slabs=8, voxel=0.1):
         hou.IntParmTemplate("slab", "Slab", 1, default_value=(-1,),
                             help="-1: the whole grid. The TOP network sets 0..Slabs-1, one work item each"),
         hou.IntParmTemplate("slabs", "Slabs", 1, default_value=(slabs,), min=1, max=64),
+        hou.StringParmTemplate("env_file", "Cell Environment", 1, default_value=("$HIP/../envs/volvox_lab.json",),
+                               string_type=hou.stringParmType.FileReference,
+                               help="The room: adds clear / clearance (reachable without touching it). Empty: off"),
     ])
     atlas.parm("python").set(ATLAS_CODE)
 
@@ -100,7 +105,8 @@ def build(slabs=8, voxel=0.1):
 
     shell = geo.createNode("convertvdb", "reach_shell")
     shell.setInput(0, vdb)
-    shell.parm("group").set("@name=reachable")
+    # the space the tool can use: reachable AND clear of the room
+    shell.parm("group").set("@name=clear")
     shell.parm("conversion").set("poly")
     shell.parm("isovalue").set(0.5)
     # cut away the +Z half, so the robot and the slice (at z = 0) show
@@ -130,6 +136,8 @@ def build(slabs=8, voxel=0.1):
         "// only where the tool can reach; colour = headroom (m/s):\n"
         "// red = slow, near a singularity -> green = fast\n"
         "if (volumesample(1, \"reachable\", @P) < 0.5) { removepoint(0, @ptnum); return; }\n"
+        "// reachable, but only by touching the room: dark red\n"
+        "if (volumesample(1, \"clear\", @P) < 0.5) { v@Cd = {0.35, 0.05, 0.05}; f@headroom = 0; return; }\n"
         "float h = volumesample(1, \"headroom\", @P);\n"
         "f@headroom = h;\n"
         "f@wrist = volumesample(1, \"wrist\", @P);\n"

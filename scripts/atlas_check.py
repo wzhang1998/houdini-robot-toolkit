@@ -36,7 +36,8 @@ geo = hou.node("/obj/fr20_atlas")
 atlas = geo.node("atlas")
 merged = geo.node("atlas_merge").geometry()
 vols = {p.attribValue("name"): p for p in merged.prims()}
-check("merge has every field", {"reachable", "headroom", "wrist", "margin", "nsol"} <= set(vols),
+check("merge has every field", {"reachable", "headroom", "wrist", "margin", "nsol"} <= set(vols)
+      and (not (atlas.parm("env_file") and atlas.evalParm("env_file")) or {"clear", "clearance"} <= set(vols)),
       ", ".join(sorted(vols)))
 v = vols["reachable"]
 res = v.resolution()
@@ -45,6 +46,9 @@ print("     grid %d x %d x %d, voxel %.3f m, bake %.0f s of work over %d slabs"
          merged.attribValue("atlas_seconds"), merged.attribValue("atlas_slabs")))
 
 model, chain, fo, vel = C.load_fr20(ROOT)
+import collision as CL  # noqa: E402
+envp = atlas.evalParm("env_file") if atlas.parm("env_file") else ""
+cell = (CL.load_model("fr20", tool_len=round(atlas.evalParm("tool_len"), 3)), CL.load_env(envp)) if envp else None
 d_h = (atlas.evalParm("dirx"), atlas.evalParm("diry"), atlas.evalParm("dirz"))
 to_urdf = lambda p: (p[0], -p[2], p[1])
 random.seed(11)
@@ -52,13 +56,17 @@ bad, reach_n, n = [], 0, 200
 while n > 0:
     idx = (random.randrange(res[0]), random.randrange(res[1]), random.randrange(res[2]))
     P = v.indexToPos(idx)
-    m = C.measure(model, chain, to_urdf(tuple(P)), to_urdf(d_h), fo, vel, tool_len=atlas.evalParm("tool_len"))
+    m = C.measure(model, chain, to_urdf(tuple(P)), to_urdf(d_h), fo, vel, tool_len=atlas.evalParm("tool_len"),
+                  cell=cell)
     if not m["reachable"] and random.random() < 0.7:
         continue                                   # oversample the reachable part
     n -= 1
-    got = {k: vols[k].voxel(idx) for k in ("reachable", "headroom", "wrist")}
+    keys = ("reachable", "headroom", "wrist") + (("clear",) if cell else ())
+    got = {k: vols[k].voxel(idx) for k in keys}
     want = {"reachable": float(m["reachable"]), "headroom": m["headroom_mps"] if m["reachable"] else 0.0,
             "wrist": m["wrist"] if m["reachable"] else 0.0}
+    if cell:
+        want["clear"] = float(m.get("clear", 0)) if m["reachable"] else 0.0
     # outside the radius / reach cut the bake skips the solve and writes 0
     import math
     if math.hypot(P[0], P[2]) > atlas.evalParm("radius") + 1e-9:
@@ -78,6 +86,15 @@ side = h.voxel(h.posToIndex(hou.Vector3(0.9, 0.6, 0.0)))
 check("headroom on the J1 axis above the base (shoulder singularity) is below the open workspace's",
       axis < side, "%.3f vs %.3f m/s" % (axis, side))
 
+if cell:
+    r, c = vols["reachable"], vols["clear"]
+    import itertools
+    nr = nc = 0
+    for idx in itertools.product(range(0, res[0], 2), range(0, res[1], 2), range(0, res[2], 2)):
+        nr += r.voxel(idx) > 0.5
+        nc += c.voxel(idx) > 0.5
+    check("the room takes some reachable space away (floor, plate, walls)", 0 < nc < nr,
+          "every 2nd voxel: %d reachable, %d clear of the room" % (nr, nc))
 for name in ("to_vdb", "reach_shell", "shell_cutaway", "slice_look", "OUT"):
     node = geo.node(name)
     g = node.geometry()

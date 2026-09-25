@@ -109,26 +109,41 @@ def _margin(q, limits):
     return min(min(x - lo, hi - x) for x, (lo, hi) in zip(q, limits))
 
 
-def measure(model, chain, point, direction, flange_offset, vel_deg_s, tool_len=0.0, roll_deg=0.0, frame=None):
+def measure(model, chain, point, direction, flange_offset, vel_deg_s, tool_len=0.0, roll_deg=0.0, frame=None,
+            cell=None):
     """The atlas values at one TCP target (see the module docstring).
-    frame: a full rotation instead of direction + roll."""
+    frame: a full rotation instead of direction + roll. cell: (collision
+    model, env) -- then also "clear" (some in-limit branch reaches it without
+    touching the room or itself) and "clearance_m" (of the branch chosen);
+    the branch chosen is then the clear one with the most headroom."""
     R = frame or tool_frame(direction, roll_deg)
     reach = flange_offset + tool_len
     tcp_local = (0.0, 0.0, reach)
     p6 = U._sub(point, U._mat_vec(R, tcp_local))
     sols = ur_ik.within_limits(model, ur_ik.solve(model, R, p6))
     out = {"reachable": 0, "nsol": len(sols), "wrist": 0.0, "margin_deg": 0.0, "headroom_mps": 0.0, "q": None}
+    if cell is not None:
+        out.update(clear=0, clearance_m=0.0)
     if not sols:
         return out
     limits = model["limits"]
-    best = None
-    for s in sols:
-        h = headroom(chain, s["q"], tcp_local, vel_deg_s)
-        if best is None or h > best[0]:
-            best = (h, s["q"])
-    h, q = best
+    ranked = sorted(((headroom(chain, s["q"], tcp_local, vel_deg_s), s["q"]) for s in sols), key=lambda x: -x[0])
+    h, q = ranked[0]
     out.update(reachable=1, headroom_mps=h, q=list(q),
                wrist=abs(math.sin(math.radians(q[4]))), margin_deg=_margin(q, limits))
+    if cell is not None:
+        import collision
+        cmodel, env = cell
+        best_c = None
+        for h_, q_ in ranked:
+            c, ok = collision.pose_clearance(cmodel, env, q_)
+            best_c = c if best_c is None else max(best_c, c)
+            if ok:
+                out.update(clear=1, clearance_m=c, headroom_mps=h_, q=list(q_),
+                           wrist=abs(math.sin(math.radians(q_[4]))), margin_deg=_margin(q_, limits))
+                break
+        else:
+            out["clearance_m"] = best_c
     return out
 
 
@@ -227,6 +242,18 @@ if __name__ == "__main__":
     m = _margin([0.0, -90.0, 0.0, -90.0, 0.0, 0.0], lim)
     check("joint-limit margin is the nearest joint's distance to its limit", abs(m - lim[2][1]) < 1e-9,
           "%.3f deg (URDF: %.3f)" % (m, lim[2][1]))
+
+    # 7. with a cell: a point by the floor is reachable but not clear; one mid-air is both
+    import collision
+    cm = collision.load_model("fr20")
+    floor = {"schema": collision.ENV_SCHEMA, "margin_m": 0.05,
+             "objects": [{"name": "floor", "type": "halfspace", "normal": [0, 0, 1], "offset": -0.02, "role": "obstacle"}]}
+    low = measure(model, chain, (-1.6, 0.0, 0.05), (0, 0, -1), fo, vel, cell=(cm, floor))
+    mid = measure(model, chain, (-0.8, 0.2, 0.9), (0, 0, -1), fo, vel, cell=(cm, floor))
+    check("a cell separates 'reachable' from 'reachable without touching the room'",
+          low["reachable"] and not low["clear"] and low["clearance_m"] < 0 and mid["clear"] and mid["clearance_m"] > 0,
+          "low: reach %d clear %d (%.0f mm); mid: clear %d (%.0f mm)"
+          % (low["reachable"], low["clear"], low["clearance_m"] * 1000, mid["clear"], mid["clearance_m"] * 1000))
 
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     sys.exit(1 if fails else 0)
