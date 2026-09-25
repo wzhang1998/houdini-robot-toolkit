@@ -2,7 +2,7 @@
  "schema": "motionlab.env/1",
  "name": "volvox_lab",
  "frame": "FR20 base (URDF): Z up from the base's mounting face; the arm's zero pose points along -X, which is the robot's working front; metres",
- "source": "ESTIMATED from one photo, 2026-09-24. Assumed: the working front (-X, where J1 = 0 reaches) faces the TV wall; +Y is to the right seen from the control cart. Replace with measurements: scripts/probe_env.py (touch-off with the TCP) -> scripts/env_from_points.py.",
+ "source": "ESTIMATED from photos, 2026-09-24/25. Orientation corroborated by a photo of the arm at tests/csv/fr20_test.csv's first pose (commit 01b95f2: J1 -10.6, J2 -78.1, J3 97.3): the forearm points away from the control cart towards the TV wall, slightly to the robot's right (the AC unit) -- so the working front (-X) faces the TV wall, +Y is the robot's right. Distances are still guesses (+-0.3 m): measure with scripts/probe_env.py -> scripts/env_from_points.py.",
  "margin_m": 0.05,
  "objects": [
   {
