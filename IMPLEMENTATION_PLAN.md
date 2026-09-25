@@ -179,6 +179,15 @@ user's OK):
    WebApp. The player reads back `GetSafetyParamsCheckSum` and refuses to
    stream on a mismatch with the profile. Prove on SimMachine that they
    trip during ServoJ (the docs do not say). Retire `home_path_check`.
+   Seen on the real FR20 (WebApp V3.9.3.1, FR20 V6.0), 2026-09-25: Safe
+   Stop not enabled (policy: Default trigger, suspend); Safe Speed not
+   enabled (manual 250 mm/s, stop alarm); Protective Stop category 2;
+   Safety Plane 1 enabled (left wall, taught with the WebApp's 3 + 1
+   reference points, safe distance 10 mm; TCP only); no interference
+   zones. The SDK has no call that reads a safety plane back
+   (GetSafetyParamsCheckSum only), so its points reach the env file by
+   re-touching them with `probe_env.py`, or from a WebApp Data backup if
+   that package turns out to carry them.
 2. Collision check you can trust: sample between frames (at 24 fps an arm
    point moves ~0.13 m, more than the 0.05 m margin -- a thin obstacle can
    be jumped); a python-fcl mesh-vs-capsule oracle test (tests only); VDB
