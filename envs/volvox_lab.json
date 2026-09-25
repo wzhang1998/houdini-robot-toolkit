@@ -178,17 +178,17 @@
    "name": "stage",
    "type": "box",
    "center": [
-    -0.4659,
-    0.2619,
+    -0.3898,
+    0.6676,
     1.0026
    ],
    "size": [
     2.2136,
-    2.2686,
+    3.0857,
     2.0052
    ],
    "role": "work",
-   "note": "where the TCP performs: room-aligned, 0.15 m inside the measured walls, 0.15 m under the ceiling",
+   "note": "where the TCP performs: room-aligned, 0.15 m inside the TV wall, the left partition and the right glass wall, 0.6 m behind the base (the operator and cart side stays out), 0.15 m under the ceiling",
    "yaw_deg": -11.28
   },
   {

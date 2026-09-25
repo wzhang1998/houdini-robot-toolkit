@@ -64,7 +64,9 @@ def _toolkit_root():
 _ROOT = _toolkit_root()
 if os.path.join(_ROOT, "scripts") not in sys.path:
     sys.path.insert(0, os.path.join(_ROOT, "scripts"))
-import robot_profile
+import importlib  # noqa: E402
+import robot_profile  # noqa: E402
+importlib.reload(robot_profile)      # a Houdini session keeps the copy it imported first
 
 
 def _find_profile_parm(node):
@@ -482,6 +484,7 @@ def _collect(node, src):
     peak_vel = 0.0
     worst_vel = None
 
+    path = []
     for frame in range(f0, f1 + 1):
         geo = src.geometryAtFrame(frame)
         ang = extract_angles(geo, axis_of)
@@ -513,7 +516,23 @@ def _collect(node, src):
 
         # into the robot's convention before anything else looks at it, so
         # limit checks and velocities are evaluated on real J values
-        ang = [ang[i] * signs[i] for i in range(NUM_JOINTS)]
+        path.append([ang[i] * signs[i] for i in range(NUM_JOINTS)])
+
+    # Whole turns into the limits. The path is continuous from its first
+    # frame, which the rig reads in (-180, 180] -- a turn away, possibly,
+    # from the only range the joint has: a clip exported J4 150..233 past
+    # FR20's 85 limit, when the same motion is -210..-127, inside
+    # [-265, 85]. Shift each joint by the whole turns that fit (same pose,
+    # the other way round the joint); with none, leave it to the limit check.
+    shifts = [0.0] * NUM_JOINTS
+    if do_unwrap and path:
+        for i in range(NUM_JOINTS):
+            s, fits = robot_profile.turns_into_limits([r[i] for r in path], *limits[i])
+            if fits:
+                shifts[i] = s
+
+    for frame in range(f0, f1 + 1):
+        ang = [a + s for a, s in zip(path[frame - f0], shifts)]
         idx = frame - f0 + 1
 
         if prev is None:
@@ -576,7 +595,7 @@ def _collect(node, src):
             "limits": limits, "max_vel": max_vel, "vel_limits": vel_limits,
             "warn_frac": warn_frac,
             "peak_vel": peak_vel, "worst_vel": worst_vel,
-            "unwrapped": do_unwrap, "wrist_resolved": use_wrist}
+            "unwrapped": do_unwrap, "wrist_resolved": use_wrist, "turn_shifts": shifts}
 
 
 def _out_parm(node, name):

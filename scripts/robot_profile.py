@@ -162,6 +162,24 @@ def velocity_limits(prof):
 # frame conversion -- the only place this arithmetic lives
 # --------------------------------------------------------------------------
 
+def turns_into_limits(values, lo, hi):
+    """The whole-turn shift (a multiple of 360 deg) that puts every value
+    of one joint's continuous path inside [lo, hi]: (shift, fits). An angle
+    read from the rig lives in (-180, 180], so a path unwrapped from its
+    first frame can sit a turn away from the only range the joint allows
+    (FR20 J4: 150..233 is -210..-127 inside [-265, 85]). With no fitting
+    shift, the one that overshoots least."""
+    a, b = min(values), max(values)
+    best = None
+    for k in range(-3, 4):
+        s = 360.0 * k
+        over = max(0.0, lo - (a + s)) + max(0.0, (b + s) - hi)
+        key = (over, abs(k))
+        if best is None or key < best[0]:
+            best = (key, s)
+    return best[1], best[0][0] == 0.0
+
+
 def _sign_offset(prof, joint):
     """joint is 1-based."""
     i = joint - 1
@@ -341,6 +359,20 @@ if __name__ == "__main__":
         pass
     else:
         fails.append("J4 should be marked unenforceable on this rig")
+
+    # whole turns into the limits: a real FR20 clip exported J4 150.2..233.2
+    # (continuous from its first frame, read in (-180, 180]); the same motion
+    # is -209.8..-126.8, inside J4's [-265, 85]
+    sh, ok = turns_into_limits([150.2, 190.0, 233.2], -265.0, 85.0)
+    if (sh, ok) != (-360.0, True):
+        fails.append("J4 150..233 should shift by -360 into [-265, 85], got %s" % ((sh, ok),))
+    if turns_into_limits([10.0, 80.0], -175.0, 175.0) != (0.0, True):
+        fails.append("a joint already inside its limits must not move")
+    if turns_into_limits([-300.0, 20.0], -175.0, 175.0)[1]:
+        fails.append("no whole-turn shift puts -300..20 inside +-175")
+    sh, ok = turns_into_limits([-100.0, 300.0], -175.0, 175.0)
+    if ok or sh != 0.0:
+        fails.append("a 400 deg sweep fits no shift: keep it (the limit check reports it), got %s" % ((sh, ok),))
 
     print("profiles found: %s" % ", ".join(list_profiles()))
     if fails:
