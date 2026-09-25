@@ -1,0 +1,6 @@
+{
+    "env": [
+        {"HOUDINI_ROBOT_TOOLKIT": "$HOUDINI_PACKAGE_PATH/.."},
+        {"HOUDINI_OTLSCAN_PATH": {"value": "$HOUDINI_PACKAGE_PATH/../otls", "method": "prepend"}}
+    ]
+}

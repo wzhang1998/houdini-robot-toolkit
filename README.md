@@ -707,17 +707,21 @@ deadlocks scripted and bridge-driven runs.
 
 ## Installing the assets
 
-Run once per machine (and again if the repo moves), then restart Houdini:
+The toolkit is a Houdini package, `houdini/houdini_robot_toolkit.json` (paths relative to itself via
+`$HOUDINI_PACKAGE_PATH`): it puts this repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O
+asset inside it and dance_phrase load at every start. Register it once per machine (again if the repo
+moves), then restart Houdini:
 
 ```
 python scripts/install_houdini_package.py
 ```
 
-It writes a Houdini package (`Documents/houdiniXX.X/packages/houdini_robot_toolkit.json`) that puts this
-repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O asset inside it and dance_phrase load at
-every start. Without it an asset installed for one session is gone after a restart and a scene falls back
-to the copy embedded in the .hip; the CSV I/O asset's embedded copy has no Python module, and Retime,
-Export and Import fail with `KeyError: 'PythonModule'`.
+That writes a one-line pointer, `Documents/houdiniXX.X/packages/houdini_robot_toolkit_path.json` =
+`{"package_path": "<repo>/houdini"}`. Or, with nothing in the Houdini user dir and for every Houdini
+version: set the environment variable `HOUDINI_PACKAGE_DIR=<repo>/houdini`. Without either, an asset
+installed for one session is gone after a restart and a scene falls back to the copy embedded in the .hip;
+the CSV I/O asset's embedded copy has no Python module, and Retime, Export and Import fail with
+`KeyError: 'PythonModule'`.
 
 ## Known issues
 
