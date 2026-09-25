@@ -97,6 +97,25 @@ def _check_profile(p, fp):
     for x in vals:
         if not x > 0:
             raise ValueError("%s: robot.max_velocity_deg_s must be positive, got %r" % (fp, x))
+    a = p["robot"].get("max_acceleration_deg_s2")
+    if a is not None:
+        avals = a if isinstance(a, list) else [a]
+        if isinstance(a, list) and len(a) != n:
+            raise ValueError("%s: robot.max_acceleration_deg_s2 has %d entries, expected %d"
+                             % (fp, len(a), n))
+        if not all(x > 0 for x in avals):
+            raise ValueError("%s: robot.max_acceleration_deg_s2 must be positive" % fp)
+
+
+def acceleration_limits(prof):
+    """Per-joint acceleration limits, deg/s^2, from
+    robot.max_acceleration_deg_s2 (one number or one per joint), or None
+    when the profile gives none."""
+    a = prof["robot"].get("max_acceleration_deg_s2")
+    if a is None:
+        return None
+    n = prof["robot"]["num_joints"]
+    return [float(x) for x in a] if isinstance(a, list) else [float(a)] * n
 
 
 def velocity_limits(prof):

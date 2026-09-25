@@ -481,6 +481,23 @@ deadlocks scripted and bridge-driven runs.
   parameter's UF850 default of 180 on every joint — the profile's number was
   never read. Checked: an FK clip turning J1 and J5 at 150 deg/s fails
   pre-flight on J1 only (150 > 120) and warns on J5 (above 80 % of 180).
+- **Joint acceleration: a clip that passes Pre-Flight plays at its own
+  speed.** Houdini used to budget velocity only, and the player — which
+  also holds an acceleration limit — slowed the whole clip for one sharp
+  stretch (the FR20 test clip x8.5). Now one limit, profile
+  `robot.max_acceleration_deg_s2` (FR20 150: the only figure in Fairino's
+  manual, for extended load; no zero-load figure is published) capped by
+  Max Joint Acceleration, is used by all three. Pre-Flight's **Robot
+  playback** check runs the player's own conditioning and fails when it
+  would slow the clip. **Retime** plans velocity and acceleration together
+  (`scripts/retime_topp.py`, at rest at both ends), then measures the frames
+  as the player will and slows only where they still break the robot's
+  limit, verified on cooked frames; any small remainder is a uniform
+  stretch shown in the status line. Its Max Velocity / Max Acceleration are
+  read-only: robot limit x Safety. Keep **Resample Length** fine (5 mm on
+  FR20): the goal curve is followed as a polyline, and at 5 cm its corners,
+  amplified by the wrist near its singularity, cost the FR20 clip 30 s
+  instead of 18.
 - `path_metrics` still carries literal `fps` 24 and `speed_cap` 50 (the asset's
   Speed Cap is 100), and the Colour By `vel_max` scale is one number
   (`viz_vel_max`). `vel_ratio` is the per-joint measure; not yet a colour

@@ -437,6 +437,18 @@ def velocity_limits(node):
     return [min(v, cap) for v in per_joint]
 
 
+def acceleration_limits(node):
+    """Per-joint acceleration limits, deg/s^2: the asset's Max Joint
+    Acceleration (set from the profile on a profile change, editable), else
+    the profile's, else None. Retime plans with it and Pre-Flight checks it;
+    fairino_player.py defaults to the profile's value, so keep them equal."""
+    asset = asset_of(node)
+    p = asset.parm("max_acceleration")
+    if p is not None and float(p.eval()) > 0:
+        return [float(p.eval())] * profile(asset)["robot"]["num_joints"]
+    return _robot_profile().acceleration_limits(profile(asset))
+
+
 def vel_limit(node, joint):
     """path_metrics vel_limitN: joint's effective limit (1-based)."""
     return velocity_limits(node)[joint - 1]
@@ -470,6 +482,7 @@ def on_profile_changed(asset):
       * Robot Mesh on when the profile has a body to show (FBX skin or URDF
         links), off when it has neither;
       * Max Joint Velocity to the profile's highest per-joint limit;
+      * Max Joint Acceleration to the profile's acceleration limit;
       * the Configuration presets reset through cfg_reset, which reloads the
         preset ranges from the new profile.
     """
@@ -486,6 +499,10 @@ def on_profile_changed(asset):
     mv = asset.parm("max_velocity")
     if mv is not None:
         mv.set(max(_robot_profile().velocity_limits(prof)))
+    ma = asset.parm("max_acceleration")
+    acc = _robot_profile().acceleration_limits(prof)
+    if ma is not None and acc:
+        ma.set(max(acc))
     reset = asset.parm("cfg_reset")
     if reset is not None:
         reset.pressButton()

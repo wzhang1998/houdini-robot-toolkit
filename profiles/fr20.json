@@ -32,7 +32,10 @@
     ],
 
     "_comment_velocity": "Per joint, from Fairino's FR20 datasheet (fairino.us product page): J1-J3 +-120 deg/s, J4-J6 +-180 deg/s; TCP up to 2 m/s. The URDF's 180.5 / 183.3 deg/s look like placeholders and are not used. The controller's own safety settings (collaborative speed limits) may cap lower; the asset's Max Joint Velocity parameter caps every joint on top of these.",
-    "max_velocity_deg_s": [120.0, 120.0, 120.0, 180.0, 180.0, 180.0]
+    "max_velocity_deg_s": [120.0, 120.0, 120.0, 180.0, 180.0, 180.0],
+
+    "_comment_acceleration": "Fairino's user manual (Installation, FR20 load curve) gives one acceleration figure for FR20: with an extended load of 20-25 kg, turn on time-optimal mode and keep acceleration under 150 deg/s^2. No figure is published for the rated range; this uses 150 as the only documented number. Raise it only after measuring on the arm (player --wiggle, short clips). Houdini (Retime, Pre-Flight) and fairino_player.py all read it, so a clip that passes Pre-Flight plays at its designed speed.",
+    "max_acceleration_deg_s2": 150.0
   },
 
   "rig": {

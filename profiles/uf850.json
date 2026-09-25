@@ -30,7 +30,10 @@
       [-123.9, 123.9],
       [-360.0, 360.0]
     ],
-    "max_velocity_deg_s": 180.0
+    "max_velocity_deg_s": 180.0,
+
+    "_comment_acceleration": "Not from a datasheet: td-robot-twin's Go playback worker used 1000 deg/s^2 on UF850. Houdini (Retime, Pre-Flight) reads it.",
+    "max_acceleration_deg_s2": 1000.0
   },
 
   "rig": {

@@ -58,6 +58,32 @@ p50/p95/max 1.2/3.4/8.3 ms; actual joints lag the command by ~40 ms and,
 aligned, track within 0.072 deg (RMS 0.018 deg). Hardware not yet run: the
 real controller's network latency and dynamics will differ.
 
+## Stage 1c: Acceleration in Houdini -- what you see is what the robot plays
+**Goal**: A clip that passes Pre-Flight plays on the robot at its designed
+speed. One acceleration limit (profile `robot.max_acceleration_deg_s2`,
+capped by the asset's Max Joint Acceleration) used by Houdini and the player;
+Pre-Flight runs the player's own conditioning and fails when it would slow
+the clip; Retime plans with velocity AND acceleration limits (forward /
+backward integration along the path, at rest at both ends).
+**Success Criteria**: `scripts/retime_topp.py` tests pass (single-joint move
+gives the analytic trapezoid time; every sample within the velocity and
+acceleration limits; rest at both ends). On the FR20 scene: after Retime,
+Pre-Flight reports a playback time scale <= 1.0 and the player's dry run
+agrees; the clip is shorter than the velocity-only retime + uniform
+stretch it replaces.
+**Tests**: `python scripts/retime_topp.py`; Houdini: Retime -> Pre-Flight ->
+export -> `fairino_player.py --dry-run`.
+**Status**: Complete on the FR20 scene — Resample Length 5 mm, Safety
+0.97: Retime -> 433 frames, Pre-Flight "plays at its designed speed" (worst
+J6 acceleration 97 %), exported `tests/csv/fr20_test.csv` dry-runs at time
+scale 1.0, 18.0 s (the earlier export of the same curve needed x8.54).
+Findings: at the old 5 cm Resample Length the target had a corner every
+5 cm, amplified by the wrist near its singularity (x1.57 after TOPP alone);
+Retime now fits the corners locally (estimated, then cooked frames) and
+finishes with a small uniform stretch (x1.068 here) verified on cooked
+frames. Retime's Max Velocity / Max Acceleration are read-only displays of
+limit x Safety. Not yet run on hardware.
+
 ## Stage 2: Capability atlas
 **Goal**: FR20 reachability, manipulability, joint-limit margin and speed
 headroom baked as VDB fields over the workspace, via PDG, readable by other

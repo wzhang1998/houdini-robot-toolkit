@@ -91,20 +91,32 @@ def validate(t, q, limits):
 
 
 def _pchip_slopes(t, y):
-    """Fritsch-Carlson monotone slopes, zero at both ends (start/end at rest)
-    and zero wherever the data changes direction -- so the curve never
-    overshoots a sample."""
+    """Slopes for the Hermite path, zero at both ends (start/end at rest).
+
+    Each interior slope starts as the three-point (weighted central)
+    estimate, which is accurate on smooth motion, then is limited:
+      monotone data      clamped to 3x the smaller neighbouring secant
+                         (Hyman's filter -- enough for the cubic to stay
+                         monotone, so a step-like joint never overshoots)
+      a turning point    clamped to the smaller neighbouring secant
+      a flat neighbour   zero (a step's shoulder)
+    The earlier Fritsch-Carlson slopes (harmonic mean, and zero at every
+    turning point) under-read the slope next to a turn -- 24.4 vs a true 32.5
+    deg/s on a 24 fps sine -- and the cubic then kinked at the samples: that
+    sine read 1635 deg/s^2 against its true 790, and a retimed FR20 clip read
+    J6 at 3.6x the acceleration limit at a turn made at 77 deg/s^2."""
     n = len(t)
     h = [t[i + 1] - t[i] for i in range(n - 1)]
     d = [(y[i + 1] - y[i]) / h[i] for i in range(n - 1)]
     m = [0.0] * n
     for i in range(1, n - 1):
-        if d[i - 1] * d[i] <= 0.0:
-            m[i] = 0.0
-        else:
-            w1 = 2.0 * h[i] + h[i - 1]
-            w2 = h[i] + 2.0 * h[i - 1]
-            m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i])
+        prod = d[i - 1] * d[i]
+        if prod == 0.0:
+            continue
+        s_ = (d[i - 1] * h[i] + d[i] * h[i - 1]) / (h[i - 1] + h[i])
+        small = min(abs(d[i - 1]), abs(d[i]))
+        cap = 3.0 * small if prod > 0.0 else small
+        m[i] = max(-cap, min(cap, s_))
     return m
 
 
@@ -136,19 +148,74 @@ class Path:
 
 
 def _peaks(samples, dt):
-    """Per-joint max |velocity| (list) and overall max |acceleration| over
+    """Per-joint max |velocity| and max |acceleration| (lists) over
     equal-interval samples, including from and back to rest at the ends."""
     padded = [samples[0]] + samples + [samples[-1]]
     vmax = [0.0] * 6
-    amax = 0.0
+    amax = [0.0] * 6
     for k in range(1, len(padded)):
         for j in range(6):
             vmax[j] = max(vmax[j], abs(padded[k][j] - padded[k - 1][j]) / dt)
     for k in range(1, len(padded) - 1):
         for j in range(6):
             a = (padded[k + 1][j] - 2 * padded[k][j] + padded[k - 1][j]) / (dt * dt)
-            amax = max(amax, abs(a))
+            amax[j] = max(amax[j], abs(a))
     return vmax, amax
+
+
+def _per_joint(x):
+    return list(x) if isinstance(x, (list, tuple)) else [float(x)] * 6
+
+
+def limiting(t, q, rate_hz, vel_limit, acc_limit, limits=None):
+    """How much condition() will stretch this clip, and where it binds:
+    {"scale_needed": time stretch (1.0 = plays at its own speed),
+     "kind": "velocity"|"acceleration", "joint": 1-6,
+     "time_s": source time of the worst sample, "ratio": fraction of the
+     limit there at the clip's own speed}.
+    It runs condition() itself, so Houdini's Pre-Flight and the player cannot
+    disagree -- a one-pass estimate at the clip's own timing under-read the
+    stretch (8.0 vs 9.5): resampled 5 points per 24 fps frame, the peaks of
+    the interpolated curve do not show until the time is stretched."""
+    vel, acc = _per_joint(vel_limit), _per_joint(acc_limit)
+    limits = limits or [(-1e9, 1e9)] * 6
+    samples, dt, rep = condition(t, q, rate_hz, vel, acc, limits)
+    scale = rep["time_scale"]
+    padded = [samples[0]] + samples + [samples[-1]]
+    worst = {"kind": None, "joint": 0, "k": 0, "need": 0.0, "ratio": 0.0}
+    for k in range(1, len(padded)):
+        for j in range(6):
+            r = abs(padded[k][j] - padded[k - 1][j]) / dt / vel[j] * scale      # at own speed
+            if r > worst["need"]:
+                worst.update(kind="velocity", joint=j + 1, k=k - 1, need=r, ratio=r)
+            if k < len(padded) - 1:
+                a = abs(padded[k + 1][j] - 2 * padded[k][j] + padded[k - 1][j]) / (dt * dt) / acc[j] * scale * scale
+                if math.sqrt(a) > worst["need"]:
+                    worst.update(kind="acceleration", joint=j + 1, k=k - 1, need=math.sqrt(a), ratio=a)
+    return {"scale_needed": round(scale, 4), "kind": worst["kind"], "joint": worst["joint"],
+            "time_s": round(worst["k"] * dt / scale, 4), "ratio": round(worst["ratio"], 4)}
+
+
+def need_profile(t, q, rate_hz, vel_limit, acc_limit):
+    """[(time_s, need)] along the clip at its own speed, one per resampled
+    point: need = max over joints of v/vlim and sqrt(a/alim), so need > 1 is
+    how much slower that moment has to be. Same interpolation and resampling
+    as condition(), so Retime can slow exactly the moments the player would
+    slow the whole clip for."""
+    vel, acc = _per_joint(vel_limit), _per_joint(acc_limit)
+    path = Path(t, q)
+    n = max(1, int(math.ceil(path.duration * rate_hz)))
+    dt = path.duration / n
+    s = [path.at(k * dt) for k in range(n + 1)]
+    pad = [s[0]] + s + [s[-1]]
+    out = []
+    for k in range(1, len(pad) - 1):
+        need = 0.0
+        for j in range(6):
+            need = max(need, abs(pad[k + 1][j] - pad[k][j]) / dt / vel[j],
+                       math.sqrt(abs(pad[k + 1][j] - 2 * pad[k][j] + pad[k - 1][j]) / (dt * dt) / acc[j]))
+        out.append(((k - 1) * dt, need))
+    return out
 
 
 def condition(t, q, rate_hz, vel_limit, acc_limit, limits):
@@ -156,7 +223,8 @@ def condition(t, q, rate_hz, vel_limit, acc_limit, limits):
     slow down uniformly until the envelope holds. vel_limit is one number or
     one per joint (FR20: 120 on J1-J3, 180 on J4-J6). Returns (samples, dt,
     report); sample k is at k*dt seconds."""
-    vel = list(vel_limit) if isinstance(vel_limit, (list, tuple)) else [float(vel_limit)] * 6
+    vel = _per_joint(vel_limit)
+    acc = _per_joint(acc_limit)
     validate(t, q, limits)
     path = Path(t, q)
     scale = 1.0
@@ -166,7 +234,8 @@ def condition(t, q, rate_hz, vel_limit, acc_limit, limits):
         dt = duration / n
         samples = [path.at(k * dt / scale) for k in range(n + 1)]
         vmax, amax = _peaks(samples, dt)
-        need = max(max(v / lim for v, lim in zip(vmax, vel)), math.sqrt(amax / acc_limit))
+        need = max(max(v / lim for v, lim in zip(vmax, vel)),
+                   math.sqrt(max(a / lim for a, lim in zip(amax, acc))))
         if need <= 1.0 + 1e-6:
             break
         scale *= need * 1.01
@@ -179,8 +248,9 @@ def condition(t, q, rate_hz, vel_limit, acc_limit, limits):
     report = {"source_rows": len(t), "source_duration_s": round(path.duration, 4),
               "time_scale": round(scale, 4), "played_duration_s": round(n * dt, 4),
               "samples": n + 1, "dt_s": round(dt, 6),
-              "peak_vel_deg_s": [round(v, 3) for v in vmax], "peak_acc_deg_s2": round(amax, 3),
-              "vel_limit": vel, "acc_limit": acc_limit}
+              "peak_vel_deg_s": [round(v, 3) for v in vmax],
+              "peak_acc_deg_s2": [round(a, 3) for a in amax],
+              "vel_limit": vel, "acc_limit": acc}
     return samples, dt, report
 
 
@@ -498,6 +568,18 @@ def self_test():
     p = Path(t, q)
     check("path passes through every sample",
           max(abs(a - b) for ti, qi in zip(t, q) for a, b in zip(p.at(ti), qi)) < 1e-9)
+    # a smooth motion that turns around must not read as a jolt: 24 fps
+    # samples of 20 sin(2 pi t) have a true peak acceleration of 20 (2 pi)^2
+    tt = [i / 24.0 for i in range(49)]
+    qq = [[20 * math.sin(2 * math.pi * x), 0, 0, 0, 0, 0] for x in tt]
+    ps = Path(tt, qq)
+    dtt = 1 / 500.0
+    xs = [ps.at(k * dtt)[0] for k in range(int(2.0 / dtt) + 1)]
+    inner = xs[int(0.3 / dtt):int(1.7 / dtt)]          # away from the rest-at-ends
+    apk = max(abs(inner[k + 1] - 2 * inner[k] + inner[k - 1]) / dtt ** 2 for k in range(1, len(inner) - 1))
+    true = 20 * (2 * math.pi) ** 2
+    check("a smooth turn-around reads near its true acceleration (not a jolt)",
+          apk < 1.3 * true, "peak %.0f vs true %.0f deg/s^2" % (apk, true))
     # no overshoot: a step-like joint stays within its sample range
     qs = [[0, 0, 0, 0, 0, 10.0 if i >= 12 else 0.0] for i in range(25)]
     ps = Path(t, qs)
@@ -515,8 +597,13 @@ def self_test():
     check("equal intervals near the rate", abs(1.0 / dt - 125) < 2, "%.2f Hz" % (1.0 / dt))
     samples, dt, rep = condition(t, q, 125, 60.0, 200.0, lim)
     vmax, amax = _peaks(samples, dt)
-    check("envelope honoured after uniform scaling", max(vmax) <= 60.0 + 1e-6 and amax <= 200.0 + 1e-6,
-          "scale %.3f, peaks %.2f deg/s, %.2f deg/s^2" % (rep["time_scale"], max(vmax), amax))
+    check("envelope honoured after uniform scaling", max(vmax) <= 60.0 + 1e-6 and max(amax) <= 200.0 + 1e-6,
+          "scale %.3f, peaks %.2f deg/s, %.2f deg/s^2" % (rep["time_scale"], max(vmax), max(amax)))
+    lim_rep = limiting(t, q, 125, 60.0, 200.0, lim)
+    check("limiting() reports the stretch condition() applies, and where",
+          lim_rep["scale_needed"] == round(rep["time_scale"], 4) and lim_rep["kind"] == "acceleration",
+          "%s J%d at %.2f s, x%.3f (condition x%.3f)"
+          % (lim_rep["kind"], lim_rep["joint"], lim_rep["time_s"], lim_rep["scale_needed"], rep["time_scale"]))
     # per joint: a J1 limit of 20 binds while the J5 limit of 1000 does not
     per = [20.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
     samples, dt, rep = condition(t, q, 125, per, 1e9, lim)
@@ -571,7 +658,8 @@ def main(argv=None):
     ap.add_argument("--rate", type=float, default=125.0, help="ServoJ rate, Hz (cmdT = 1/rate)")
     ap.add_argument("--vel-limit", type=float, default=None,
                     help="deg/s for every joint; default: the profile's per-joint max_velocity_deg_s")
-    ap.add_argument("--acc-limit", type=float, default=300.0, help="deg/s^2, before --speed")
+    ap.add_argument("--acc-limit", type=float, default=None,
+                    help="deg/s^2 for every joint, before --speed; default: the profile's max_acceleration_deg_s2")
     ap.add_argument("--move-vel", type=float, default=None,
                     help="MoveJ speed %% to the first pose; default 20 sim, 10 hardware")
     ap.add_argument("--check", action="store_true", help="read-only: identity, errors, pose, FK vs URDF")
@@ -631,7 +719,11 @@ def main(argv=None):
         ap.error("--speed must be in (0, 1]")
     vel = [a.vel_limit] * 6 if a.vel_limit else robot_profile.velocity_limits(prof)
     vel = [v * speed for v in vel]
-    samples, dt, cond = condition(t, q, a.rate, vel, a.acc_limit * speed, limits)
+    acc = [a.acc_limit] * 6 if a.acc_limit else (robot_profile.acceleration_limits(prof) or [300.0] * 6)
+    acc = [x * speed for x in acc]
+    samples, dt, cond = condition(t, q, a.rate, vel, acc, limits)
+    if cond["time_scale"] > 1.0:
+        cond["limited_by"] = limiting(t, q, a.rate, vel, acc, limits)
     cond["speed"] = speed
     report["conditioning"] = cond
     if a.dry_run:

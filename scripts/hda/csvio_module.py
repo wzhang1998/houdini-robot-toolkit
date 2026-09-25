@@ -549,7 +549,26 @@ def _collect(node, src):
         angles.append(list(ang))
         prev = ang
 
-    return {"rows": rows, "angles": angles, "limit_hits": limit_hits,
+    # How the robot will play this: the player's own conditioning, with the
+    # same velocity limits and the acceleration limit, at 100 % speed. A clip
+    # that passes velocity checks can still need several times the
+    # acceleration somewhere -- the player then slows the WHOLE clip -- so
+    # this is checked here, where it can still be fixed.
+    playback = None
+    acc_limits = _acc_limits(node)
+    if acc_limits and len(angles) >= 2:
+        try:
+            if HERE_SCRIPTS not in sys.path:
+                sys.path.insert(0, HERE_SCRIPTS)
+            import fairino_player
+            times = [i * dt for i in range(len(angles))]
+            playback = fairino_player.limiting(times, angles, 125.0, vel_limits, acc_limits)
+            playback["frame"] = f0 + int(round(playback["time_s"] * fps))
+            playback["acc_limit"] = acc_limits[0]
+        except Exception as e:
+            playback = {"error": str(e)[:120]}
+
+    return {"rows": rows, "angles": angles, "limit_hits": limit_hits, "playback": playback,
             "speed_hits": speed_hits, "wrist_flips": wrist_flips,
             "steps_over_180": steps, "fps": fps, "dt": dt, "f0": f0, "f1": f1,
             "limits": limits, "max_vel": max_vel, "vel_limits": vel_limits,
@@ -577,6 +596,19 @@ def _out_parm(node, name):
             found = n.parm(name)
         n = n.parent()
     return found
+
+
+HERE_SCRIPTS = os.path.join(_ROOT, "scripts")
+
+
+def _acc_limits(node):
+    """Per-joint acceleration limits: the asset's Max Joint Acceleration if
+    it has one (set from the profile on a profile change), else the
+    profile's robot.max_acceleration_deg_s2, else None (no check)."""
+    p = _parm_upward(node, "max_acceleration")
+    if p is not None and float(p.eval()) > 0:
+        return [float(p.eval())] * NUM_JOINTS
+    return robot_profile.acceleration_limits(_profile(node))
 
 
 def _parm_upward(node, name):
@@ -695,6 +727,24 @@ def _preflight_checks(node, data):
                     "worst J%d at %.0f%% of its limit" % (wv[1], wv[3] * 100)
                     if wv else "no motion"))
 
+    # 4b. how the robot will play it -- the player's conditioning, 100 % speed
+    pb = data.get("playback")
+    if pb is None:
+        out.append((True, "OK", "Robot playback", "no acceleration limit in the profile; not checked"))
+    elif "error" in pb:
+        out.append((True, "WARN", "Robot playback", "could not check: %s" % pb["error"]))
+    elif pb["scale_needed"] > 1.001:
+        unit = "deg/s^2" if pb["kind"] == "acceleration" else "deg/s"
+        lim = pb["acc_limit"] if pb["kind"] == "acceleration" else data["vel_limits"][pb["joint"] - 1]
+        out.append((False, "FAIL", "Robot playback",
+                    "plays %.2fx slower than designed: J%d %s %.1fx its %g %s at frame %d "
+                    "-- Retime, or smooth the path there"
+                    % (pb["scale_needed"], pb["joint"], pb["kind"], pb["ratio"], lim, unit, pb["frame"])))
+    else:
+        out.append((True, "OK", "Robot playback",
+                    "plays at its designed speed (worst J%d %s at %.0f%% of its limit, frame %d)"
+                    % (pb["joint"], pb["kind"], pb["ratio"] * 100, pb["frame"])))
+
     # 5. wrist branch
     wf = data["wrist_flips"]
     if not data["wrist_resolved"]:
@@ -787,6 +837,10 @@ def _preflight_failures(data):
     if wv and wv[3] > 1.0:
         fails.append("Joint velocity: J%d at %.1f deg/s exceeds its %.0f (frame %d)"
                      % (wv[1], wv[2], data["vel_limits"][wv[1] - 1], wv[0]))
+    pb = data.get("playback")
+    if pb and "error" not in pb and pb["scale_needed"] > 1.001:
+        fails.append("Robot playback: %.2fx slower than designed (J%d %s, frame %d)"
+                     % (pb["scale_needed"], pb["joint"], pb["kind"], pb["frame"]))
     return fails
 
 
@@ -832,6 +886,9 @@ def preflight(kwargs):
             if any(abs(row[k] - prev[k]) / dt > data["vel_limits"][k] for k in range(NUM_JOINTS)):
                 bad.add(data["f0"] + i)
         prev = row
+    pb = data.get("playback")
+    if pb and "error" not in pb and pb["scale_needed"] > 1.001:
+        bad.add(pb["frame"])
     fp = _out_parm(node, "preflight_frames")
     if fp is not None:
         fp.set(",".join(str(x) for x in sorted(bad)))
