@@ -56,6 +56,28 @@ def fit_plane(pts):
     return [round(x, 6) for x in v], round(off, 5), rms
 
 
+def plane_width(pts):
+    """How wide the points spread across their longest direction, m: the
+    tallest triangle any three of them make. Points nearly in a line leave
+    the plane's tilt about that line unmeasured."""
+    best = 0.0
+    n = len(pts)
+    for i in range(n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
+                a, b, c = pts[i], pts[j], pts[k]
+                u = [b[t] - a[t] for t in range(3)]
+                v = [c[t] - a[t] for t in range(3)]
+                cr = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+                longest = max(math.dist(a, b), math.dist(b, c), math.dist(a, c))
+                if longest > 0:
+                    best = max(best, math.sqrt(sum(x * x for x in cr)) / longest)
+    return best
+
+
+MIN_WIDTH_M = 0.3                   # plane points narrower than this: warn
+
+
 def fit_box(top, bottom_z):
     """Smallest-area rectangle round the top points' footprint (0.25 deg steps)."""
     best = None
@@ -123,7 +145,8 @@ def shapes(points, floor_z):
     for (name, kind), pts in groups.items():
         if kind == "plane" and len(pts) >= 3:
             n, off, rms = fit_plane(pts)
-            out[name] = {"type": "halfspace", "normal": n, "offset": off, "_fit_rms_m": round(rms, 5)}
+            out[name] = {"type": "halfspace", "normal": n, "offset": off, "_fit_rms_m": round(rms, 5),
+                         "_width_m": round(plane_width(pts), 4), "_n": len(pts)}
         elif kind == "box" and len(pts) >= 3:
             bottom = groups.get((name, "bottom"))
             out[name] = fit_box(pts, min(p[2] for p in bottom) if bottom else floor_z)
@@ -153,6 +176,13 @@ def merge(env, new):
                 lines.append("%s replaced" % name)
             for k in ("center", "size", "yaw_deg", "radius", "height", "normal", "offset", "type"):
                 o.pop(k, None)
+        if geo.get("_width_m") is not None and geo["_width_m"] < MIN_WIDTH_M:
+            lines[-1] += ("  -- WARNING: %s's points are nearly in a line (%.2f m wide), its tilt is not "
+                          "measured; spread them out" % (name, geo["_width_m"]))
+        elif geo.get("_n") == 3:
+            lines[-1] += "  (3 points: an exact fit, nothing to check it by -- a 4th point gives a residual)"
+        elif "_fit_rms_m" in geo:
+            lines[-1] += "  (fit rms %.1f mm)" % (1000 * geo["_fit_rms_m"])
         o.update({k: v for k, v in geo.items() if not k.startswith("_")})
         o["measured"] = True
     return lines
@@ -226,6 +256,16 @@ def self_test():
     check("merge keeps role and note, replaces geometry, adds new objects",
           cart["role"] == "obstacle" and cart["note"] == "red" and cart["yaw_deg"] == b["yaw_deg"]
           and any(o["name"] == "wall_tv" for o in env["objects"]), "; ".join(lines))
+    # three floor points nearly in a line (a real take): the tilt about that
+    # line is unmeasured -- the fit put the floor 15 cm up, tilted 6 deg
+    line = [{"name": "floor:plane", "tcp_m": p} for p in
+            ([0.0990, 1.2259, 0.0099], [0.7160, 1.0200, 0.0184], [-0.4026, 1.1803, 0.0198])]
+    fl = shapes(line, 0.0)["floor"]
+    check("plane points nearly in a line are measured as such", fl.get("_width_m", 9) < MIN_WIDTH_M, "%s" % fl.get("_width_m"))
+    msg = merge({"schema": "motionlab.env/1", "objects": []}, shapes(line, 0.0))
+    check("... and the change line warns", any("in a line" in m for m in msg), "; ".join(msg))
+    spread = [{"name": "floor:plane", "tcp_m": p} for p in ([0.0, 1.2, 0.0], [0.8, -1.0, 0.0], [-1.0, 0.0, 0.0])]
+    check("a triangle of floor points is wide", shapes(spread, 0.0)["floor"].get("_width_m", 0) > 1.0)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

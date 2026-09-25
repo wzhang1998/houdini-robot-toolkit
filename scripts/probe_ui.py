@@ -142,7 +142,7 @@ class App:
                   command=self.record).grid(row=0, column=2, padx=6)
         ttk.Button(rf, text="Undo last", command=self.undo).grid(row=0, column=3)
         ttk.Button(rf, text="Delete selected", command=self.delete).grid(row=0, column=4, padx=4)
-        ttk.Label(rf, text="kinds: plane (3+ on a wall / floor), box (3+ top corners; :bottom one on its base "
+        ttk.Label(rf, text="kinds: plane (3+ spread wide, a 4th to check the fit), box (3+ top corners; :bottom one on its base "
                            "if not on the floor), cylinder (3+ round its foot), point",
                   foreground="#555").grid(row=1, column=0, columnspan=5, sticky="w", pady=(2, 0))
         root.bind("<Return>", lambda e: self.record())
@@ -203,8 +203,14 @@ class App:
             gap = fk_gap_mm(rec)
             self.tree.insert("", "end", iid=str(i), values=(
                 rec["name"], *("%.4f" % x for x in rec["tcp_m"]), "--" if gap is None else "%.2f" % gap))
-        lines = ["%s  %d/%d %s" % (n, c, need, "ok" if c >= need else "needs %d more" % (need - c))
-                 for n, c, need in group_status(self.data["points"])]
+        lines = []
+        for n, c, need in group_status(self.data["points"]):
+            state = "ok" if c >= need else "needs %d more" % (need - c)
+            if n.endswith(":plane") and c >= 3:
+                w = EFP.plane_width([p["tcp_m"] for p in self.data["points"] if p["name"] == n])
+                if w < EFP.MIN_WIDTH_M:
+                    state = "points in a line (%.2f m wide): spread them out" % w
+            lines.append("%s  %d/%d %s" % (n, c, need, state))
         self.groups.config(text="Objects:  " + ("   |   ".join(lines) if lines else "none yet"))
 
     def _say(self, text):
