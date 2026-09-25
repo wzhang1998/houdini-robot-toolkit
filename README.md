@@ -705,6 +705,20 @@ different clip from the one about to ship.
 `hou.ui.displayMessage` blocks Houdini's main thread until dismissed, which
 deadlocks scripted and bridge-driven runs.
 
+## Installing the assets
+
+Run once per machine (and again if the repo moves), then restart Houdini:
+
+```
+python scripts/install_houdini_package.py
+```
+
+It writes a Houdini package (`Documents/houdiniXX.X/packages/houdini_robot_toolkit.json`) that puts this
+repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O asset inside it and dance_phrase load at
+every start. Without it an asset installed for one session is gone after a restart and a scene falls back
+to the copy embedded in the .hip; the CSV I/O asset's embedded copy has no Python module, and Retime,
+Export and Import fail with `KeyError: 'PythonModule'`.
+
 ## Known issues
 
 - **No orientation mode currently passes pre-flight on the drawn curve.**
