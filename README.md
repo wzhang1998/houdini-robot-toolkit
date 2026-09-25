@@ -414,6 +414,7 @@ itself: hand-guide the tool tip onto points and record them (read-only,
 never moves the robot), then fit shapes:
 
 ```
+python scripts/probe_ui.py                   # window: record / undo / preview fit / write env, live URDF-vs-controller TCP
 python scripts/probe_env.py --ip IP          # prompt: wall_tv:plane, control_cart:box, operator:cylinder ...
 python scripts/env_from_points.py envs/volvox_lab_points.json
 ```

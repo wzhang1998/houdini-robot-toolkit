@@ -82,11 +82,16 @@ python scripts/fairino_player.py --hardware --ip <IP> --wiggle 1 3 4 1
 `envs/volvox_lab.json` 现在是照片估计的，朝向也是假设的：假设机械臂正前方（J1=0 时手臂伸出的方向）朝电视墙。Houdini 里 Pre-Flight 的 Cell 检查、Show Cell 显示的房间，都基于这个估计。
 
 1. WebUI 打开拖动示教。
-2. 运行探点工具，把工具尖端贴到点上，输入名字回车；`u` 撤销，`q` 退出：
+2. 打开探点窗口（只读，不会让机械臂动）：
 
 ```bash
-python scripts/probe_env.py --ip <IP> --tool-len 0.0
+python scripts/probe_ui.py
 ```
+
+   选物体（下拉里有常用的），把工具尖端贴到点上，按 **Record point** 或回车。
+   - 表格会列出每个点，以及“URDF vs controller mm”：我们 URDF 算的 TCP 和控制器 TCP 差多少。这就是 FK 交叉验证，每个点都顺带做了。
+   - 下面一行显示每个物体已有几个点、还需要几个。
+   - 命令行版本也还在：`python scripts/probe_env.py --ip <IP> --tool-len 0.0`，输入名字回车，`u` 撤销，`q` 退出。
 
 | 名字 | 点 |
 |---|---|
@@ -99,7 +104,7 @@ python scripts/probe_env.py --ip <IP> --tool-len 0.0
 
 装了工具就用 `--tool-len` 填工具长度（米）。更准的做法是先用控制器的工具标定（4 点或 6 点）量出 TCP，再把长度填进来。
 
-3. 拟合并更新环境文件（旧文件存成 `.bak`，会打印每个物体移动了多少）：
+3. 在窗口里先按 **Preview fit** 看会改什么，再按 **Write env** 写入（旧文件存成 `.bak`，会列出每个物体移动了多少）。命令行版本：
 
 ```bash
 python scripts/env_from_points.py envs/volvox_lab_points.json

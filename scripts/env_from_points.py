@@ -158,6 +158,15 @@ def merge(env, new):
     return lines
 
 
+def update_env(env, points):
+    """Fit the points and merge them into env (in place). Returns
+    (change lines, validation errors); the caller writes the file."""
+    import collision as CL
+    floor = next((o for o in env["objects"] if o["name"] == "floor" and o["type"] == "halfspace"), None)
+    lines = merge(env, shapes(points, floor["offset"] if floor else 0.0))
+    return lines, CL.validate_env(env)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("points", nargs="?")
@@ -167,13 +176,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test()
-    import collision as CL
     env = json.load(open(a.env))
     pts = json.load(open(a.points))["points"]
-    floor = next((o for o in env["objects"] if o["name"] == "floor" and o["type"] == "halfspace"), None)
-    new = shapes(pts, floor["offset"] if floor else 0.0)
-    lines = merge(env, new)
-    errs = CL.validate_env(env)
+    lines, errs = update_env(env, pts)
     if errs:
         print("env would be invalid:", errs)
         return 1
