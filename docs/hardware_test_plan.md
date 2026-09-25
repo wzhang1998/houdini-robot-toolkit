@@ -1,9 +1,19 @@
-# 真机测试清单（FR20）
+# 真机测试清单（FR20）— 2026-09-25 版
 
-目标：用真机把软件里的三个假设换成实测，再用新数值重跑生成器。
-每一步都会让机械臂动的，先确认：工作区清空、手在急停上、WebUI 全局速度已知。
+目标：
+1. 确认整条链路在真机上可靠：Houdini → Pre-Flight → CSV → 播放器 → FR20。
+2. 用实测数据替换软件里的三个假设：房间、加速度上限、URDF 和控制器运动学是否一致。
+3. 记录控制器现有的安全设置，为下一步“控制器安全设置当运行时防线”做准备（见 `docs/standard_tools_eval.md` 第 3 节）。
 
-命令里的 `192.168.58.2` 是法奥出厂默认 IP，换成你真机的。所有命令在仓库根目录运行。先把分支拉到最新，跑一遍自测：
+**每一步会动的，先确认三件事：工作区清空、手在急停上、知道 WebUI 的全局速度。**
+表里标 🟢 的不动，🟡 小幅动，🔴 大幅动。
+所有命令都在仓库根目录运行，`<IP>` 换成真机 IP。
+
+---
+
+## 0. 准备（不动）
+
+1. 跑自测，每条最后都应输出 OK：
 
 ```bash
 python scripts/fairino_player.py --self-test
@@ -13,38 +23,70 @@ python scripts/fairino_player.py --self-test
 python scripts/collision.py
 ```
 
----
+2. **改播放设置。** 你本地的 `playback.toml` 现在是 `speed = 1.0`、`acc_limit = 300`，这是给 SimMachine 用的，真机不要用。打开 `python scripts/play_ui.py`，在界面里改成：
 
-## 1. 连接检查（不动）
+| 项 | 真机值 | 原因 |
+|---|---|---|
+| Target | Hardware | 界面会显示红字警告 |
+| Controller IP | 真机 IP | |
+| Speed (0-1) | **0.3** | 先慢速；真机上每一步动作前界面都会先问你 |
+| Acc limit deg/s² | **150** | FR20 profile 的值；Houdini 的 Retime 和 Pre-Flight 都按 150 规划 |
+| MoveJ % | **10** | 去起点、回 HOME 用 |
+| Wiggle | J1, 3°, 4 s, 1 次 | J6 转 5° 看不出来 |
 
-```bash
-python scripts/fairino_player.py --check --hardware --ip 192.168.58.2
-```
+3. **WebUI 安全设置拍照记录**（不要改，只记）：
+   - 软限位
+   - 碰撞检测等级和碰撞策略
+   - 速度限制
+   - 安全墙、干涉区
+   - 奇异点保护
+   - 如果有“安全参数校验和”，也记下来
 
-看型号、错误码、当前关节、FK 与 URDF 是否一致。IP 换成真机的。
+   以后播放器会读回这些设置核对，对不上就拒绝播放。
 
-## 1b. 回 HOME（会动，MoveJ）
+## 1. 连接检查 🟢
 
-HOME = `[0, -90, 90, -90, -90, 0]`：大臂朝上、小臂朝前、工具朝下，TCP 在底座前约 0.85 m、高约 1.1 m。**不要回全零**：全零时 FR20 平躺，TCP 离底板只有约 8 cm。路径检查暂停（碰撞只在 Houdini 的 Pre-Flight 里查），所以第一次回 HOME 时 MoveJ % 调低，盯着看。UI 里是"6 Go HOME"：
-
-```bash
-python scripts/fairino_player.py --hardware --ip 192.168.58.2 --goto-home
-```
-
-建议同时在 WebUI 里把这个姿态存成一个示教点。
-
-## 2. 测量现场（不动，拖动示教）
-
-`envs/volvox_lab.json` 现在是**照片估计**的，而且朝向是假设的：假设机械臂的正前方（J1=0 时手臂伸出的方向，URDF −X）朝向电视墙。先用机械臂本身把房间量出来：
-
-1. WebUI 打开拖动示教（手引导）。
-2. 运行探点工具，把工具尖端贴到点上，在提示处输入名字回车；输 `u` 撤销，`q` 退出：
+play_ui 按 **1 Check**，或者：
 
 ```bash
-python scripts/probe_env.py --ip 192.168.58.2 --tool-len 0.0
+python scripts/fairino_player.py --check --hardware --ip <IP>
 ```
 
-建议点位（名字:类型）：
+看四项：型号、错误码为 0、当前关节角、**FK 与 URDF 的差**（控制器 TCP 和我们 URDF 算出的 TCP 之差）。
+SimMachine 上这个差是 0.004 mm，但 SimMachine 实际是 FR5 的模型。**真机的数才是第一次验证 FR20 的 URDF。** 差超过 1 mm 先停，把输出发给我。
+
+## 2. 回 HOME 🔴（MoveJ）
+
+HOME = `[0, -90, 90, -90, -90, 0]`：大臂朝上、小臂朝前、工具朝下，TCP 在底座前约 0.85 m、高约 1.1 m。
+**不要回全零**：全零时 FR20 平躺，TCP 离底板只有约 8 cm。
+播放器这边的路径检查已暂停，所以 MoveJ % 用 10，眼睛盯着。
+
+play_ui 按 **6 Go HOME**。到位后再按一次 **1 Check**，记下 HOME 位置的 FK 差。
+
+**FK 交叉验证（建议做）**：用拖动示教把手臂摆到 3 个明显不同的姿态，每个姿态按一次 Check，记下 FK 差。
+- 3 个姿态：伸远、贴近底座、手腕转大角度。
+- 如果差随姿态变化，说明 URDF 连杆长度和控制器不一致。
+
+## 3. Wiggle 🟡
+
+play_ui 按 **4 Wiggle**（J1 3°），或者：
+
+```bash
+python scripts/fairino_player.py --hardware --ip <IP> --wiggle 1 3 4 1
+```
+
+整条手臂会左右轻摆。日志会写 `wiggle: J1 moved 3.00 deg`。这一步验证 ServoJ 流式链路通不通：之前 J6 5° 在真机上看不出动。
+
+## 4. 测量房间 🟡（拖动示教）
+
+`envs/volvox_lab.json` 现在是照片估计的，朝向也是假设的：假设机械臂正前方（J1=0 时手臂伸出的方向）朝电视墙。Houdini 里 Pre-Flight 的 Cell 检查、Show Cell 显示的房间，都基于这个估计。
+
+1. WebUI 打开拖动示教。
+2. 运行探点工具，把工具尖端贴到点上，输入名字回车；`u` 撤销，`q` 退出：
+
+```bash
+python scripts/probe_env.py --ip <IP> --tool-len 0.0
+```
 
 | 名字 | 点 |
 |---|---|
@@ -55,87 +97,96 @@ python scripts/probe_env.py --ip 192.168.58.2 --tool-len 0.0
 | `operator:cylinder` | 操作员站位的地面，绕一圈 4–5 个点 |
 | `stage:point` | 表演区域的几个角，仅作参考 |
 
-装了工具就用 `--tool-len` 填工具长度（米），否则按法兰面计算。
+装了工具就用 `--tool-len` 填工具长度（米）。更准的做法是先用控制器的工具标定（4 点或 6 点）量出 TCP，再把长度填进来。
 
-3. 拟合，更新环境文件（旧的存为 `.bak`，会打印每个物体被移动了多少）：
+3. 拟合并更新环境文件（旧文件存成 `.bak`，会打印每个物体移动了多少）：
 
 ```bash
 python scripts/env_from_points.py envs/volvox_lab_points.json
 ```
 
-4. 在 Houdini 里打开 `scenes/FR20_cell.hiplc` 看房间对不对，或者重新出图：
+4. 在 Houdini 的 robot_arm 上打开 **Display > Cell**，看房间和实际是否对得上。
+   - 区域和高墙现在有实线轮廓，不用选中节点也能看到。
+   - 如果朝向反了（电视墙跑到机械臂背后），告诉我，我来改坐标系。
+
+## 5. 测加速度上限 🟡
+
+现在所有规划都用 150 deg/s²，这是手册里 20–25 kg 扩展负载的值。空载时大概率能更高。这个数决定动作能有多“快”：
+- 在 150 下，大幅动作不可能快，“突然”的动作只能是 7–10° 的小刺；
+- 在 450 下，同样的 punch 段落，TCP 速度从 0.6 m/s 提到 1.3 m/s。
+
+从最轻的 J6 开始，小幅度，逐级加速，每一级都会先问你：
 
 ```bash
-hython scripts/render_previews.py --only=cell_overview
+python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report accel_j6.json
 ```
 
-## 3. 测加速度上限（会动，小幅）
-
-现在所有规划都用 150 deg/s²，这是手册里 20–25 kg 扩展负载的值。空载时大概率能更高，这个数值决定舞蹈能有多"快"：
-
-- 在 150 下，大幅动作不可能快，所以"突然"的动作只能是 7–10° 的小刺；
-- 在 450 下，同样的 punch 段落 TCP 速度从 0.6 m/s 提到 1.3 m/s。
-
-从最轻的 J6 开始，小幅度，逐级加速，每一级都会询问：
+然后依次测 J5、J4。最后测 J1–J3，幅度改成 2°：
 
 ```bash
-python scripts/accel_probe.py --hardware --ip 192.168.58.2 --joint 6 --amp 3 --report accel_j6.json
+python scripts/accel_probe.py --hardware --ip <IP> --joint 2 --amp 2 --levels 150 225 300 450 --report accel_j2.json
 ```
 
-然后依次测 J5、J4，最后 J1–J3（幅度改成 2°）：
+记下每个关节 “clean up to” 的值。有抖动、异响或报错就停，那一级不算。**这些数先别改进 profile，发给我。**
 
-```bash
-python scripts/accel_probe.py --hardware --ip 192.168.58.2 --joint 2 --amp 2 --levels 150 225 300 450 --report accel_j2.json
-```
+## 6. 播放片段 🔴
 
-记下每个关节"clean up to"的值。把 `profiles/fr20.json` 的 `robot.max_acceleration_deg_s2` 改成每关节一个数，取干净上限的约 70%。然后重跑舞蹈工厂：
+每个片段按 0.3 → 0.6 → 1.0 的速度播放，都勾上 Record 和 Report。
 
-```bash
-hython scripts/build_factory_scene.py --cook-dance
-```
+**每个片段的流程**：
+1. 在 play_ui 里选好 CSV。
+2. **2 Dry run**：`time_scale` 应该是 1.0，大于 1 表示播放器会放慢。
+3. **3 Go to start**。
+4. **5 Play**。
+5. 播完按 **6 Go HOME**。
 
-## 4. 播放片段（会动）
+| 顺序 | 片段 | 内容 |
+|---|---|---|
+| a | `tests/csv/fr20_test.csv` | 你的曲线，18 s，之前在 0.3 真机跑过 |
+| b | `tests/csv/dance_d01_punch-punch.csv` | 单一动作：punch，14 s |
+| c | `tests/csv/dance_d17_punch-float-punch.csv` | 对比段落 ABA，16 s |
+| d | `tests/csv/dance_d32_float-slash-press-float.csv` | 四小节混合，38 s |
+| e | 当前 Houdini 场景的曲线，新导出 | 验证今天修的 Retime |
 
-每个片段先 0.3，再 0.6，最后 1.0，都带 record。播放器默认速度就是 0.3：
+四个 CSV 我今天都 dry-run 过，在 1.0 下 `time_scale` 都是 1.0。
 
-| 片段 | 内容 |
+**e 的做法**：在 Houdini 里依次按 Retime → Pre-Flight（Robot playback 应该是 OK）→ Export。然后在 play_ui 里选这个新 CSV，照上面的流程播。
+
+**报告里看三项**：
+- `tracking_after_lag_max_deg`：跟踪误差，越小越好；
+- `controller_error_after`：应该是 0；
+- 有没有出现 `skipped`。
+
+## 7. 回看真机轨迹（不动，Houdini）
+
+Record 生成的 `*_actual_*.csv` 可以直接回放：在 robot_arm 的 **Output > Import CSV** 里选它，按 Import。现在锁定的实例也能导入，文件是实时读的。
+
+看点：
+- 真机轨迹和设计的曲线差在哪里；
+- 哪一段落后最多。
+
+## 8. OAK-D（如果带了）🟢
+
+1. 先告诉我相机型号，以及能否 `pip install depthai`。
+2. 采集脚本我会用 depthai 加 MediaPipe 写，不自己造姿态估计。
+3. 相机到机械臂底座的标定用 OpenCV ChArUco 手眼标定。
+4. 数据格式参考 `tests/keypoints/synthetic_float_punch_float.json`：每帧肩、肘、腕的三维点，单位米。
+
+---
+
+## 今天不要做
+
+- **不要在真机上测“软限位或干涉区能不能在 ServoJ 播放时触发”。** 先在 SimMachine 上测。
+- 不要修改 WebUI 的安全设置，只拍照记录。
+- 不要用 `acc_limit = 300` 或 `speed = 1.0` 作为第一遍。
+
+## 需要发给我的
+
+| 文件或记录 | 用途 |
 |---|---|
-| `tests/csv/fr20_test.csv` | 你的曲线，retime 后 18 s |
-| `tests/csv/dance_d01_punch-punch.csv` | 单一动作：punch |
-| `tests/csv/dance_d17_punch-float-punch.csv` | 对比段落 ABA |
-| `tests/csv/dance_d32_float-slash-press-float.csv` | 四小节混合，38 s |
-
-```bash
-python scripts/fairino_player.py tests/csv/dance_d17_punch-float-punch.csv --hardware --ip 192.168.58.2 --speed 0.3 --record actual_d17.csv
-```
-
-看报告里的 `tracking_after_lag_max_deg` 和 `controller_error_after`。播放前 Houdini 的 Pre-Flight 已包含 Cell 检查；但现场量过之前，那个检查只基于估计的房间。
-
-## 5. 可见的 wiggle
-
-J6 转 5° 几乎看不出。想确认链路，用 J1 转 3°（整条手臂会摆）：
-
-```bash
-python scripts/fairino_player.py --hardware --ip 192.168.58.2 --wiggle 1 3 4 1
-```
-
-日志会写 `wiggle: J1 moved 3.00 deg`。
-
-## 6. OAK-D（如果带了）
-
-1. 格式：`tests/keypoints/synthetic_float_punch_float.json`。每帧一只手臂的肩、肘、腕（可选：手）三维点，单位米，坐标是表演者自己的方向（x 前、y 左、z 上）。
-2. 采集：告诉我相机型号和能不能 `pip install depthai`，我写采集脚本（人体姿态加深度，输出这个格式）。
-3. 转成机械臂片段，两种方法都会做碰撞检查和标注：
-   - `direct`：照搬轨迹，慢的动作能 1:1；
-   - `effort`：只保留 Laban 动态特征，快动作用这个。
-
-```bash
-python -c "import sys,json; sys.path.insert(0,'scripts'); import retarget as R, motion_clip as M, collision as C; kp=json.load(open('take.json')); env=C.load_env('envs/volvox_lab.json'); c=R.effort(kp, env); M.save(c,'take_effort.json'); M.to_csv(c,'take_effort.csv'); print(c['safety'], c['labels']['sequence'])"
-```
-
-## 记录
-
-每一步的报告 JSON 和 `actual_*.csv` 留着，明天发给我。尤其是：
-
-- `accel_*.json`：决定新的加速度上限；
-- `envs/volvox_lab_points.json`：房间的实测点。
+| 第 0 步的 WebUI 安全设置照片 | 控制器安全设置当运行时防线 |
+| 第 1、2 步 Check 的 FK 差（HOME + 3 个姿态） | URDF 和控制器运动学对照 |
+| `envs/volvox_lab_points.json` | 房间实测点 |
+| `accel_*.json` | 新的加速度上限 |
+| `*_actual_*.csv` 和报告 JSON | 跟踪误差、播放表现 |
+| 任何报错码和当时的操作 | 排查 |

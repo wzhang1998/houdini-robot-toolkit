@@ -163,6 +163,37 @@ decides how dynamic phrases can be; per-bar label accuracy; an OAK-D
 capture script. Fixed: the asset's Import CSV (reads the file live; works
 on locked instances; exact round trip on FR20 and UF850).
 
+## Follow-ups: standard tools evaluation (2026-09-25)
+**Goal**: Replace or validate hand-rolled parts with industry-standard
+tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
+Python 3.13 has numpy but no scipy and no compiler, so only prebuilt
+wheels count).
+**Verdicts**: player path/home check -> REPLACE with the controller's
+safety settings; collision.py -> keep, validate against python-fcl;
+retime_topp -> keep, validate against toppra offline (no Windows wheels);
+room probe, IK, Laban labels / retarget -> keep.
+**Items, in priority order** (all Not Started; new dependencies need the
+user's OK):
+1. Controller safety as the runtime guard: soft limits, collision level /
+   strategy, TCP speed cap, cuboid interference zones, set once in the
+   WebApp. The player reads back `GetSafetyParamsCheckSum` and refuses to
+   stream on a mismatch with the profile. Prove on SimMachine that they
+   trip during ServoJ (the docs do not say). Retire `home_path_check`.
+2. Collision check you can trust: sample between frames (at 24 fps an arm
+   point moves ~0.13 m, more than the 0.05 m margin -- a thin obstacle can
+   be jumped); a python-fcl mesh-vs-capsule oracle test (tests only); VDB
+   SDF for scans (see Stage 2b's input 5 note).
+3. Ruckig (MIT, cp313 wheel) for state-to-state moves: go to start / HOME,
+   clip-to-clip transitions, a smooth abort ramp. Not a path parameteriser:
+   retime_topp stays for following paths.
+Also: cross-check URDF FK/IK against the controller's `GetForwardKin` /
+`GetInverseKin` on the real FR20 (the URDF vs controller link-length
+mismatch is the bigger risk); measure the probe tip with the controller's
+tool calibration instead of `--tool-len`; OAK-D via depthai + OpenCV
+ChArUco hand-eye (check `cv2.calibrateHandEye` exists in OpenCV 5, else pin
+4.x); align Laban definitions with Larboulette & Gibet 2015 (our flow =
+stillness fraction, theirs = jerk); AIST++ as the retarget test set.
+
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config
 (URDF from `assets/fairino_description`, SRDF, collision scene) and an HTTP
