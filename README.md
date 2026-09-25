@@ -336,7 +336,14 @@ delete the folder (or the bake node's output files) after changing the bake.
 
 With the tool pointing down, two regions stand out: the band around the J1
 axis, where a UR-type arm cannot put its wrist, and the rim of the reach,
-where the arm is nearly straight and slow. To read the atlas along a path,
+where the arm is nearly straight and slow.
+
+**The room counts.** With a Cell Environment on the bake SOP (default the
+lab) every voxel also gets `clear` -- some in-limit branch reaches it
+without touching the room or itself -- and `clearance` (m beyond the nearest
+object's margin). The shell is the *clear* space; the slice marks space
+reachable only by touching something dark red. Tool down, 10 cm: 45 % of
+the reachable space is clear of the estimated lab. To read the atlas along a path,
 sample it: `f@headroom = volumesample(1, "headroom", @P);` in a wrangle with
 `atlas_merge` on its second input.
 
@@ -460,12 +467,42 @@ all 8 single-action phrases order their efforts as intended (6/6 pairs),
 sustained wave's acceleration / speed is its frequency, so float reads as
 flick).
 
+**In Houdini: `wenyi::dance_phrase`** (`otls/sop_wenyi.dance_phrase.1.0.hdalc`,
+built by `scripts/build_dance_hda.py`; install it once with Assets > Install
+Asset Library). Bars -- a Laban action each --, Tempo, Flow, Seed, Plan
+Acceleration (0 = the profile's; put `accel_probe.py`'s result), Cell
+Environment. **Generate** makes the phrase (a few seconds) and keeps it on
+the node, so scrubbing and reopening never regenerate; the output is the
+TCP path coloured by each bar's action. **Drive robot_arm** points an FR20's
+FK joints at the phrase; **Export** writes the player's CSV and the clip
+JSON; **Load Clip** reads any factory clip back in, bars and all.
+`scenes/FR20_dance.hiplc` has one ready (float -> punch -> glide).
+
 `/obj/dance` in `scenes/FR20_clip_factory.hiplc` makes 48 phrases in PDG
 (each action alone, contrasting pairs AB / ABA, random mixes: 42 s, all
 clear of the lab); `tests/clips/` and `tests/csv/dance_*.csv` hold three to
 play on the arm.
 
 ![Dance phrases](docs/images/previews/dance_sheet.png)
+
+## The clip library: find, chain
+
+`scripts/clip_library.py` searches every clip (geo/dance, geo/clips,
+tests/clips) by its measured labels and chains clips into one show:
+
+```
+python scripts/clip_library.py search --action punch --level mid
+python scripts/clip_library.py sequence d01_punch-punch d17_punch-float-punch --out geo/show.csv
+```
+
+Dance phrases start and end at rest in HOME and join directly; any other
+join gets a minimum-jerk transition in joint space sized to the joint
+limits. The show is measured as the player plays it, checked against the
+cell and labelled like any clip.
+
+`hython scripts/roundtrip_check.py [clip]` sends a clip through robot_arm
+(FK joints read frame by frame) and back out of the asset's exporter: a
+dance clip and `tests/csv/fr20_test.csv` both come back to 0.00000 deg.
 
 ## From a person to the arm
 
@@ -543,6 +580,23 @@ td-robot-twin's worker does, is later.
   (type `boning::robot_anim_by_csv::1.0`) is legacy and superseded by
   `wenyi::robot_anim_csv_io::1.0`.
 - Houdini incremental saves (`backup/`, `otls/backup/`) are gitignored.
+
+## Curve Check and the room in the viewport
+
+**3 Analyze > Curve Check** walks the goal curve (Progress 0 -> 1) through
+the real solve -- orient mode, tool, presets -- and measures what each pose
+leaves for the robot, independent of timing: reachable, speed headroom,
+closeness to the wrist singularity, joint-limit margin. The curve is drawn
+red where unreachable, else green .. red by the worst of the three
+(Display > Curve Check), with a one-line result; Progress is restored
+exactly. A red stretch is hard at any speed: reshape it or change the tool
+orientation there. On the FR20 scene the curve's final hook passes 3 deg
+from the wrist singularity. FR20 (closed-form IK) only.
+
+**Display > Cell (room)** draws Setup > Cell Environment -- the room
+Pre-Flight's Cell check tests against -- in any scene.
+
+![Curve Check](docs/images/previews/curve_check.png)
 
 ## Reading the analysis colours
 
@@ -705,6 +759,10 @@ deadlocks scripted and bridge-driven runs.
   a literal 150 default had left UF850 instances on FR20's acceleration,
   since only a profile *change* wrote it. UF850: 1146 deg/s^2, UFACTORY's
   published joint acceleration for the series.
+- **Import CSV fails on a locked instance**: the importer creates nodes
+  inside the asset, which Houdini refuses on a locked (matched) instance --
+  every current scene's. Drive the FK joints from the clip instead (the
+  Dance Phrase node, the cell scene and `roundtrip_check.py` do).
 - **Retime is ~4x faster** (FR20 scene: 106 s -> 27 s, same result): 90 % of
   each IK solve was `urdf_rig`'s generic 3x3 product inside the Newton
   polish; unrolled and with joint-origin rotations cached, forward

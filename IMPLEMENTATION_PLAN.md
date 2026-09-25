@@ -95,11 +95,14 @@ way to look at it in Houdini.
 **Tests**: `python scripts/capability.py` (FK-made targets reachable, headroom
 = brute-force worst direction, ~0 at wrist / elbow singularities, limit
 margin); `hython scripts/atlas_check.py` after `build_atlas_scene.py --bake`.
-**Status**: In Progress — core, PDG bake (10 cm: 43x34x43, 89 s of work in
-23 s over 8 work items), merge, viewers (half shell + headroom slice) and
-both test scripts pass. Next: sample the atlas on robot_arm's goal curve
-(colour the curve by headroom before solving); Capability mode bake timing;
-finer voxels; tool length from the asset's tool.
+**Status**: Complete for the fixed-direction atlas -- core, PDG bake (10 cm,
+with the room: 136 s of work in 38 s over 8 work items), merge, viewers,
+`clear` / `clearance` against the cell (45 % of the reachable space is
+clear of the lab, tool down), and robot_arm's Curve Check (the goal curve
+measured through the real solve, coloured by risk; FR20 scene: the final
+hook passes 3 deg from the wrist singularity). Both test scripts pass.
+Not done: Capability-mode bake timing; finer voxels; the asset's tool
+length in the bake (a parameter today).
 
 ## Stage 2b: The cell -- real2sim, collision, safety zones
 **Goal**: The room the robot works in, in the robot base frame, checked on
@@ -136,11 +139,13 @@ phrases; a keypoint take becomes a playable clip.
 unreachable, 16 cell), dance factory (48/48 ok, 42 s in PDG), measured
 labels (6/6 effort orderings, 7/8 actions per clip, 66/127 per bar), human
 retargeting (direct and effort) all pass their tests; every dance and
-factory clip dry-runs at time scale 1.0. Open: Ruckig (a new dependency,
-ask first); FR20 jerk limit unknown; the real acceleration limit
-(`accel_probe.py` on hardware) -- it decides how dynamic phrases can be;
-per-bar label accuracy; an OAK-D capture script; the Houdini import
-round-trip of a clip.
+factory clip dry-runs at time scale 1.0. Also done: the Dance Phrase HDA (make / preview / export / load phrases in
+Houdini), the clip library (search by measured labels, chain into a show
+with transitions, checked like any clip), the Houdini round trip (exact,
+through FK). Open: Ruckig (a new dependency, ask first); FR20 jerk limit
+unknown; the real acceleration limit (`accel_probe.py` on hardware) -- it
+decides how dynamic phrases can be; per-bar label accuracy; an OAK-D
+capture script; the asset's Import CSV on locked instances.
 
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config
