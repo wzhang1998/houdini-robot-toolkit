@@ -3,6 +3,7 @@
     hython scripts/build_review_scene.py                   # build and save the scene
     hython scripts/build_review_scene.py --cook            # ... and cook it (every clip)
     hython scripts/build_review_scene.py --cook --ids d01_punch-punch v04_line
+    hython scripts/build_review_scene.py --cook --sets stage --ok-only   # the quick-test set (stage_set.py)
 
 The scene is scenes/FR20_cell.hiplc (the measured room, the FR20 driven by
 CELL_CTRL's Clip) turned into the review picture by
@@ -82,7 +83,7 @@ for f in work_item.inputFiles:
     if f.path.endswith("/tile.mp4"):
         d = f.path[:-len("/tile.mp4")]
         items.append({"dir": d, "id": d.split("/")[-1], "set": d.split("/")[-2]})
-order = {k: i for i, k in enumerate(("dance", "clips"))}
+order = {k: i for i, k in enumerate(R.SETS)}
 items.sort(key=lambda i: (order.get(i["set"], 9), i["id"]))
 for p in R.build_videos(items):
     work_item.addOutputFile(p, "file/video")
@@ -169,6 +170,16 @@ def build():
     return tops, gen, out
 
 
+def _values(argv, flag):
+    """The arguments after flag, up to the next --flag."""
+    out = []
+    for x in argv[argv.index(flag) + 1:]:
+        if x.startswith("--"):
+            break
+        out.append(x)
+    return out
+
+
 def cook(out):
     import time
     t = time.time()
@@ -188,9 +199,16 @@ def cook(out):
 
 if __name__ == "__main__":
     tops, gen, out = build()
+    if "--sets" in sys.argv:
+        sets = _values(sys.argv, "--sets")
+        gen.parm("sets").set(" ".join(sets))
+        tops.node("sheet").parm("outputfilepath").set("$HIP/../geo/review/contact_sheet_%s.png" % "_".join(sets))
+        hou.hipFile.save(SCENE)
+    if "--ok-only" in sys.argv:
+        gen.parm("ok_only").set(1)
+        hou.hipFile.save(SCENE)
     if "--ids" in sys.argv:
-        i = sys.argv.index("--ids")
-        gen.parm("ids").set(" ".join(a for a in sys.argv[i + 1:] if not a.startswith("--")))
+        gen.parm("ids").set(" ".join(_values(sys.argv, "--ids")))
         hou.hipFile.save(SCENE)
     print("built", SCENE)
     if "--cook" in sys.argv:

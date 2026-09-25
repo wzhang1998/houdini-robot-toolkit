@@ -1,0 +1,76 @@
+{
+ "facing_deg": -60.0,
+ "stage_home_deg": [
+  -60.0,
+  -90.0,
+  90.0,
+  -90.0,
+  -90.0,
+  0.0
+ ],
+ "env": "envs/volvox_lab.json",
+ "clips": [
+  "s_d00_punch-punch",
+  "s_d01_punch-punch",
+  "s_d02_slash-slash",
+  "s_d03_slash-slash",
+  "s_d04_press-press",
+  "s_d05_press-press",
+  "s_d08_dab-dab",
+  "s_d09_dab-dab",
+  "s_d10_flick-flick",
+  "s_d11_flick-flick",
+  "s_d12_glide-glide",
+  "s_d13_glide-glide",
+  "s_d14_float-float",
+  "s_d15_float-float",
+  "s_d16_punch-float",
+  "s_d17_punch-float-punch",
+  "s_d18_slash-glide",
+  "s_d19_slash-glide-slash",
+  "s_d20_press-flick",
+  "s_d21_press-flick-press",
+  "s_d22_wring-dab",
+  "s_d23_wring-dab-wring",
+  "s_d24_flick-dab-wring-press",
+  "s_d25_float-flick-float",
+  "s_d26_glide-press",
+  "s_d27_glide-punch-slash-flick",
+  "s_d28_float-slash-slash-dab",
+  "s_d29_dab-float",
+  "s_d30_punch-float-flick",
+  "s_d31_wring-dab",
+  "s_d32_float-slash-press-float",
+  "s_d33_glide-dab-glide",
+  "s_d35_float-press",
+  "s_d36_flick-flick-press-punch",
+  "s_d37_glide-glide-glide-slash",
+  "s_d38_slash-wring-float",
+  "s_d39_slash-punch",
+  "s_d40_punch-slash-wring",
+  "s_d41_flick-flick-float",
+  "s_d42_float-float-dab-slash",
+  "s_d43_float-press-punch",
+  "s_d44_press-punch-dab",
+  "s_d45_flick-press-flick",
+  "s_d47_wring-float-flick"
+ ],
+ "dropped": [
+  {
+   "id": "s_d06_wring-wring",
+   "why": "cell: TCP 3 mm outside work zone stage at frame 357"
+  },
+  {
+   "id": "s_d07_wring-wring",
+   "why": "cell: TCP 20 mm outside work zone stage at frame 64"
+  },
+  {
+   "id": "s_d34_wring-press-slash-press",
+   "why": "cell: TCP 25 mm outside work zone stage at frame 419"
+  },
+  {
+   "id": "s_d46_wring-wring-wring",
+   "why": "cell: TCP 12 mm outside work zone stage at frame 58"
+  }
+ ]
+}

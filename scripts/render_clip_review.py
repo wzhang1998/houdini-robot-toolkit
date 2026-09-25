@@ -44,7 +44,7 @@ OUT = ROOT + "/geo/review"
 HYTHON = "C:/Program Files/Side Effects Software/Houdini 22.0.368/bin/hython.exe"
 FFMPEG = "ffmpeg"
 FONT = "C\\:/Windows/Fonts/consola.ttf"
-SETS = {"dance": ROOT + "/geo/dance", "clips": ROOT + "/geo/clips"}
+SETS = {"dance": ROOT + "/geo/dance", "clips": ROOT + "/geo/clips", "stage": ROOT + "/geo/stage"}
 FPS = 24.0
 TILE = (480, 480)
 # the user's viewport in FR20_rig, 2026-09-25 (the robot's right-front, above, a
@@ -402,14 +402,16 @@ def stack(tiles, cols, rows, w, h, path, crf=22):
 def build_videos(items, grid=(4, 2), overview=(5, 5), overview_tile=432):
     """Pages per set, and every clip in overview pages of overview[0] x [1]."""
     out = []
-    for s in sorted(set(i["set"] for i in items), key=["dance", "clips"].index):
+    for s in sorted(set(i["set"] for i in items), key=list(SETS).index):
         tiles = [i["dir"] + "/tile.mp4" for i in items if i["set"] == s and os.path.exists(i["dir"] + "/tile.mp4")]
         for k, grp in enumerate(pages(tiles, grid[0] * grid[1])):
             out.append(stack(grp, grid[0], grid[1], TILE[0], TILE[1], "%s/page_%s_%d.mp4" % (OUT, s, k + 1)))
     every = [i["dir"] + "/tile.mp4" for i in items if os.path.exists(i["dir"] + "/tile.mp4")]
+    sets = sorted(set(i["set"] for i in items))
+    name = "overview_" + sets[0] if len(sets) == 1 else "overview"          # one set: its own overview pages
     for k, grp in enumerate(pages(every, overview[0] * overview[1])):
         out.append(stack(grp, overview[0], overview[1], overview_tile, overview_tile,
-                         "%s/overview_%d.mp4" % (OUT, k + 1), crf=24))
+                         "%s/%s_%d.mp4" % (OUT, name, k + 1), crf=24))
     return out
 
 
