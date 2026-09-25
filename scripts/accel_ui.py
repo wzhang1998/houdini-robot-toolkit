@@ -112,7 +112,7 @@ class App:
         ttk.Label(pf, text="Room").grid(row=2, column=0, sticky="w")
         ttk.Entry(pf, textvariable=self.v["env"], width=60).grid(row=2, column=1, columnspan=7, sticky="we")
         ttk.Label(pf, text="J4-J6 first (wrist: pose hardly matters), 3 deg; then J1-J3 at 2 deg from HOME (their "
-                           "result holds for poses like it). Blank room = no room check.",
+                           "result holds for poses like it). J6 turns the bare flange: see 'moved deg', or tape a flag on it.",
                   foreground="#555").grid(row=3, column=0, columnspan=8, sticky="w", pady=(4, 0))
         r0 += 1
         bf = ttk.Frame(f)
@@ -124,10 +124,10 @@ class App:
         tk.Button(bf, text="STOP", bg="#c00000", fg="white", font=("Segoe UI", 10, "bold"),
                   command=self.stop).grid(row=0, column=2, padx=12)
         r0 += 1
-        cols = ("acc", "move", "vel", "track", "lag", "errors", "state")
+        cols = ("acc", "moved", "move", "vel", "track", "lag", "errors", "state")
         self.tree = ttk.Treeview(f, columns=cols, show="headings", height=7)
-        for c, w, t in zip(cols, (90, 70, 90, 110, 70, 90, 70), ("deg/s²", "move s", "peak deg/s", "tracking deg",
-                                                                  "lag ms", "errors", "")):
+        for c, w, t in zip(cols, (80, 90, 60, 80, 100, 60, 80, 60), ("deg/s²", "moved deg", "move s", "peak deg/s",
+                                                                      "tracking deg", "lag ms", "errors", "")):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="e")
         self.tree.grid(row=r0, column=0, columnspan=4, sticky="we", pady=6)
@@ -253,7 +253,7 @@ class App:
             bad = rep.get("clean_up_to") is None
             self.results.append(row)
             self.tree.insert("", "end", values=(
-                "%g" % acc, "%.2f" % row.get("move_s", 0), "%.0f" % row.get("peak_vel_deg_s", 0),
+                "%g" % acc, row.get("actual_travel_deg", ""), "%.2f" % row.get("move_s", 0), "%.0f" % row.get("peak_vel_deg_s", 0),
                 row.get("tracking_after_lag_max_deg", row.get("error", "")), row.get("lag_ms", ""),
                 row.get("controller_error_after", ""), "STOP" if bad else "ok"))
             if bad:

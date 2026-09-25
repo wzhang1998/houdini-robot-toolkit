@@ -134,7 +134,7 @@ def main(argv=None):
                 report["stopped"] = "not confirmed at %g" % acc
                 break
         try:
-            pb, _, _ = P.play(ctrl, a.ip, samples, dt, move_vel_pct=10.0)
+            pb, _, fb = P.play(ctrl, a.ip, samples, dt, move_vel_pct=10.0)
         except Exception as e:
             report["levels"].append(dict(info, acc=acc, error=str(e)[:200]))
             report["stopped"] = "error at %g: %s" % (acc, str(e)[:120])
@@ -142,12 +142,16 @@ def main(argv=None):
             break
         err = pb.get("tracking_after_lag_max_deg")
         errs = pb.get("controller_error_after")
+        # what the joint actually did: J6 turns the bare flange about its own
+        # axis, which is next to invisible -- the feedback says whether it moved
+        vals = [fq[a.joint - 1] for _, fq in fb] if fb else []
+        moved = round(max(vals) - min(vals), 3) if vals else None
         row = dict(info, acc=acc, tracking_after_lag_max_deg=err, lag_ms=pb.get("best_lag_ms"),
-                   controller_error_after=errs, skipped=pb.get("skipped"))
+                   controller_error_after=errs, skipped=pb.get("skipped"), actual_travel_deg=moved)
         report["levels"].append(row)
         bad = (errs and any(errs)) or err is None or err > a.max_error
-        print("  %6g deg/s^2  %.2f s  tracking %s deg  lag %s ms  errors %s  %s"
-              % (acc, info["move_s"], err, pb.get("best_lag_ms"), errs, "STOP" if bad else "ok"))
+        print("  %6g deg/s^2  %.2f s  moved %s of %g deg  tracking %s deg  lag %s ms  errors %s  %s"
+              % (acc, info["move_s"], moved, abs(amp), err, pb.get("best_lag_ms"), errs, "STOP" if bad else "ok"))
         if bad:
             report["stopped"] = "tracking %s deg / errors %s at %g" % (err, errs, acc)
             break
