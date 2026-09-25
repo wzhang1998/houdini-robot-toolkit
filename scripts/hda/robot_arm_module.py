@@ -329,6 +329,24 @@ def _ur_model(node):
     return m
 
 
+def cook_cell_env(node):
+    """cell_env (Python SOP): the room from Setup > Cell Environment, drawn by
+    scripts/cell_sop.py -- obstacles grey, keep-out red, slow orange, the
+    stage green, tall walls see-through. Empty when no file is set."""
+    geo = node.geometry()
+    geo.clear()
+    p = asset_of(node).parm("env_file")
+    path = p.eval().strip() if p is not None else ""
+    if not path or not os.path.exists(path):
+        return
+    scripts = _root() + "/scripts"
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import cell_sop
+    import collision
+    cell_sop.env_geometry(geo, collision.load_env(path))
+
+
 def clear_ik_memo(asset):
     """Forget previous-frame solutions for this asset (Recache calls it)."""
     for k in [k for k in _IK_MEMO if k[0] == asset.path()]:

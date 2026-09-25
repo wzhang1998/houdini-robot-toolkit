@@ -159,13 +159,18 @@ def _prim_attrs(geo, prim, cd, alpha, name):
 
 
 def env_geo(node):
-    geo = node.geometry()
+    env_geometry(node.geometry(), env())
+
+
+def env_geometry(geo, cell):
+    """Draw an environment (collision.load_env) into geo: prim Cd / Alpha /
+    name / role. Also used by the robot_arm asset's Show Cell toggle."""
     geo.clear()
     geo.addAttrib(hou.attribType.Prim, "Cd", (1.0, 1.0, 1.0))
     geo.addAttrib(hou.attribType.Prim, "Alpha", 1.0)
     geo.addAttrib(hou.attribType.Prim, "name", "")
     geo.addAttrib(hou.attribType.Prim, "role", "")
-    for o in env().get("objects", []):
+    for o in cell.get("objects", []):
         cd, a = ROLE_COLOUR[o["role"]], ROLE_ALPHA[o["role"]]
         tall = (o.get("size") or [0, 0, 0])[2] > 1.5 or o.get("height", 0) > 1.5
         if o["role"] == "obstacle" and tall:
