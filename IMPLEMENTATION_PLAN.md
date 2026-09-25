@@ -132,7 +132,10 @@ keep_out / slow / work, default obstacle); optional `margin`.
    arm's capsule axes -- no hand simplification of scans.
 3. A Write Env JSON button, so PDG factory / atlas / clip library keep one
    room file.
-Start with 1 + 3; 2 when a scan exists.
+Start with 1 + 3; 2 when a scan exists. Before building: check the
+standard tools first -- Houdini's VDB from Polygons / SDF sampling for 2,
+FCL / MoveIt planning scene (Stage 4) for the robot side -- and reuse
+them rather than growing collision.py.
 
 ## Stage 3: Motion clip contract + PDG factory
 **Goal**: A clip format (JointTrajectory-shaped JSON: times, joint positions,
