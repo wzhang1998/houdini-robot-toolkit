@@ -5,7 +5,8 @@ so that every vertex is inside (conservative), plus an optional tool capsule.
 The cell is an environment file (envs/*.json, schema motionlab.env/1) in the
 robot base frame -- URDF, Z up, metres -- listing shapes with a role:
 
-    obstacle   no link within the env's margin_m of it (walls, cart, floor)
+    obstacle   no link within the env's margin_m of it (walls, cart, floor);
+               an object may set its own margin_m (the base plate: 0)
     keep_out   no link inside it at all (where people stand)
     slow       inside it the TCP may not exceed tcp_speed_mps
                (ISO/TS 15066 style speed limiting near people)
@@ -308,25 +309,25 @@ def check(model, env, times, joints, max_violations=20):
     hard = [o for o in objs if o["role"] in ("obstacle", "keep_out")]
     slow = [o for o in objs if o["role"] == "slow"]
     work = [o for o in objs if o["role"] == "work"]
-    viol, best = [], (math.inf, None)
+    viol, best, best_env, best_self = [], (math.inf, None), (math.inf, None), (math.inf, None)
     prev_tcp = None
     for f, (t, q) in enumerate(zip(times, joints)):
         caps, tcp = capsules(model, q)
         for o in hard:
             for name, a, b, r in caps:
-                if name == U_BASE:
-                    continue                # the base is bolted down: what it stands on is its mount
+                if name in FIXED_LINKS:
+                    continue                # bolted down, or turning only about the base axis
                 d = capsule_distance(o, a, b, r)
-                if d < best[0]:
-                    best = (d, {"frame": f, "t": round(t, 4), "link": name, "with": o["name"]})
-                limit = margin if o["role"] == "obstacle" else 0.0
+                if d < best_env[0]:
+                    best_env = (d, {"frame": f, "t": round(t, 4), "link": name, "with": o["name"]})
+                limit = o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
                 if d < limit and len(viol) < max_violations:
                     viol.append({"frame": f, "t": round(t, 4), "kind": o["role"], "link": name,
                                  "with": o["name"], "clearance_m": round(d, 4)})
         for i, j in model["pairs"]:
             d = _seg_seg_dist(caps[i][1], caps[i][2], caps[j][1], caps[j][2]) - caps[i][3] - caps[j][3]
-            if d < best[0]:
-                best = (d, {"frame": f, "t": round(t, 4), "link": caps[i][0], "with": caps[j][0]})
+            if d < best_self[0]:
+                best_self = (d, {"frame": f, "t": round(t, 4), "link": caps[i][0], "with": caps[j][0]})
             if d < 0.0 and len(viol) < max_violations:
                 viol.append({"frame": f, "t": round(t, 4), "kind": "self", "link": caps[i][0],
                              "with": caps[j][0], "clearance_m": round(d, 4)})
@@ -342,19 +343,29 @@ def check(model, env, times, joints, max_violations=20):
                 viol.append({"frame": f, "t": round(t, 4), "kind": "work", "link": "tcp", "with": o["name"],
                              "outside_m": round(sdf(o, tcp), 4)})
         prev_tcp = tcp
-    return {"ok": not viol, "min_clearance_m": round(best[0], 4) if best[1] else None,
-            "closest": best[1], "violations": viol, "margin_m": margin}
+    best = min(best_env, best_self, key=lambda b: b[0])
+    r4 = lambda b: round(b[0], 4) if b[1] else None
+    return {"ok": not viol, "min_clearance_m": r4(best), "closest": best[1],
+            "min_env_clearance_m": r4(best_env), "closest_env": best_env[1],
+            "min_self_clearance_m": r4(best_self), "closest_self": best_self[1],
+            "violations": viol, "margin_m": margin}
 
 
 U_BASE = "base_link"
+# links whose distance to the room never changes enough to matter: the base,
+# and the shoulder, which only turns about the base's own vertical axis
+FIXED_LINKS = ("base_link", "shoulder_link")
 
 
 def describe(report):
     """One line for Pre-Flight / manifests."""
     if report["ok"]:
-        c = report["closest"] or {}
-        return "clear: nearest %.0f mm (%s to %s, frame %s)" % (
-            report["min_clearance_m"] * 1000, c.get("link"), c.get("with"), c.get("frame"))
+        c = report.get("closest_env") or {}
+        line = "clear: nearest obstacle %.0f mm (%s to %s, frame %s)" % (
+            (report.get("min_env_clearance_m") or 0) * 1000, c.get("link"), c.get("with"), c.get("frame"))             if c else "clear: no obstacles in the cell"
+        if report.get("min_self_clearance_m") is not None:
+            line += ", links %.0f mm apart at the closest" % (report["min_self_clearance_m"] * 1000)
+        return line
     v = report["violations"][0]
     if v["kind"] == "slow":
         return "TCP %.2f m/s in slow zone %s (limit %.2f) at frame %d" % (v["speed_mps"], v["with"], v["limit_mps"], v["frame"])

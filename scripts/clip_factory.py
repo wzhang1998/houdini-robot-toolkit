@@ -162,7 +162,8 @@ def make(v, out_dir=None, samples=600, wrist_min=0.1, max_step_deg=20.0, env=Non
             cell = CL.load_env(env) if isinstance(env, str) else env
             rep = CL.check(CL.load_model("fr20"), cell, ts, fq)
             clip["safety"]["collision"] = CL.describe(rep)
-            clip["safety"]["min_clearance_m"] = rep["min_clearance_m"]
+            clip["safety"]["min_clearance_m"] = rep["min_env_clearance_m"]
+            clip["safety"]["min_self_clearance_m"] = rep["min_self_clearance_m"]
             if not rep["ok"]:
                 clip["safety"]["ok"] = False
                 clip["safety"]["reasons"] = ["cell: " + CL.describe(rep)] + clip["safety"]["reasons"]

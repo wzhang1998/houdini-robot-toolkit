@@ -157,11 +157,12 @@ def _jerk_peaks(samples, dt):
     return out
 
 
-def measure(clip, rate_hz=125.0):
-    """clip["safety"], measured as the player plays the clip at speed 1.0."""
+def measure(clip, rate_hz=125.0, acc=None):
+    """clip["safety"], measured as the player plays the clip at speed 1.0.
+    acc: acceleration limits to measure against instead of the profile's."""
     prof = _profile(clip["robot"])
     vel = RP.velocity_limits(prof)
-    acc = RP.acceleration_limits(prof) or [300.0] * 6
+    acc = (list(acc) if isinstance(acc, (list, tuple)) else [float(acc)] * 6) if acc is not None         else (RP.acceleration_limits(prof) or [300.0] * 6)
     jerk = RP.jerk_limits(prof)
     t = [p["t"] for p in clip["points"]]
     q = [p["q"] for p in clip["points"]]

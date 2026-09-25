@@ -30,7 +30,9 @@
     0.8,
     0.02
    ],
-   "role": "obstacle"
+   "role": "obstacle",
+   "margin_m": 0.0,
+   "note": "the plate the base is bolted to; the upper-arm capsule runs ~6 cm fat near it, so no extra margin"
   },
   {
    "name": "ceiling",

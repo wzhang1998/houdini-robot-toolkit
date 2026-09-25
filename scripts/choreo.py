@@ -109,10 +109,15 @@ def _envelope(u):
 # --------------------------------------------------------------------------
 
 class Kin:
-    def __init__(self):
+    def __init__(self, acc=None):
+        """acc: joint acceleration limit(s) to plan with instead of the
+        profile's (deg/s^2) -- e.g. what scripts/accel_probe.py measured.
+        Phrases, their checks and their labels all follow it."""
         self.model, self.chain, self.fo, self.vel = CAP.load_fr20(ROOT)
         prof = RP.load("fr20")
         self.acc = RP.acceleration_limits(prof)
+        if acc is not None:
+            self.acc = list(acc) if isinstance(acc, (list, tuple)) else [float(acc)] * 6
         self.limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
         self.col = CL.load_model("fr20")
 
@@ -206,7 +211,9 @@ def _target(kind, eff, act, cur, kin, rng, tries=16):
             if sudden:
                 # a jab towards that pose: at 150 deg/s^2 a heavy arm cannot
                 # be quick over a big distance, so a sudden move is a short one
-                jab = 7.0 + 3.0 * eff["weight"]
+                # in the same time a move covers distance in proportion to the
+                # acceleration: 7-10 deg at FR20's 150 deg/s^2, up to 3x more
+                jab = (7.0 + 3.0 * eff["weight"]) * min(3.0, max(1.0, min(kin.acc) / 150.0))
                 d = max(abs(a - b) for a, b in zip(q, cur))
                 if d > jab:
                     q = [c + (x - c) * jab / d for c, x in zip(cur, q)]
@@ -462,10 +469,12 @@ def make_clip(spec, seed=0, env=None, clip_id=None, kin=None, tags=()):
     clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
     clip["meta"]["duration_s"] = round(ts[-1], 6)
     clip["style"].update({k: info[k] for k in ("intensity", "tempo_scale", "bpm_played", "segments")})
-    M.measure(clip)
+    clip["style"]["acc_limit"] = kin.acc
+    M.measure(clip, acc=kin.acc)
     if env is not None:
         clip["safety"]["collision"] = CL.describe(info["collision"])
-        clip["safety"]["min_clearance_m"] = info["collision"]["min_clearance_m"]
+        clip["safety"]["min_clearance_m"] = info["collision"]["min_env_clearance_m"]
+        clip["safety"]["min_self_clearance_m"] = info["collision"]["min_self_clearance_m"]
     clip["labels"] = L.label(clip, intent=spec)
     # one label per bar too: a mixed phrase is a sequence, not an average
     bars = {}

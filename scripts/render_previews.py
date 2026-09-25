@@ -16,6 +16,12 @@ Needs the atlas baked (build_atlas_scene.py --bake) and the factory run
                          clips coloured by TCP speed, rejected ones red
     clips_sheet.png      the ok clips one per cell, drawn in their own plane,
                          coloured by TCP speed, with id / duration / peak speed
+    cell_overview.png    the cell (envs/volvox_lab.json), the robot mid-phrase
+                         and its capsules coloured by clearance
+    cell_ghosts.png      onion skin of a sample dance phrase in the cell
+    dance_sheet.png      every dance phrase's TCP path seen from the front,
+                         coloured bar by bar by its intended Laban action,
+                         with the measured action sequence
 
 Nothing is saved to the scenes.
 """
@@ -256,10 +262,103 @@ def clip_pictures():
     print("TCP speed colour: blue 0 -> red %.2f m/s" % vmax)
 
 
+ACTION_HUE = {"punch": 0, "slash": 28, "press": 50, "wring": 290, "dab": 185, "flick": 60, "glide": 120, "float": 215}
+SAMPLE = ROOT + "/tests/clips"
+
+
+def _sample_clip():
+    files = sorted(glob.glob(SAMPLE + "/*.json"), key=os.path.getsize)
+    return files[-1] if files else ROOT + "/tests/csv/fr20_test.csv"
+
+
+def cell_pictures():
+    hou.hipFile.load(ROOT + "/scenes/FR20_cell.hiplc", suppress_save_prompt=True, ignore_load_warnings=True)
+    _install()
+    _lights()
+    ctrl = hou.node("/obj/CELL_CTRL")
+    ctrl.parm("clip").set(_sample_clip())
+    hou.session.cell_sop.fit_range()
+    end = hou.playbar.frameRange()[1]
+    if ONLY == "cell_overview":
+        hou.setFrame(int(end * 0.45))
+        cam = _camera("c_cell", (2.2, 3.4, -2.4), (-0.7, 0.75, 0.1), res=(1080, 1080))
+        _render(cam, OUT + "/cell_overview.png", ["/obj/cell_env", "/obj/fr20", "/obj/capsules"])
+    else:
+        hou.setFrame(1)
+        cam = _camera("c_ghost", (1.4, 2.6, -2.6), (-0.8, 0.9, 0.0), res=(1080, 1080))
+        _render(cam, OUT + "/cell_ghosts.png", ["/obj/cell_env", "/obj/ghosts"])
+
+
+def dance_sheet():
+    hou.hipFile.clear(suppress_save_prompt=True)
+    hou.hipFile.setName(ROOT + "/scenes/_previews.hiplc")
+    _install()
+    _lights()
+    d = ROOT + "/geo/dance"
+    man = json.load(open(d + "/manifest.json"))
+    clips = [json.load(open(os.path.join(d, e["file"]))) for e in man["clips"] if e["ok"]]
+    cols = 6
+    rows = int(math.ceil(len(clips) / float(cols)))
+    g = hou.Geometry()
+    g.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+    obj = hou.node("/obj")
+    sheet = obj.createNode("geo", "dance", run_init_scripts=False)
+    merge = sheet.createNode("merge", "all")
+    for k, c in enumerate(clips):
+        r, col = divmod(k, cols)
+        cx, cy = col * 1.25, -r * 1.45
+        # seen from the front: the robot's left on the viewer's right
+        uv = [(p[1], p[2]) for p in c["tcp"]]
+        us, vs = [a for a, _ in uv], [b for _, b in uv]
+        mu, mv = (min(us) + max(us)) / 2, (min(vs) + max(vs)) / 2
+        sc = 0.9 / max(max(us) - min(us), max(vs) - min(vs), 0.05)
+        ts = [p["t"] for p in c["points"]]
+        bars = c["labels"].get("bars", [])
+
+        def hue(t):
+            for b in bars:
+                if b["t0"] <= t <= b["t1"]:
+                    return ACTION_HUE.get(b["intent"], 0)
+            return None
+        run = []
+        for (u, v), t in zip(uv, ts):
+            h = hue(t)
+            col_ = _hsv(h, 0.9, 1.0) if h is not None else (0.75, 0.75, 0.75)
+            run.append(((cx + (u - mu) * sc, cy + (v - mv) * sc, 0.0), col_))
+        _polyline(g, [p for p, _ in run], [c_ for _, c_ in run])
+        txt = sheet.createNode("font", "t%d" % k)
+        seq = c["labels"].get("sequence", [])
+        txt.parm("text").set("%s\n%.0f s  %s" % (c["id"][:3] + " " + "-".join(b["intent"] for b in bars),
+                                                 c["meta"]["duration_s"], "-".join(seq)))
+        txt.parm("fontsize").set(0.07)
+        txt.parmTuple("t").set((cx, cy - 0.58, 0.0))
+        merge.setNextInput(txt)
+    # legend
+    for i, (a, h) in enumerate(sorted(ACTION_HUE.items(), key=lambda x: x[0])):
+        _polyline(g, [(i * 0.9, 1.0, 0.0), (i * 0.9 + 0.25, 1.0, 0.0)], [_hsv(h, 0.9, 1.0)] * 2)
+        t = sheet.createNode("font", "leg%d" % i)
+        t.parm("text").set(a)
+        t.parm("fontsize").set(0.09)
+        t.parmTuple("t").set((i * 0.9 + 0.45, 0.97, 0.0))
+        merge.setNextInput(t)
+    st = sheet.createNode("stash", "paths")
+    st.parm("stash").set(g)
+    w = sheet.createNode("polywire", "wire")
+    w.setInput(0, st)
+    w.parm("radius").set(0.009)
+    merge.setNextInput(w)
+    merge.setDisplayFlag(True)
+    wd, ht = cols * 1.25, rows * 1.45 + 0.8
+    cx, cy = (cols - 1) * 1.25 / 2, -(rows - 1) * 1.45 / 2 + 0.3
+    cam = _camera("c_dance", (cx, cy, 12.0), (cx, cy, 0.0), res=(1080, int(1080 * ht / wd)), ortho_width=wd)
+    _render(cam, OUT + "/dance_sheet.png", ["/obj/dance"])
+
+
 # atlas_wrist (--only=atlas_wrist) is left out of the default set: with the
 # tool down the best branch keeps |sin q5| >= 0.5 everywhere, so it is one
 # flat colour -- worth rendering for tilted tool directions
-PICTURES = ("atlas_overview", "atlas_top", "clips_workspace", "clips_sheet")
+PICTURES = ("atlas_overview", "atlas_top", "clips_workspace", "clips_sheet", "cell_overview", "cell_ghosts",
+            "dance_sheet")
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
@@ -269,4 +368,11 @@ if __name__ == "__main__":
             subprocess.run([sys.executable, os.path.abspath(__file__), OUT, "--only=" + name], check=False)
     else:
         _install()
-        (atlas_pictures if ONLY.startswith("atlas") else clip_pictures)()
+        if ONLY.startswith("atlas"):
+            atlas_pictures()
+        elif ONLY.startswith("cell"):
+            cell_pictures()
+        elif ONLY == "dance_sheet":
+            dance_sheet()
+        else:
+            clip_pictures()

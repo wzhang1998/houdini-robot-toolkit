@@ -568,7 +568,9 @@ def _collect(node, src):
         except Exception as e:
             playback = {"error": str(e)[:120]}
 
-    return {"rows": rows, "angles": angles, "limit_hits": limit_hits, "playback": playback,
+    cell = _cell_check(node, angles, dt, f0)
+
+    return {"rows": rows, "angles": angles, "limit_hits": limit_hits, "playback": playback, "cell": cell,
             "speed_hits": speed_hits, "wrist_flips": wrist_flips,
             "steps_over_180": steps, "fps": fps, "dt": dt, "f0": f0, "f1": f1,
             "limits": limits, "max_vel": max_vel, "vel_limits": vel_limits,
@@ -599,6 +601,49 @@ def _out_parm(node, name):
 
 
 HERE_SCRIPTS = os.path.join(_ROOT, "scripts")
+
+
+def _tool_len(node):
+    """Length (m) of the asset's effective tool offset -- From Geometry or
+    Manual, whichever TCP_PATH_CTRL resolved -- for the tool's capsule."""
+    n = node
+    for _ in range(4):
+        if n is None:
+            return 0.0
+        ctrl = n.node("TCP_PATH_CTRL") if hasattr(n, "node") else None
+        if ctrl is not None and ctrl.parmTuple("tool_offset") is not None:
+            return math.sqrt(sum(x * x for x in ctrl.parmTuple("tool_offset").eval()))
+        n = n.parent()
+    return 0.0
+
+
+def _cell_check(node, angles, dt, f0):
+    """The clip against the cell (scripts/collision.py): links + tool as
+    capsules vs the environment file on the asset (Setup > Cell Environment)
+    -- obstacles with a margin, keep-out, slow and work zones. None when no
+    file is set; {"na": why} when the profile has no URDF to build capsules."""
+    p = _parm_upward(node, "env_file")
+    path = p.eval().strip() if p is not None else ""
+    if not path or not angles:
+        return None
+    try:
+        if HERE_SCRIPTS not in sys.path:
+            sys.path.insert(0, HERE_SCRIPTS)
+        import collision
+        prof = _profile(node)
+        if not prof["rig"].get("urdf"):
+            return {"na": "profile %s has no URDF (capsules come from its link meshes)" % prof.get("id")}
+        if not os.path.exists(path):
+            return {"error": "no environment file at %s" % path}
+        model = collision.load_model(prof["id"], tool_len=round(_tool_len(node), 3))
+        env = collision.load_env(path)
+        rep = collision.check(model, env, [i * dt for i in range(len(angles))], angles)
+        rep["f0"] = f0
+        rep["env"] = os.path.basename(path)
+        rep["line"] = collision.describe(rep)
+        return rep
+    except Exception as e:
+        return {"error": str(e)[:160]}
 
 
 def _acc_limits(node):
@@ -745,6 +790,25 @@ def _preflight_checks(node, data):
                     "plays at its designed speed (worst J%d %s at %.0f%% of its limit, frame %d)"
                     % (pb["joint"], pb["kind"], pb["ratio"] * 100, pb["frame"])))
 
+    # 4c. the cell: collision and safety zones
+    cell = data.get("cell")
+    if cell is None:
+        out.append((True, "OK", "Cell", "no environment file (Setup > Cell Environment); not checked"))
+    elif "na" in cell:
+        out.append((True, "OK", "Cell", "not applicable: " + cell["na"]))
+    elif "error" in cell:
+        out.append((True, "WARN", "Cell", "could not check: %s" % cell["error"]))
+    elif not cell["ok"]:
+        v = cell["violations"][0]
+        out.append((False, "FAIL", "Cell", "%s -- frame %d (%s; %d violation%s)"
+                    % (cell["line"].split(" at frame")[0], cell["f0"] + v["frame"], cell["env"],
+                       len(cell["violations"]), "" if len(cell["violations"]) == 1 else "s")))
+    else:
+        c = cell.get("closest_env") or {}
+        out.append((True, "OK", "Cell", "clear of %s: nearest obstacle %.0f mm (%s to %s, frame %d); links %.0f mm apart at the closest"
+                    % (cell["env"], (cell.get("min_env_clearance_m") or 0) * 1000, c.get("link"), c.get("with"),
+                       cell["f0"] + (c.get("frame") or 0), (cell.get("min_self_clearance_m") or 0) * 1000)))
+
     # 5. wrist branch
     wf = data["wrist_flips"]
     if not data["wrist_resolved"]:
@@ -841,6 +905,10 @@ def _preflight_failures(data):
     if pb and "error" not in pb and pb["scale_needed"] > 1.001:
         fails.append("Robot playback: %.2fx slower than designed (J%d %s, frame %d)"
                      % (pb["scale_needed"], pb["joint"], pb["kind"], pb["frame"]))
+    cell = data.get("cell")
+    if cell and "ok" in cell and not cell["ok"]:
+        fails.append("Cell: %s (frame %d)" % (cell["line"].split(" at frame")[0],
+                                               cell["f0"] + cell["violations"][0]["frame"]))
     return fails
 
 
