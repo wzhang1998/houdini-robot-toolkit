@@ -301,6 +301,12 @@ class Controller:
     def joints(self):
         return list(self._ok(self.rpc.GetActualJointPosDegree(1), "GetActualJointPosDegree")[1:7])
 
+    def frames(self):
+        """(current tool number, current workpiece number); None where the
+        controller does not say."""
+        t, w = self.rpc.GetActualTCPNum(0), self.rpc.GetActualWObjNum(0)
+        return (t[1] if t[0] == 0 else None), (w[1] if w[0] == 0 else None)
+
     def prepare(self):
         self._ok(self.rpc.Mode(0), "Mode(0) automatic")
         self._ok(self.rpc.RobotEnable(1), "RobotEnable(1)")
@@ -364,10 +370,27 @@ def _require_no_error(ctrl, when):
         raise RuntimeError("controller reports an error %s: %s" % (when, err))
 
 
+def _require_base_frames(ctrl):
+    """This player works in the base frame with tool 0: MoveJ gets the pose
+    from GetForwardKin, which the controller reports in its CURRENT
+    workpiece / tool frame. With another one applied (a workpiece frame made
+    for a safety zone, 2026-09-25) MoveJ fails with 154 'joint command point
+    error' and --check sees FK rotated -- say so plainly instead."""
+    try:
+        tool, wobj = ctrl.frames()
+    except Exception:
+        return                                   # firmware without the calls: MoveJ will report
+    if (tool or 0) != 0 or (wobj or 0) != 0:
+        raise RuntimeError("the controller's current workpiece coordinate system is #%s and tool #%s; this player "
+                           "works in the base frame with tool 0. Apply workpiece 0 and tool 0 in the WebApp "
+                           "(safety zones keep their own reference frame)" % (wobj, tool))
+
+
 def goto(ctrl, q, move_vel_pct, tol_deg=2.0, timeout_s=60.0):
     """Controller-planned MoveJ to q, then wait until the arm is within
     tol_deg of it on every joint."""
     _require_no_error(ctrl, "before moving")
+    _require_base_frames(ctrl)
     ctrl.prepare()
     ctrl.move_to(q, move_vel_pct)
     t_end = time.time() + timeout_s
@@ -561,6 +584,10 @@ def check(ctrl, prof):
            "error_code": list(ctrl.error_code()),
            "current_joints_deg": [round(x, 3) for x in ctrl.joints()],
            "tcp_offset": list(ctrl.rpc.GetTCPOffset(0))}
+    try:
+        rep["current_tool"], rep["current_workpiece"] = ctrl.frames()
+    except Exception:
+        pass
     urdf = prof["rig"].get("urdf")
     if urdf:
         chain = U.parse_urdf(os.path.join(root, urdf))["chain"]
@@ -587,6 +614,10 @@ def check(ctrl, prof):
                              "max_orientation_deg": round(worst_r, 5),
                              "verdict": "match" if worst_p < 0.1 and worst_r < 0.01
                              else "MISMATCH -- do not play"}
+        if rep.get("current_workpiece") or rep.get("current_tool"):
+            rep["fk_vs_urdf"]["verdict"] += (" (the controller reports poses in workpiece #%s / tool #%s: apply "
+                                             "workpiece 0 and tool 0 in the WebApp)"
+                                             % (rep.get("current_workpiece"), rep.get("current_tool")))
     return rep
 
 
@@ -601,6 +632,23 @@ def self_test():
         print("%s  %s%s" % ("ok  " if ok else "FAIL", label, ("  -- " + detail) if detail else ""))
         if not ok:
             failures.append(label)
+
+    class _Frames:
+        def __init__(self, tool, wobj):
+            self.v = (tool, wobj)
+
+        def frames(self):
+            return self.v
+    try:
+        _require_base_frames(_Frames(0, 1))
+        check("a workpiece frame applied on the controller is refused before moving", False)
+    except RuntimeError as e:
+        check("a workpiece frame applied on the controller is refused before moving", "workpiece" in str(e), str(e)[:80])
+    try:
+        _require_base_frames(_Frames(0, 0))
+        check("base frame, tool 0: no complaint", True)
+    except RuntimeError as e:
+        check("base frame, tool 0: no complaint", False, str(e))
 
     lim = [(-175, 175), (-265, 85), (-162, 162), (-265, 85), (-175, 175), (-175, 175)]
     t = [i / 24.0 for i in range(25)]
