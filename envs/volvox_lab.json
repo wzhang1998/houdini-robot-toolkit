@@ -2,7 +2,7 @@
  "schema": "motionlab.env/1",
  "name": "volvox_lab",
  "frame": "FR20 base (URDF): Z up from the base's mounting face; the arm's zero pose points along -X, which is the robot's working front; metres",
- "source": "MEASURED 2026-09-25 with scripts/probe_ui.py on the real FR20: floor (level), left partition and TV wall (vertical fits), ceiling by tape (2.16 m). The room is square (walls 90.5 deg apart) and turned ~11 deg from the robot's axes. Still ESTIMATED: tv, furniture_back, plant, chairs (re-placed against the measured TV wall), shelves_right, control_cart (known wrong), operator zones, base_plate. The first estimate was from photos, 2026-09-24.",
+ "source": "MEASURED 2026-09-25 on the real FR20: floor (level), left partition and TV wall (vertical fits) with scripts/probe_ui.py; ceiling grid by tape (2.16 m); tv, furniture_back (side table), control_cart, shelves_right, back and right walls from a RoomPlan scan (Project-2609251250.usdz) aligned to the probed walls with scripts/scan_to_env.py (the two walls agree to 0.47 deg). The room is square and the arm is mounted turned ~11 deg on a plate that is square to it. Still ESTIMATED: plant, operator zones, base_plate size.",
  "margin_m": 0.05,
  "objects": [
   {
@@ -33,12 +33,13 @@
    ],
    "role": "obstacle",
    "margin_m": 0.0,
-   "note": "the plate the base is bolted to; the upper-arm capsule runs ~6 cm fat near it, so no extra margin"
+   "note": "the plate the base is bolted to: square to the room, the arm on it turned ~11 deg (user, 2026-09-25); size and centre still estimated. The upper-arm capsule runs ~6 cm fat near it, so no extra margin",
+   "yaw_deg": -11.28
   },
   {
    "name": "ceiling",
    "role": "obstacle",
-   "note": "tape-measured 2.16 m above the floor, 2026-09-25 -- the raised arm reaches 2.16 m: this plane is in play",
+   "note": "lowest point of the load-bearing grid under the ceiling: 2.16 m by tape (2026-09-25); the ceiling itself is 2.38 m (RoomPlan scan). The raised arm reaches 2.16 m: this plane is in play",
    "type": "halfspace",
    "normal": [
     -0.0,
@@ -63,37 +64,39 @@
   },
   {
    "name": "tv",
+   "role": "obstacle",
+   "note": "on the TV wall;; RoomPlan Television0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)",
    "type": "box",
    "center": [
-    -1.7692,
-    -0.1098,
-    1.55
+    -1.5778,
+    0.863,
+    1.463
    ],
    "size": [
-    0.1,
-    1.5,
-    0.9
+    1.6797,
+    0.0994,
+    0.8982
    ],
-   "role": "obstacle",
-   "yaw_deg": -11.28,
-   "note": "on the TV wall; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
+   "yaw_deg": 78.96,
+   "measured": "scan"
   },
   {
    "name": "furniture_back",
+   "role": "obstacle",
+   "note": "drawer cart / AC / heater: the TV wall was touched at y -0.19..0.68 below 0.9 m, so kept only at y > 0.8;; RoomPlan Table0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)",
    "type": "box",
    "center": [
-    -1.2248,
-    1.3413,
-    0.45
+    -1.2299,
+    1.5259,
+    0.246
    ],
    "size": [
-    0.6,
-    1.2,
-    0.9
+    0.5874,
+    0.5282,
+    0.5015
    ],
-   "role": "obstacle",
-   "note": "drawer cart / AC / heater: the TV wall was touched at y -0.19..0.68 below 0.9 m, so kept only at y > 0.8; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure",
-   "yaw_deg": -11.28
+   "yaw_deg": 78.96,
+   "measured": "scan"
   },
   {
    "name": "partition_left",
@@ -110,35 +113,21 @@
   },
   {
    "name": "shelves_right",
-   "type": "box",
-   "center": [
-    -1.2,
-    2.6,
-    1.2
-   ],
-   "size": [
-    3.0,
-    0.5,
-    2.4
-   ],
-   "role": "obstacle"
-  },
-  {
-   "name": "chairs",
-   "type": "box",
-   "center": [
-    -0.9489,
-    1.7022,
-    0.45
-   ],
-   "size": [
-    0.9,
-    0.9,
-    0.9
-   ],
    "role": "obstacle",
-   "yaw_deg": -11.28,
-   "note": "ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
+   "type": "box",
+   "center": [
+    1.6588,
+    1.8281,
+    0.8954
+   ],
+   "size": [
+    0.9242,
+    0.3185,
+    1.8005
+   ],
+   "yaw_deg": -11.04,
+   "measured": "scan",
+   "note": "RoomPlan Storage0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
   },
   {
    "name": "plant",
@@ -151,23 +140,25 @@
    "radius": 0.35,
    "height": 1.9,
    "role": "obstacle",
-   "note": "in front of the TV wall; ESTIMATE re-placed against the measured TV wall 2026-09-25 -- measure"
+   "note": "not in the RoomPlan scan; ESTIMATE, re-placed against the measured TV wall -- measure"
   },
   {
    "name": "control_cart",
+   "role": "obstacle",
+   "note": "red cart: laptop, E-stop.; RoomPlan Storage1 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)",
    "type": "box",
    "center": [
-    0.75,
-    1.15,
-    0.55
+    1.5562,
+    -0.0452,
+    0.5407
    ],
    "size": [
-    0.65,
-    0.9,
-    1.1
+    0.6937,
+    0.6337,
+    1.0909
    ],
-   "role": "obstacle",
-   "note": "red cart: laptop, E-stop. ESTIMATE, and a floor probe point at (0.72, 1.02) lies inside it: its place is wrong -- measure"
+   "yaw_deg": -101.04,
+   "measured": "scan"
   },
   {
    "name": "operator",
@@ -180,7 +171,7 @@
    "radius": 0.4,
    "height": 2.0,
    "role": "keep_out",
-   "note": "where the operator stands, hand on the E-stop"
+   "note": "where the operator stands, hand on the E-stop -- ESTIMATE from before the scan: the control cart is now known to be behind the robot (RoomPlan); where does the operator stand?"
   },
   {
    "name": "operator_slow",
@@ -194,7 +185,7 @@
    "height": 2.4,
    "role": "slow",
    "tcp_speed_mps": 0.25,
-   "note": "ISO/TS 15066-style reduced speed near the operator"
+   "note": "ISO/TS 15066-style reduced speed near the operator -- ESTIMATE from before the scan: the control cart is now known to be behind the robot (RoomPlan); where does the operator stand?"
   },
   {
    "name": "stage",
@@ -212,6 +203,32 @@
    "role": "work",
    "note": "where the TCP performs: room-aligned, 0.15 m inside the measured walls, 0.15 m under the ceiling",
    "yaw_deg": -11.28
+  },
+  {
+   "name": "scan_wall_0",
+   "role": "obstacle",
+   "type": "halfspace",
+   "normal": [
+    -0.981477,
+    0.191578,
+    0.0
+   ],
+   "offset": -1.85293,
+   "measured": "scan",
+   "note": "RoomPlan Wall0+Wall4 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+  },
+  {
+   "name": "scan_wall_1",
+   "role": "obstacle",
+   "type": "halfspace",
+   "normal": [
+    -0.191578,
+    -0.981477,
+    0.0
+   ],
+   "offset": -2.27126,
+   "measured": "scan",
+   "note": "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
   }
  ]
 }

@@ -417,7 +417,14 @@ never moves the robot), then fit shapes:
 python scripts/probe_ui.py                   # window: record / undo / preview fit / write env, live URDF-vs-controller TCP
 python scripts/probe_env.py --ip IP          # prompt: wall_tv:plane, control_cart:box, operator:cylinder ...
 python scripts/env_from_points.py envs/volvox_lab_points.json
+hython scripts/scan_to_env.py scan.usdz --front Wall2 --left Wall1 --name Storage1=control_cart --drop chairs [--write]
 ```
+
+What the arm cannot reach comes from a RoomPlan scan (iOS "RoomPlan" app, USDZ export): every wall and
+object is a box. `scan_to_env.py` places it in the robot frame by the probed walls and floor (each wall
+gives the rotation -- their agreement is the check; together they fix the position), adds the other walls
+as planes and the objects as boxes; probed objects stay as measured. Run it without --front/--left to list
+the scan's walls and objects.
 
 On SimMachine the probe's TCP (this toolkit's URDF FK) agrees with the
 controller's own to 0.004 mm. Planes need 3+ points, boxes their top
