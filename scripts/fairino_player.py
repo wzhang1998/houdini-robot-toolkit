@@ -33,9 +33,10 @@ Usage:
     python scripts/fairino_player.py --hardware --ip IP --wiggle 6 5 4 2
     python scripts/fairino_player.py clip.csv --hardware --ip IP --speed 0.3 --record actual.csv
 
-Every move names its target: --sim or --hardware. --hardware defaults to 30 %
-of the velocity / acceleration envelope and a 10 % MoveJ, prints what it is
-about to do and waits for "yes" (skip with --yes). It is no substitute for a
+Every move names its target: --sim or --hardware. Speed defaults to 30 % of
+the velocity / acceleration envelope (--speed 1.0 plays as designed).
+--hardware also defaults to a 10 % MoveJ, prints what it is about to do and
+waits for "yes" (skip with --yes). It is no substitute for a
 risk assessment, a clear workspace and an operator at the E-stop.
 """
 
@@ -654,7 +655,7 @@ def main(argv=None):
     tgt.add_argument("--hardware", action="store_true",
                      help="the target is a physical arm: reduced speed by default, asks to confirm")
     ap.add_argument("--speed", type=float, default=None,
-                    help="fraction of the velocity / acceleration envelope; default 1.0 sim, 0.3 hardware")
+                    help="fraction of the velocity / acceleration envelope; default 0.3 (1.0 = as designed in Houdini)")
     ap.add_argument("--rate", type=float, default=125.0, help="ServoJ rate, Hz (cmdT = 1/rate)")
     ap.add_argument("--vel-limit", type=float, default=None,
                     help="deg/s for every joint; default: the profile's per-joint max_velocity_deg_s")
@@ -714,7 +715,7 @@ def main(argv=None):
     else:
         ap.error("give a CSV, --wiggle, or --check")
 
-    speed = a.speed if a.speed is not None else (0.3 if a.hardware else 1.0)
+    speed = a.speed if a.speed is not None else 0.3
     if not 0.0 < speed <= 1.0:
         ap.error("--speed must be in (0, 1]")
     vel = [a.vel_limit] * 6 if a.vel_limit else robot_profile.velocity_limits(prof)

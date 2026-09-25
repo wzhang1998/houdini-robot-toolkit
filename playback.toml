@@ -12,9 +12,9 @@ record = true               # save the actual joints next to the clip: <clip>_ac
 report = true               # save the JSON report next to the clip:   <clip>_<target>_<time>.json
 
 [motion]
-speed = 1.0                 # fraction of the velocity/acceleration envelope. Hardware: start at 0.3
+speed = 0.3                 # fraction of the velocity/acceleration envelope; 1.0 = as designed in Houdini
 rate_hz = 125               # ServoJ rate
-acc_limit = 300             # deg/s^2 at speed 1.0
+acc_limit = 150             # deg/s^2 at speed 1.0 -- FR20 profile, what Houdini checks
 move_vel = 20               # MoveJ % to the clip's first pose. Hardware: 10
 confirm = true              # hardware only: ask before moving (keep true)
 

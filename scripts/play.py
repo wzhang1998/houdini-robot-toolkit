@@ -64,8 +64,8 @@ def build_argv(cfg, step):
             raise ValueError("clip.csv does not exist: %s" % csv)
         argv = [csv] + argv
 
-    argv += ["--speed", str(m.get("speed", 1.0)), "--rate", str(m.get("rate_hz", 125)),
-             "--acc-limit", str(m.get("acc_limit", 300)), "--move-vel", str(m.get("move_vel", 20))]
+    argv += ["--speed", str(m.get("speed", 0.3)), "--rate", str(m.get("rate_hz", 125)),
+             "--acc-limit", str(m.get("acc_limit", 150)), "--move-vel", str(m.get("move_vel", 20))]
     if step == "dry-run":
         return argv + ["--dry-run"]
 
@@ -91,7 +91,7 @@ def header(cfg):
             "  wiggle J%s %+g deg, %g s x %s"
             % (tgt, r.get("ip"), r.get("profile", "fr20"), warn,
                os.path.basename(c.get("csv", "") or "(none)"),
-               m.get("speed", 1.0), m.get("rate_hz", 125), m.get("acc_limit", 300), m.get("move_vel", 20),
+               m.get("speed", 0.3), m.get("rate_hz", 125), m.get("acc_limit", 150), m.get("move_vel", 20),
                w.get("joint", 6), w.get("amp_deg", 5), w.get("period_s", 4), w.get("cycles", 2)))
 
 

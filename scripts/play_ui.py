@@ -44,7 +44,7 @@ record = {record}               # save the actual joints next to the clip
 report = {report}               # save the JSON report next to the clip
 
 [motion]
-speed = {speed}                 # fraction of the velocity/acceleration envelope. Hardware: start at 0.3
+speed = {speed}                 # fraction of the velocity/acceleration envelope; 0.3 default, 1.0 = as designed
 rate_hz = {rate_hz}               # ServoJ rate
 acc_limit = {acc_limit}             # deg/s^2 at speed 1.0
 move_vel = {move_vel}               # MoveJ % to the clip's first pose. Hardware: 10
@@ -118,9 +118,9 @@ class App:
             "csv": tk.StringVar(value=c.get("csv", "")),
             "record": tk.BooleanVar(value=c.get("record", True)),
             "report": tk.BooleanVar(value=c.get("report", True)),
-            "speed": tk.DoubleVar(value=m.get("speed", 1.0)),
+            "speed": tk.DoubleVar(value=m.get("speed", 0.3)),
             "rate_hz": tk.DoubleVar(value=m.get("rate_hz", 125)),
-            "acc_limit": tk.DoubleVar(value=m.get("acc_limit", 300)),
+            "acc_limit": tk.DoubleVar(value=m.get("acc_limit", 150)),
             "move_vel": tk.DoubleVar(value=m.get("move_vel", 20)),
             "joint": tk.IntVar(value=w.get("joint", 6)),
             "amp_deg": tk.DoubleVar(value=w.get("amp_deg", 5)),

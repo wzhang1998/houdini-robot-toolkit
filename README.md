@@ -324,9 +324,9 @@ runs:
 | `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
 | `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
 
-Every move names its target, `--sim` or `--hardware`. `--hardware` defaults
-to 30 % of the envelope (`--speed`) and a 10 % MoveJ, prints the plan and
-waits for `yes` (`--yes` skips it). `--record` writes the actual joints one
+Every move names its target, `--sim` or `--hardware`. Speed defaults to 30 %
+of the envelope (`--speed`; 1.0 plays as designed). `--hardware` also
+defaults to a 10 % MoveJ, prints the plan and waits for `yes` (`--yes` skips it). `--record` writes the actual joints one
 row per clip row, at the clip's own times (playback time ÷ time scale), in
 the export format — so **Output → Import CSV** keys it frame-for-frame
 against the design, controller lag included.
