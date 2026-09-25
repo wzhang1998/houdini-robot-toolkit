@@ -369,6 +369,12 @@ builds `scenes/FR20_clip_factory.hiplc` and runs its TOP network: a Wedge of
 then the manifest in `geo/clips/manifest.json`. Last run: 30 ok, 16
 unreachable with their tool direction, 4 branch flips.
 
+`hython scripts/render_previews.py` renders pictures of both into
+`docs/images/previews/`: the atlas from the side and from above, every
+variant's path around the robot, and a sheet of the ok clips.
+
+![Clip library](docs/images/previews/clips_sheet.png)
+
 ## Playback on a Fairino arm
 
 `scripts/fairino_player.py` plays the asset's exported joint CSV on a Fairino
