@@ -55,11 +55,11 @@ def render(csv, frames_dir, frame=None, res=(1280, 720)):
     arm.parm("pose_source").set("2")                        # Imported CSV
     arm.parm("import_csv").set(csv.replace("\\", "/"))
     arm.parm("import_start").set(1)
-    # the saved scene's goal curve, targets and analysis belong to its own
-    # solve, not to the imported clip: next to the real run they would
-    # mislead. The arm only (the room is drawn below).
+    # the arm and the goal curve (the room is drawn below); targets and
+    # analysis off. The curve is the scene's own: check it is this clip's
+    # (curve_gap_mm) before trusting the picture
     for p in arm.parms():
-        if p.name().startswith("show_") and p.name() not in ("show_robot", "show_cell"):
+        if p.name().startswith("show_") and p.name() not in ("show_robot", "show_cell", "show_curve"):
             p.set(0)
     # the room as robot_arm draws it, but see-through faces left out: the
     # phone stood in the operator's zone, and from inside it the zone's
@@ -82,6 +82,12 @@ def render(csv, frames_dir, frame=None, res=(1280, 720)):
     if out_viz is not None and out_viz.isDisplayFlagSet():
         arm.setDisplayFlag(True)
         arm.setRenderFlag(True)
+    ci = hou.node("/obj/fr20/CURVE_IN")
+    if ci is not None and arm.evalParm("show_curve"):
+        gap = curve_gap_mm([tuple(p.position()) for p in ci.geometry().points()], csv)
+        print("goal curve vs the clip's TCP path: %.1f mm at most" % gap)
+        if gap > 20.0:
+            raise SystemExit("the scene's goal curve is not this clip's (%.0f mm off): save the scene that made it" % gap)
     t, _ = P.load_csv(csv)
     last = 1 + int(round(t[-1] * hou.fps()))
     cam = hou.node("/obj").createNode("cam", "compare_cam")
@@ -109,6 +115,23 @@ def render(csv, frames_dir, frame=None, res=(1280, 720)):
             rop.parm(n).set(v)
     rop.render()
     return last
+
+
+def curve_gap_mm(curve_houdini, csv):
+    """Largest distance (mm) from the clip's TCP path (URDF FK) to the goal
+    curve (Houdini points): a few mm when the scene holds this clip's curve."""
+    import math
+    import fairino_player as P
+    import motion_clip as M
+    curve = [(x, -z, y) for x, y, z in curve_houdini]
+    _, q = P.load_csv(csv)
+
+    def seg(p, a, b):
+        ab = [b[i] - a[i] for i in range(3)]
+        L = sum(x * x for x in ab)
+        u = max(0.0, min(1.0, sum(x * (p[i] - a[i]) for i, x in enumerate(ab)) / L)) if L > 0 else 0.0
+        return math.dist(p, [a[i] + u * ab[i] for i in range(3)])
+    return 1000.0 * max(min(seg(p, a, b) for a, b in zip(curve, curve[1:])) for p in M._tcp_path("fr20", q))
 
 
 def encode(frames_dir, out, fps_in=24.0):
