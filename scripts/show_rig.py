@@ -33,11 +33,18 @@ What it adds (/obj, in a network box "SHOW"):
                   the pose is the hub's joint angles, the null sits at its
                   tool tip (locked)
     look_<name>   the look target of hub_<name>
-    show_viz      drawn live: each hub's pose as a ghost arm (its colour; red
-                  when it cannot be reached, is not clear of the room, or is
-                  outside the operating range), the look rays, the operating
-                  range (J1 sector and TCP height band), the built clips'
-                  tool paths (idle in the hub's colour, moves white)
+    hub_ghosts    each hub's pose as the robot itself, in the hub's colour
+                  (red when it cannot be reached, is not clear of the room,
+                  or is outside the operating range): Python gives only the
+                  posed skeletons; the asset's link meshes are posed by a
+                  For-Each over the hubs with Transform Pieces
+    show_viz      the look rays and the built clips' tool paths (PolyWire;
+                  idle in the hub's colour, moves white), and the operating
+                  range -- J1 sector and TCP height band -- as Circle SOPs
+                  that reference SHOW's parameters
+
+Python makes data (poses, paths, config); the shapes are Houdini's own
+nodes.
 
 The config stays the one source: Load reads it into the objects, Write
 writes them back (keys the scene does not show -- OSC, sequences, canvas,
@@ -68,9 +75,7 @@ HUB_RGB = [(0.95, 0.45, 0.2), (0.3, 0.7, 1.0), (0.55, 0.9, 0.35), (0.85, 0.4, 0.
 ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.6, 0.85, 0.4),
             "stage": (0.2, 0.9, 0.35)}
 BAD_RGB = (1.0, 0.1, 0.1)
-SKELETON_WIDTH = 0.01             # a hub's ghost arm: a thin line through the arm, balls at the joints
-JOINT_BALL = 0.025
-TIP_BALL = 0.035
+GHOST_ALPHA = 0.3                  # a hub's ghost: the robot's own meshes, see-through, in the hub's colour
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 FAMILIES = "look wave nod reach tilt trace"
 
@@ -110,32 +115,12 @@ def xform_to_zone(t, r, s, scale=1.0):
             "yaw_deg": round(_wrap(r[1]), 3)}
 
 
-def range_guide(j1_lo, j1_hi, z_lo, z_hi, radius, step=5.0):
-    """The operating range as polylines in the robot frame: the J1 sector on
-    the floor (arc and its two edges), the TCP height band (arcs at z_lo and
-    z_hi) and the sector's edges between them. Facing = J1 + J1_FACING_DEG."""
-    n = max(2, int(math.ceil((j1_hi - j1_lo) / step)) + 1)
-    angs = [math.radians(j1_lo + (j1_hi - j1_lo) * k / (n - 1) + J1_FACING_DEG) for k in range(n)]
-
-    def arc(z):
-        return [(radius * math.cos(a), radius * math.sin(a), z) for a in angs]
-
-    floor = [(0.0, 0.0, 0.01)] + arc(0.01) + [(0.0, 0.0, 0.01)]
-    edges = [[(radius * math.cos(a), radius * math.sin(a), z_lo), (radius * math.cos(a), radius * math.sin(a), z_hi)]
-             for a in (angs[0], angs[-1])]
-    return [floor, arc(z_lo), arc(z_hi)] + edges
-
-
-def skeleton_points(joints, tcp, min_gap=0.01):
-    """The arm as one polyline: the base, each joint's origin in chain order
-    (forward kinematics), the tool tip; points closer than min_gap merged.
-    Not the collision capsules: they are fitted to the link meshes, in no
-    chain order, and some are balls."""
-    pts = []
-    for p in [(0.0, 0.0, 0.0)] + list(joints) + [tcp]:
-        if not pts or math.dist(p, pts[-1]) >= min_gap:
-            pts.append(tuple(p))
-    return pts
+def zx_arc_angle(j1_deg):
+    """The Circle SOP angle (orientation ZX) that points where the arm faces
+    at J1 = j1_deg. In ZX an angle a points along Houdini (cos a, 0, sin a);
+    a robot-frame direction phi is Houdini (cos phi, 0, -sin phi); the arm
+    faces J1 + J1_FACING_DEG. show_viz's range arcs use this in expressions."""
+    return -(j1_deg + J1_FACING_DEG)
 
 
 def merge_config(cfg, scene):
@@ -507,56 +492,148 @@ def _look_obj(name, colour):
 
 
 def _viz_obj():
+    """/obj/show_viz: the look rays and built tool paths (data from Python,
+    tubes by PolyWire) and the operating range (Circle SOPs referencing
+    SHOW's parameters, so it follows them without Python)."""
     hou = _hou()
     viz = hou.node("/obj/show_viz")
-    if viz and viz.node("clean"):
+    if viz and viz.node("range_sector"):
         return viz
     if viz:
         viz.destroy()                                # an older drawing network: rebuilt
     viz = hou.node("/obj").createNode("geo", "show_viz", run_init_scripts=False)
-    sop = viz.createNode("python", "show")
-    sop.parm("python").set("import show_rig\nshow_rig.viz(hou.pwd())\n")
+    lines = viz.createNode("python", "rays_and_paths")
+    lines.parm("python").set("import show_rig\nshow_rig.viz(hou.pwd())\n")
+
+    # the operating range: J1 sector on the floor, the TCP height band as two arcs.
+    # Circle SOP in ZX: angle a points along (cos a, 0, sin a); a robot-frame
+    # facing phi is Houdini (cos phi, 0, -sin phi); facing = J1 + 180.
+    lo, hi = 'ch("/obj/SHOW/j1_rangex")', 'ch("/obj/SHOW/j1_rangey")'
+    arcs = []
+    for name, kind, height in (("range_sector", "slicedarc", "0.01"),
+                               ("range_low", "openarc", 'ch("/obj/SHOW/tcp_zx")'),
+                               ("range_high", "openarc", 'ch("/obj/SHOW/tcp_zy")')):
+        c = viz.createNode("circle", name)
+        c.parm("type").set("poly")
+        c.parm("orient").set("zx")
+        c.parm("arc").set(kind)
+        c.parm("divs").set(72)
+        c.parmTuple("rad")[0].setExpression('ch("/obj/SHOW/guide_radius")')
+        c.parmTuple("rad")[1].setExpression('ch("/obj/SHOW/guide_radius")')
+        c.parm("ty").setExpression(height)
+        c.parmTuple("angle")[0].setExpression("-(%s + %g)" % (hi, J1_FACING_DEG))     # zx_arc_angle(hi)
+        c.parmTuple("angle")[1].setExpression("-(%s + %g)" % (lo, J1_FACING_DEG))     # zx_arc_angle(lo)
+        arcs.append(c)
+    whole = viz.createNode("divide", "sector_whole")          # the sliced arc is a fan: one outline only
+    whole.setInput(0, arcs[0])
+    whole.parm("convex").set(0)
+    whole.parm("removesh").set(1)
+    edge = viz.createNode("convertline", "sector_outline")    # the sector as lines, not a filled face
+    edge.setInput(0, whole)
+    edge.parm("computelength").set(0)                # no restlength: the other arcs have none
+    rng = viz.createNode("merge", "range")
+    rng.setInput(0, edge)
+    rng.setInput(1, arcs[1])
+    rng.setInput(2, arcs[2])
+    look = viz.createNode("attribcreate::2.0", "range_look")
+    look.setInput(0, rng)
+    look.parm("numattr").set(2)
+    look.parm("name1").set("Cd")
+    look.parm("class1").set("point")
+    look.parm("size1").set(3)
+    for i, v in enumerate((0.75, 0.75, 0.8)):
+        look.parmTuple("value1v")[i].set(v)
+    look.parm("name2").set("pscale")
+    look.parm("class2").set("point")
+    look.parm("value2v1").set(0.003)
+
+    both = viz.createNode("merge", "all_lines")
+    both.setInput(0, lines)
+    both.setInput(1, look)
     wire = viz.createNode("polywire", "tubes")
-    wire.setInput(0, sop)
+    wire.setInput(0, both)
     wire.parm("radius").set(1.0)
     wire.parm("usescaleattrib").set(1)
     wire.parm("scaleattrib").set("pscale")
     wire.parm("div").set(8)
-    pts = viz.createNode("blast", "joint_points")
-    pts.setInput(0, sop)
-    pts.parm("group").set("joint")
-    pts.parm("grouptype").set(3)                   # points
-    pts.parm("negate").set(1)                      # keep only the joints
-    sphere = viz.createNode("sphere", "ball")
-    sphere.parm("type").set(2)                     # polygon
-    sphere.parm("freq").set(3)
-    balls = viz.createNode("copytopoints::2.0", "joint_balls")
-    balls.setInput(0, sphere)
-    balls.setInput(1, pts)
-    balls.parm("targetattribs").set(1)             # the balls take their joint's colour
-    balls.parm("applyto1").set(0)
-    balls.parm("applymethod1").set(0)
-    balls.parm("applyattribs1").set("Cd")
-    out = viz.createNode("merge", "OUT")
-    out.setInput(0, wire)
-    out.setInput(1, balls)
-    clean = viz.createNode("attribdelete", "clean")  # only Cd is drawn; the rest differs between the inputs
-    clean.setInput(0, out)
-    clean.parm("ptdel").set("pscale")
-    clean.parm("primdel").set("name")
-    clean.parm("vtxdel").set("uv")
-    clean.setDisplayFlag(True)
-    clean.setRenderFlag(True)
+    wire.setDisplayFlag(True)
+    wire.setRenderFlag(True)
     viz.layoutChildren()
+    _ghost_obj()
     return viz
+
+
+def _ghost_obj():
+    """/obj/hub_ghosts: each hub's pose as the robot itself, see-through in the
+    hub's colour. Python gives only data (hub_poses: each hub's posed
+    skeleton); the robot_arm asset's own link meshes and rest skeleton are
+    merged in, and a For-Each over the hubs poses the meshes with Transform
+    Pieces -- as the asset drives its own robot."""
+    hou = _hou()
+    g = hou.node("/obj/hub_ghosts")
+    if g and g.node("each_hub_end"):
+        return g
+    if g:
+        g.destroy()
+    g = hou.node("/obj").createNode("geo", "hub_ghosts", run_init_scripts=False)
+    poses = g.createNode("python", "hub_poses")
+    poses.parm("python").set("import show_rig\nshow_rig.hub_poses(hou.pwd())\n")
+    links = g.createNode("object_merge", "robot_links")
+    links.parm("objpath1").set("/obj/fr20/robot_arm/urdf_normals")
+    moving = g.createNode("blast", "moving_links")          # the base does not move: the arm's own base shows
+    moving.setInput(0, links)
+    moving.parm("group").set("@name=base")
+    moving.parm("grouptype").set("prims")
+    rest = g.createNode("object_merge", "rest_skeleton")
+    rest.parm("objpath1").set("/obj/fr20/robot_arm/urdf_skeleton")
+    begin = g.createNode("block_begin", "each_hub")
+    begin.setInput(0, poses)
+    begin.parm("method").set("piece")
+    begin.parm("blockpath").set("../each_hub_end")
+    pose = g.createNode("xformpieces", "pose_links")
+    pose.setInput(0, moving)
+    pose.setInput(1, begin)
+    pose.setInput(2, rest)
+    colour = g.createNode("color", "hub_colour")
+    colour.setInput(0, pose)
+    for i, c in enumerate("rgb"):
+        colour.parm("color" + c).setExpression('point("../each_hub", 0, "Cd", %d)' % i)
+    end = g.createNode("block_end", "each_hub_end")
+    end.setInput(0, colour)
+    end.parm("itermethod").set("pieces")
+    end.parm("method").set("merge")
+    end.parm("class").set("point")
+    end.parm("useattrib").set(1)
+    end.parm("attrib").set("hub")
+    end.parm("blockpath").set("../each_hub")
+    end.parm("templatepath").set("../each_hub")
+    mat = g.createNode("material", "ghost_material")
+    mat.setInput(0, end)
+    mat.parm("shop_materialpath1").set(_ghost_material().path())
+    mat.setDisplayFlag(True)
+    mat.setRenderFlag(True)
+    g.layoutChildren()
+    return g
+
+
+def _ghost_material():
+    """/mat/hub_ghost: a Principled Shader in each point's colour, opacity
+    GHOST_ALPHA with blending. (A point or detail Alpha drew nothing in this
+    viewport, 2026-09-27; the material at least draws in the hub's colour.)"""
+    hou = _hou()
+    m = hou.node("/mat/hub_ghost") or hou.node("/mat").createNode("principledshader::2.0", "hub_ghost")
+    m.parm("basecolor_usePointColor").set(1)
+    m.parm("opac").set(GHOST_ALPHA)
+    m.parm("alphablendmode").set("blend")
+    return m
 
 
 def _layout():
     hou = _hou()
     obj = hou.node("/obj")
-    nodes = [n for n in obj.children() if n.parm("show_role") or n.name() in ("SHOW", "show_viz")]
+    nodes = [n for n in obj.children() if n.parm("show_role") or n.name() in ("SHOW", "show_viz", "hub_ghosts")]
     x0 = max([n.position()[0] for n in obj.children() if n not in nodes] + [0.0]) + 4.0
-    order = sorted(nodes, key=lambda n: (n.name() not in ("SHOW", "show_viz"), n.name()))
+    order = sorted(nodes, key=lambda n: (n.name() not in ("SHOW", "show_viz", "hub_ghosts"), n.name()))
     for k, n in enumerate(order):
         n.setPosition((x0 + 3.0 * (k % 3), -1.2 * (k // 3)))
     box = obj.findNetworkBox("SHOW") or obj.createNetworkBox("SHOW")
@@ -608,7 +685,8 @@ def _tidy_show_scene():
 
 def clean_view(viewers=None):
     """Remove Backfaces on in the scene viewers: the room's walls face in,
-    so the walls near the camera vanish (the cutaway the Isaac scene has)."""
+    so the walls near the camera vanish (the cutaway the Isaac scene has).
+    And a low transparency cutoff, so the see-through hub ghosts draw."""
     hou = _hou()
     if not hou.isUIAvailable():
         return
@@ -616,6 +694,7 @@ def clean_view(viewers=None):
         if pane.type() == hou.paneTabType.SceneViewer:
             for vp in pane.viewports():
                 vp.settings().setRemoveBackfaces(True)
+                vp.settings().setTransparencyCutoff(0.05)   # the default 0.5 drops the see-through hub ghosts
 
 
 def clean_view_on_load():
@@ -1005,24 +1084,63 @@ def hub_status(cfg, h):
     return q, out and "out of range: " + out
 
 
+def hub_poses(node):
+    """Python SOP of hub_ghosts: data only -- each hub's posed skeleton
+    (urdf_rig.posed_skeleton: points name, P, transform, as the robot_arm
+    asset poses its meshes), tagged with the hub's name and colour (red when
+    it cannot be used). Warns for such a hub."""
+    hou = _hou()
+    import urdf_rig as UR
+    geo = node.geometry()
+    geo.addAttrib(hou.attribType.Point, "name", "")
+    geo.addAttrib(hou.attribType.Point, "transform", (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))
+    geo.addAttrib(hou.attribType.Point, "hub", "")
+    geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+    show = _show()
+    if show is None:
+        return
+    cfg = scene_config(show)
+    m = _cmodel()
+    bad = []
+    for k, (name, h) in enumerate(cfg["hubs"].items()):
+        q, why = hub_status(cfg, h)
+        if why:
+            bad.append("hub %s: %s" % (name, why))
+        if q is None:
+            continue
+        cd = BAD_RGB if why else _hub_colour(name, k)
+        for j in UR.posed_skeleton(m["chain"], m["flange_offset"], q):
+            pt = geo.createPoint()
+            pt.setPosition(j["P"])
+            pt.setAttribValue("name", j["name"])
+            pt.setAttribValue("transform", [c for row in j["transform"] for c in row])
+            pt.setAttribValue("hub", name)
+            pt.setAttribValue("Cd", cd)
+    if bad:
+        raise hou.NodeWarning("\n".join(bad))
+
+
+def _hub_colour(name, k):
+    n = _hou().node("/obj/hub_" + name)
+    return n.color().rgb() if n else HUB_RGB[k % len(HUB_RGB)]
+
+
 def viz(node):
-    """The Python SOP of show_viz: each hub's pose as a ghost arm (a thin
-    line through the arm, joints as lone points in group "joint" that
-    show_viz turns into balls), look rays, the operating range, the built
-    tool paths. Warns for a hub that cannot be used."""
+    """Python SOP of show_viz: data lines only -- each hub's look ray (tool
+    tip to look target; red when the hub cannot be used) and the built
+    clips' tool paths (idle in the hub's colour, moves white), with point
+    Cd and pscale (the tube radius). PolyWire makes the tubes."""
     hou = _hou()
     import collision as C
     geo = node.geometry()
     geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
     geo.addAttrib(hou.attribType.Point, "pscale", 0.004)
-    geo.addAttrib(hou.attribType.Prim, "name", "")
-    joints = geo.createPointGroup("joint")
     show = _show()
     if show is None:
         return
     cfg = scene_config(show)
 
-    def line(pts, cd, name, width=0.004):
+    def line(pts, cd, width):
         poly = geo.createPolygon(is_closed=False)
         for p in pts:
             pt = geo.createPoint()
@@ -1030,39 +1148,15 @@ def viz(node):
             pt.setAttribValue("Cd", cd)
             pt.setAttribValue("pscale", width)
             poly.addVertex(pt)
-        poly.setAttribValue("name", name)
 
-    def ball(p, cd, radius):
-        pt = geo.createPoint()                    # a lone point: show_viz copies a sphere onto it
-        pt.setPosition(to_h(p))
-        pt.setAttribValue("Cd", cd)
-        pt.setAttribValue("pscale", radius)
-        joints.add(pt)
-
-    r = cfg["range"]
-    for pl in range_guide(r["j1_deg"][0], r["j1_deg"][1], r["tcp_z"][0], r["tcp_z"][1],
-                          show.evalParm("guide_radius")):
-        line(pl, (0.75, 0.75, 0.8), "range", 0.003)
-
-    colour, bad = {}, []
+    colour = {}
     for k, (name, h) in enumerate(cfg["hubs"].items()):
-        n = hou.node("/obj/hub_" + name)
-        colour[name] = n.color().rgb() if n else HUB_RGB[k % len(HUB_RGB)]
+        colour[name] = _hub_colour(name, k)
+        if not h.get("look"):
+            continue
         q, why = hub_status(cfg, h)
-        cd = BAD_RGB if why else colour[name]
-        if why:
-            bad.append("hub %s: %s" % (name, why))
-        if q is not None:
-            _, tcp = C.capsules(_cmodel(), q)
-            fk = C.U.forward_kinematics(_cmodel()["chain"], q)
-            chain = skeleton_points([f["link_p"] for f in fk], tcp)
-            line(chain, cd, "hub_" + name, SKELETON_WIDTH)
-            for k, p in enumerate(chain):
-                ball(p, cd, TIP_BALL if k == len(chain) - 1 else JOINT_BALL)
-            if h.get("look"):
-                line([tcp, h["look"]], cd, "look_" + name, 0.004)
-        elif h.get("look"):
-            line([h["tcp"], h["look"]], BAD_RGB, "look_" + name, 0.004)
+        tcp = C.capsules(_cmodel(), q)[1] if q is not None else h["tcp"]
+        line([tcp, h["look"]], BAD_RGB if why else colour[name], 0.004)
 
     man = preview_dir(show) + "/manifest.json"
     if show.evalParm("show_paths") and os.path.exists(man):
@@ -1074,19 +1168,19 @@ def viz(node):
             cd = colour.get(s["start"], (0.8, 0.8, 0.8)) if s["kind"] == "idle" else \
                 (0.9, 0.9, 0.9) if s["kind"] == "move" else (1.0, 0.85, 0.2)
             if len(tcp) > 1:
-                line(tcp[::2] + tcp[-1:], cd, s["name"], 0.003)
-    if bad:
-        raise hou.NodeWarning("\n".join(bad))
+                line(tcp[::2] + tcp[-1:], cd, 0.003)
 
 
 def _cook_viz():
     hou = _hou()
-    sop = hou.node("/obj/show_viz/show")
-    if sop:
-        try:
-            sop.cook(force=True)
-        except hou.OperationFailed:
-            pass                                   # its warning / error shows on the node
+    for path in ("/obj/show_viz/rays_and_paths", "/obj/hub_ghosts/hub_poses"):
+        sop = hou.node(path)
+        if sop:
+            try:
+                sop.cook(force=True)
+            except hou.OperationFailed:
+                pass                               # its warning / error shows on the node
+
 
 
 # --------------------------------------------------------------------------
@@ -1116,11 +1210,12 @@ def self_test():
     hou_rot = (H[0] * math.cos(th) + H[2] * math.sin(th), H[1], -H[0] * math.sin(th) + H[2] * math.cos(th))
     check_("yaw is the same angle in both frames", all(abs(a - b) < 1e-12 for a, b in zip(to_h(rob), hou_rot)))
 
-    g = range_guide(-90.0, 90.0, 0.4, 1.8, 1.0)
-    a0 = math.degrees(math.atan2(g[1][0][1], g[1][0][0]))
-    a1 = math.degrees(math.atan2(g[1][-1][1], g[1][-1][0]))
-    check_("range guide spans J1 + 180", abs(_wrap(a0 - 90.0)) < 1e-9 and abs(_wrap(a1 + 90.0)) < 1e-9, (a0, a1))
-    check_("range guide band heights", g[1][0][2] == 0.4 and g[2][0][2] == 1.8)
+    for j1 in (-150.0, -60.0, 0.0, 90.0):
+        a = math.radians(zx_arc_angle(j1))
+        phi = math.radians(j1 + J1_FACING_DEG)
+        circle = (math.cos(a), 0.0, math.sin(a))
+        check_("the range arc at J1 %g points where the arm faces" % j1,
+               all(abs(x - y) < 1e-9 for x, y in zip(circle, to_h((math.cos(phi), math.sin(phi), 0.0)))))
 
     cfg = {"env": "e.json", "osc": {"listen_port": 9000}, "sequences": {"greet": {"hub": "greet"}},
            "hubs": {"rest": {"q": REST_Q, "note": "home"},
@@ -1152,10 +1247,6 @@ def self_test():
     m4 = json.loads(json.dumps(m))
     m4["hubs"]["rest"]["generator"] = "gestures"
     check_("gestures without tool + look are caught", any("gestures" in x for x in check_config(m4)))
-
-    sk = skeleton_points([(0, 0, 0.2), (0, 0.1, 0.2), (0.005, 0.1, 0.2), (0.6, 0.1, 0.2)], (0.7, 0.1, 0.2))
-    check_("a ghost arm is one chain: base, joints, tool tip; near-duplicate joints merged",
-           sk == [(0, 0, 0), (0, 0, 0.2), (0, 0.1, 0.2), (0.6, 0.1, 0.2), (0.7, 0.1, 0.2)], sk)
 
     a = add_authored([{"id": "cat", "hub": "rest", "csv": "x.csv"}], ROOT + "/tests/csv/cat.csv", "greet", "cat")
     check_("authored: same id replaced, path made relative",
