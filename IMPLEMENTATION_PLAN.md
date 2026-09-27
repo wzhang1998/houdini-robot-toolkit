@@ -300,8 +300,14 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   - Step-by-step instructions as a fallback.
 - **Success**: every button changes the Runner as expected in the dry run
   and on SimMachine; the TD panel shows state within 0.1 s.
-- **Status**: Not started. The OSC contract is tested from a Python stand-in
-  for TD (triggers, stop).
+- **Status**: Not started in TD.
+  - `scripts/show_ui.py` is a stand-in panel over the same OSC. A 1 min
+    SimMachine run: greet, pause and resume all taken; ended at a hub,
+    0 skips.
+  - The architecture for TD is proposed in td-robot-twin
+    `docs/superpowers/specs/2026-09-27-robot-agnostic-core-design.md`:
+    show_stream as a worker speaking the Go worker's protocol, with a
+    contact lease.
 
 ### 6.5 Real-robot demo (studio day)
 - Checklist (docs/hardware_test_plan.md, new section):

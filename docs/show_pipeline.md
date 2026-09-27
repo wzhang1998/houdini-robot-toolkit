@@ -84,6 +84,15 @@ tick by tick. There is no CSV per run and no stop between clips.
   shape-preserving cubic. A 24 fps clip streamed at 125 Hz then has no
   velocity step at each sample.
 
+**A window for SimMachine**: `python scripts/show_ui.py` starts the stream
+on SimMachine and talks to it over the same OSC contract TD will use.
+- It has Start / STOP, a button per sequence (and the scan), pause /
+  resume / reset, mood and energy.
+- It shows the live state, clip, hub and progress.
+- It is a stand-in for the TD panel. It never drives the real arm: the
+  IP is shown and filled in only when playback.toml's target is sim.
+  Hardware runs stay on the command line.
+
 Compared with the other ways to drive the arm:
 - **CSV playback** (`fairino_player`) is one clip at a time and stops
   between clips.
