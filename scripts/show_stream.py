@@ -35,12 +35,15 @@ played, the events; the commanded and actual joints as CSV.
 
 import argparse
 import csv
+import gc
 import json
+import math
 import os
 import queue
 import sys
 import threading
 import time
+from array import array
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -51,6 +54,9 @@ import fairino_player as P  # noqa: E402
 RATE_HZ = 125.0
 STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limit x speed (rounding, sampling)
 ERROR_POLL_S = 0.1
+SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
+TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
+LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
 HARDWARE_SPEED = 0.3
 
@@ -96,20 +102,66 @@ class Commands:
             getattr(self.runner, cmd[0])(*cmd[1:])
 
 
-class Link(P.Feedback):
-    """The actual joints (as P.Feedback) and, every ERROR_POLL_S, the
-    controller's error code: the first non-zero one is kept in .error."""
+class Rows:
+    """(key, 6 joints) rows in a flat array('d'). A long show logs millions of
+    rows: as Python lists they would be objects the garbage collector walks
+    on every full collection, and its pauses grow with them (0.1-0.2 s after
+    30 min, seen on SimMachine 2026-09-27). An array is one object."""
 
-    def __init__(self, ip, period_s=0.01):
-        super().__init__(ip, period_s)
+    def __init__(self):
+        self.a = array("d")
+
+    def add(self, key, q):
+        self.a.append(key)
+        self.a.extend(q)
+
+    def __len__(self):
+        return len(self.a) // 7
+
+    def row(self, i):
+        i = (i % len(self)) * 7
+        return self.a[i], list(self.a[i + 1:i + 7])
+
+    def __iter__(self):
+        a = self.a
+        for i in range(0, len(a), 7):
+            yield a[i], list(a[i + 1:i + 7])
+
+
+class Link(threading.Thread):
+    """The actual joints, on their own connection, and every ERROR_POLL_S
+    the controller's error code: the first non-zero one is kept in .error.
+    A read is stamped at the middle of its round trip; one slower than
+    SLOW_READ_S is not kept (when it was taken is not known well enough)."""
+
+    def __init__(self, ip=None, period_s=0.01, ctrl=None):
+        super().__init__(daemon=True)
+        self.c = ctrl or P.Controller(ip)
+        self.period = period_s
+        self.rows = Rows()
+        self.slow_reads = 0
         self.error = None
         self._last_poll = 0.0
+        self._halt = threading.Event()
+
+    @property
+    def samples(self):
+        return [(t, q) for t, q in self.rows]
+
+    def stop(self):
+        self._halt.set()
+        self.join(timeout=2.0)
 
     def run(self):
         while not self._halt.is_set():
             t0 = time.perf_counter()
             try:
-                self.samples.append((t0, self.c.joints()))
+                q = self.c.joints()
+                t1 = time.perf_counter()
+                if t1 - t0 <= SLOW_READ_S:
+                    self.rows.add((t0 + t1) / 2.0, q)
+                else:
+                    self.slow_reads += 1
                 if t0 - self._last_poll >= ERROR_POLL_S:
                     self._last_poll = t0
                     err = list(self.c.error_code())
@@ -146,7 +198,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     """The stream loop. The arm must already be at the Runner's start pose.
     Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
     report, not raised."""
-    ticks_cmd = []                                  # (tick, q) sent
+    ticks_cmd = Rows()                              # (tick, q) sent
     sends_ms, late_ms, skipped = [], [], 0
     events = []
     runner.log = lambda text: events.append(text)
@@ -154,6 +206,8 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     end_at = minutes * 60.0
     ending, fault = False, None
     link.start()
+    gc.collect()
+    gc.freeze()                                     # what exists now (the graph, the show) is never walked again
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     last = -1
@@ -185,7 +239,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             code = ret[0] if isinstance(ret, (list, tuple)) else ret
             if code != 0:
                 raise StreamFault("ServoJ tick %d returned %s" % (k, ret))
-            ticks_cmd.append((k, list(q)))
+            ticks_cmd.add(k, q)
             prev, last = q, k
             if osc is not None and k % OSC_EVERY == 0:
                 try:
@@ -211,6 +265,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             pass
         time.sleep(0.3)
         link.stop()
+        gc.unfreeze()
     if fault:
         log("STOPPED: %s" % fault)
     rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed)
@@ -221,21 +276,52 @@ def _dense(ticks_cmd):
     """Commanded pose per tick from the first to the last sent (a skipped
     tick holds the previous pose), for tracking()."""
     out = []
-    k0 = ticks_cmd[0][0]
+    k0, k1 = int(ticks_cmd.row(0)[0]), int(ticks_cmd.row(-1)[0])
     it = iter(ticks_cmd)
     cur = next(it)
     nxt = next(it, None)
-    for k in range(k0, ticks_cmd[-1][0] + 1):
+    for k in range(k0, k1 + 1):
         while nxt is not None and nxt[0] <= k:
             cur, nxt = nxt, next(it, None)
         out.append(cur[1])
     return out
 
 
+def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(0, 164, 4)):
+    """The best constant lag (ms) of the arm behind the commands, per window
+    of the run. It should stay put; if it grows, the controller consumes
+    ServoJ slower than this PC's clock sends it and its queue is filling
+    (seen on SimMachine 2026-09-27: 40 -> 68 ms over 30 min)."""
+    def cmd_at(s):
+        k = s / dt
+        i = int(k)
+        if i < 0:
+            return dense[0]
+        if i >= len(dense) - 1:
+            return dense[-1]
+        f = k - i
+        return [a + f * (b - a) for a, b in zip(dense[i], dense[i + 1])]
+    out = []
+    pts = [(t - t0, q) for t, q in feedback if t - t0 > 0.3]
+    w = 0.0
+    end = (len(dense) - 1) * dt
+    while w < end:
+        win = [p for p in pts if w <= p[0] < w + window_s][::4]
+        best = None
+        for lag in lags_ms:
+            sq = sum(sum((a - b) ** 2 for a, b in zip(q, cmd_at(s - lag / 1000.0))) for s, q in win)
+            if win and (best is None or sq < best[1]):
+                best = (lag, sq)
+        if best:
+            out.append(best[0])
+        w += window_s
+    return out
+
+
 def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed):
     rep = {"ended": "fault" if fault else "at a hub", "fault": fault, "speed": speed,
            "sends": len(ticks_cmd), "skipped": skipped,
-           "duration_s": round(ticks_cmd[-1][0] * dt, 2) if ticks_cmd else 0.0,
+           "duration_s": round(ticks_cmd.row(-1)[0] * dt, 2) if len(ticks_cmd) else 0.0,
            "worst_step_of_limit": round(guard.worst_ratio, 3),
            "segments_played": [n for _, n in runner.history],
            "final_state": runner.state, "events": events[-200:]}
@@ -245,8 +331,15 @@ def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard
                    send_ms_max=round(st[-1], 2), late_over_2ms=sum(1 for x in late_ms if x > 2.0),
                    max_late_ms=round(max(late_ms), 2))
     if len(ticks_cmd) > 1:
-        rep.update(P.tracking(start + ticks_cmd[0][0] * dt, _dense(ticks_cmd), dt, link.samples))
-    rep["feedback_samples"] = len(link.samples)
+        fb = link.samples
+        every = max(1, len(fb) // TRACKING_MAX_SAMPLES)
+        t0, dense = start + ticks_cmd.row(0)[0] * dt, _dense(ticks_cmd)
+        rep.update(P.tracking(t0, dense, dt, fb[::every]))
+        rep["tracking_samples_used"] = len(fb[::every])
+        rep["lag_ms_by_window"] = lag_by_window(t0, dense, dt, fb)
+        rep["lag_window_s"] = LAG_WINDOW_S
+    rep["feedback_samples"] = len(link.rows)
+    rep["feedback_slow_reads_dropped"] = link.slow_reads
     rep["controller_error"] = link.error
     return rep
 
@@ -329,11 +422,8 @@ def self_test():
                 return [0, 5, 7]
             return [0, 0, 0]
 
-    class FakeLink(Link):
-        def __init__(self, ctrl):
-            threading.Thread.__init__(self, daemon=True)
-            self.c, self.period, self.samples, self.error, self._last_poll = ctrl, 0.01, [], None, 0.0
-            self._halt = threading.Event()
+    def FakeLink(ctrl):
+        return Link(ctrl=ctrl)
 
     bad = [30.0] + A[1:]                             # a broken clip: 30 deg in 4 ms, mid-clip
     broken = S.Graph({"a": A}, [S.Segment("a_broken", "idle", [0.0, 0.3, 0.304, 1.0], [A, A, bad, A], "a", "a",
@@ -396,6 +486,28 @@ def self_test():
     rep, r = run(c, 2.0 / 60, speed=0.5)
     check("speed 0.5 plays the same clips half as fast", rep["worst_step_of_limit"] <= 1.0
           and rep["ended"] == "at a hub", rep["worst_step_of_limit"])
+    dense = [[20.0 * math.sin(0.8 * k * dt)] * 6 for k in range(int(40 / dt))]
+    fb = [(k * dt + (0.04 if k * dt < 20 else 0.064), q) for k, q in enumerate(dense)][::2]
+    lags = lag_by_window(0.0, dense, dt, fb, window_s=10.0)
+    check("the lag is measured per window (a growing one shows)", lags == [40, 40, 64, 64], lags)
+
+    rows = Rows()
+    rows.add(3, [1, 2, 3, 4, 5, 6])
+    rows.add(4, [7, 8, 9, 10, 11, 12])
+    check("log rows round-trip through the flat array", list(rows) == [(3.0, [1, 2, 3, 4, 5, 6]),
+                                                                    (4.0, [7, 8, 9, 10, 11, 12])]
+          and rows.row(-1)[0] == 4.0 and len(rows) == 2)
+
+    class SlowCtrl(FakeCtrl):
+        def joints(self):
+            time.sleep(0.05)
+            return list(self.q)
+    ln = Link(ctrl=SlowCtrl())
+    ln.start()
+    time.sleep(0.3)
+    ln.stop()
+    check("a slow joint read is not kept (its time is not known)", len(ln.rows) == 0 and ln.slow_reads > 0,
+          (len(ln.rows), ln.slow_reads))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

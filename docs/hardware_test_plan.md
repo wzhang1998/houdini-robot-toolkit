@@ -218,7 +218,10 @@ commanded and actual joints as CSV):
 - `ended` should be `at a hub`;
 - `controller_error` should be null;
 - `skipped` should be 0;
-- look at `tracking_after_lag_max_deg`.
+- look at `tracking_after_lag_max_deg`;
+- `lag_ms_by_window` (one value per 3 min): if it grows run after run, the
+  controller's clock drifts against this PC's (SimMachine: +28 ms in 30
+  min). Note it for the long show.
 
 Send me the JSON of each run; they go into `docs/results.md`.
 

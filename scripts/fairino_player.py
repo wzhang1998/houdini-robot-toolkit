@@ -344,7 +344,10 @@ class Feedback(threading.Thread):
         while not self._halt.is_set():
             t0 = time.perf_counter()
             try:
-                self.samples.append((t0, self.c.joints()))
+                q = self.c.joints()
+                t1 = time.perf_counter()
+                if t1 - t0 <= 0.02:            # stamped mid round trip; a slow read's time is not known: dropped
+                    self.samples.append(((t0 + t1) / 2.0, q))
             except Exception:
                 pass
             left = self.period - (time.perf_counter() - t0)

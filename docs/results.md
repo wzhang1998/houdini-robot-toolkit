@@ -40,6 +40,7 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 | 2026-09-24 | Probe tip vs controller TCP 0.004 mm | -- |
 | 2026-09-25 | d01 dance clip played at speed 1.0, no controller error | -- |
 | 2026-09-27 | Show streamed from the state machine (`show_stream.py`, party show): 3 min, 22,634 ServoJ sends at 125 Hz, 0 skips, max lateness 3.6 ms, no controller error, ended at a hub at rest; largest step 67 % of the velocity limit; tracking after a 40 ms lag max 0.54 deg (RMS 0.06). OSC: `greet` and `scan` triggers played at the end of the running clip; `/robot/stop` stopped at once, no controller error | af7697f |
+| 2026-09-27 | Show stream, 30 min with TouchDesigner-style OSC (39 triggers greet / scan / calm, a pause and resume, energy changes), after the GC fix: 225,501 sends, 0 skips, max lateness 5.4 ms, no controller error, ended at a hub; 350 segments. The arm's lag grew 40 -> 68 ms over the run (clock drift, see Failures); tracking after the best single lag 2.2 deg max, RMS 0.29 | (this commit) |
 
 ## Houdini / unit
 
@@ -55,6 +56,27 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 | 2026-09-25 | Clip review in PDG: 98 clips rendered, tiled, 266 s | -- | 9a73869, 54ef62d |
 
 ## Failures and what they taught
+
+- **A 30 min stream stuttered, and the log hid a clock drift** (2026-09-27,
+  SimMachine). The first 30 min run skipped 159 ticks in 31 bursts, and
+  feedback stalled for up to 0.22 s at t = 72, 401, 810, 1032, 1310, 1662 s.
+  - *Cause*: Python's full garbage collections. They walk every live
+    object, and the run's own log (lists per tick) reached about 800k
+    objects. A test showed a 45 ms pause at 450k objects.
+  - *A measurement error*: joint reads were stamped before the call. A
+    stalled read looked like a 3 deg tracking error (J5 at 16.8 deg/s x
+    0.2 s), which the arm never had.
+  - *Fix*: the logs are flat arrays, `gc.freeze()` runs after start-up,
+    reads are stamped mid round trip, and slow reads are dropped. The rerun
+    had 0 skips.
+  - *What the rerun then showed*: the arm's lag grew from 40 to 68 ms,
+    about 15 ppm. This PC sends ServoJ slightly faster than the
+    controller's 8 ms cycle consumes it, so its queue fills. The skips in
+    the first run had been draining it.
+  - *Now*: the report measures the lag per 3 min window
+    (`lag_ms_by_window`). The FR20's own drift is measured at the studio.
+    For a multi-hour show the plan is to drop or pad ticks while the arm
+    rests at a hub.
 
 - **Labels drift at new limits** (2026-09-25, Houdini). The measured Laban
   labels were calibrated at 150 deg/s^2. At 300/600 the same phrases measure

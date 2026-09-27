@@ -270,8 +270,14 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
     - 3 min: 22,634 sends, 0 skips, no controller error, ended at a hub;
       tracking 0.54 deg max after a 40 ms lag;
     - OSC `greet` and `scan` triggers and `/robot/stop` checked.
-  - Still to do: the 30 min SimMachine run and the FR20 runs
-    (`docs/hardware_test_plan.md` section 6c).
+  - 30 min SimMachine with OSC triggers, after fixing GC stalls: 225,501
+    sends, 0 skips, no controller error.
+  - It found a clock drift: the lag grew 40 -> 68 ms. The report now
+    measures it per window.
+  - Still to do: FR20 runs (`docs/hardware_test_plan.md` section 6c),
+    which also measure the FR20's drift. Then drift compensation for
+    multi-hour shows: drop or pad ticks while the arm rests at a hub,
+    where it cannot be seen.
 
 ### 6.4 TouchDesigner control surface (~0.5 day)
 - The OSC spec (docs/show_pipeline.md) as the contract.
