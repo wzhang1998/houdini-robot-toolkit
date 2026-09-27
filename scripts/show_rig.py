@@ -68,7 +68,9 @@ HUB_RGB = [(0.95, 0.45, 0.2), (0.3, 0.7, 1.0), (0.55, 0.9, 0.35), (0.85, 0.4, 0.
 ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.6, 0.85, 0.4),
             "stage": (0.2, 0.9, 0.35)}
 BAD_RGB = (1.0, 0.1, 0.1)
-GHOST_SCALE = 0.55                 # ghost arms thinner than the collision capsules: they read as a pose
+SKELETON_WIDTH = 0.01             # a hub's ghost arm: a thin line through the arm, balls at the joints
+JOINT_BALL = 0.025
+TIP_BALL = 0.035
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 FAMILIES = "look wave nod reach tilt trace"
 
@@ -122,6 +124,18 @@ def range_guide(j1_lo, j1_hi, z_lo, z_hi, radius, step=5.0):
     edges = [[(radius * math.cos(a), radius * math.sin(a), z_lo), (radius * math.cos(a), radius * math.sin(a), z_hi)]
              for a in (angs[0], angs[-1])]
     return [floor, arc(z_lo), arc(z_hi)] + edges
+
+
+def skeleton_points(joints, tcp, min_gap=0.01):
+    """The arm as one polyline: the base, each joint's origin in chain order
+    (forward kinematics), the tool tip; points closer than min_gap merged.
+    Not the collision capsules: they are fitted to the link meshes, in no
+    chain order, and some are balls."""
+    pts = []
+    for p in [(0.0, 0.0, 0.0)] + list(joints) + [tcp]:
+        if not pts or math.dist(p, pts[-1]) >= min_gap:
+            pts.append(tuple(p))
+    return pts
 
 
 def merge_config(cfg, scene):
@@ -495,10 +509,10 @@ def _look_obj(name, colour):
 def _viz_obj():
     hou = _hou()
     viz = hou.node("/obj/show_viz")
-    if viz and viz.node("tubes"):
+    if viz and viz.node("clean"):
         return viz
     if viz:
-        viz.destroy()                                # the older show panel's drawing
+        viz.destroy()                                # an older drawing network: rebuilt
     viz = hou.node("/obj").createNode("geo", "show_viz", run_init_scripts=False)
     sop = viz.createNode("python", "show")
     sop.parm("python").set("import show_rig\nshow_rig.viz(hou.pwd())\n")
@@ -508,8 +522,31 @@ def _viz_obj():
     wire.parm("usescaleattrib").set(1)
     wire.parm("scaleattrib").set("pscale")
     wire.parm("div").set(8)
-    wire.setDisplayFlag(True)
-    wire.setRenderFlag(True)
+    pts = viz.createNode("blast", "joint_points")
+    pts.setInput(0, sop)
+    pts.parm("group").set("joint")
+    pts.parm("grouptype").set(3)                   # points
+    pts.parm("negate").set(1)                      # keep only the joints
+    sphere = viz.createNode("sphere", "ball")
+    sphere.parm("type").set(2)                     # polygon
+    sphere.parm("freq").set(3)
+    balls = viz.createNode("copytopoints::2.0", "joint_balls")
+    balls.setInput(0, sphere)
+    balls.setInput(1, pts)
+    balls.parm("targetattribs").set(1)             # the balls take their joint's colour
+    balls.parm("applyto1").set(0)
+    balls.parm("applymethod1").set(0)
+    balls.parm("applyattribs1").set("Cd")
+    out = viz.createNode("merge", "OUT")
+    out.setInput(0, wire)
+    out.setInput(1, balls)
+    clean = viz.createNode("attribdelete", "clean")  # only Cd is drawn; the rest differs between the inputs
+    clean.setInput(0, out)
+    clean.parm("ptdel").set("pscale")
+    clean.parm("primdel").set("name")
+    clean.parm("vtxdel").set("uv")
+    clean.setDisplayFlag(True)
+    clean.setRenderFlag(True)
     viz.layoutChildren()
     return viz
 
@@ -969,15 +1006,17 @@ def hub_status(cfg, h):
 
 
 def viz(node):
-    """The Python SOP of show_viz: hubs as ghost arms (opaque: the viewport
-    does not draw a point Alpha here), look rays, the
-    operating range, the built tool paths. Warns for a hub that cannot be used."""
+    """The Python SOP of show_viz: each hub's pose as a ghost arm (a thin
+    line through the arm, joints as lone points in group "joint" that
+    show_viz turns into balls), look rays, the operating range, the built
+    tool paths. Warns for a hub that cannot be used."""
     hou = _hou()
     import collision as C
     geo = node.geometry()
     geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
     geo.addAttrib(hou.attribType.Point, "pscale", 0.004)
     geo.addAttrib(hou.attribType.Prim, "name", "")
+    joints = geo.createPointGroup("joint")
     show = _show()
     if show is None:
         return
@@ -993,6 +1032,13 @@ def viz(node):
             poly.addVertex(pt)
         poly.setAttribValue("name", name)
 
+    def ball(p, cd, radius):
+        pt = geo.createPoint()                    # a lone point: show_viz copies a sphere onto it
+        pt.setPosition(to_h(p))
+        pt.setAttribValue("Cd", cd)
+        pt.setAttribValue("pscale", radius)
+        joints.add(pt)
+
     r = cfg["range"]
     for pl in range_guide(r["j1_deg"][0], r["j1_deg"][1], r["tcp_z"][0], r["tcp_z"][1],
                           show.evalParm("guide_radius")):
@@ -1007,9 +1053,12 @@ def viz(node):
         if why:
             bad.append("hub %s: %s" % (name, why))
         if q is not None:
-            caps, tcp = C.capsules(_cmodel(), q)
-            for link, a, b, rad in caps:
-                line([a, b], cd, "hub_%s/%s" % (name, link), rad * GHOST_SCALE)
+            _, tcp = C.capsules(_cmodel(), q)
+            fk = C.U.forward_kinematics(_cmodel()["chain"], q)
+            chain = skeleton_points([f["link_p"] for f in fk], tcp)
+            line(chain, cd, "hub_" + name, SKELETON_WIDTH)
+            for k, p in enumerate(chain):
+                ball(p, cd, TIP_BALL if k == len(chain) - 1 else JOINT_BALL)
             if h.get("look"):
                 line([tcp, h["look"]], cd, "look_" + name, 0.004)
         elif h.get("look"):
@@ -1103,6 +1152,10 @@ def self_test():
     m4 = json.loads(json.dumps(m))
     m4["hubs"]["rest"]["generator"] = "gestures"
     check_("gestures without tool + look are caught", any("gestures" in x for x in check_config(m4)))
+
+    sk = skeleton_points([(0, 0, 0.2), (0, 0.1, 0.2), (0.005, 0.1, 0.2), (0.6, 0.1, 0.2)], (0.7, 0.1, 0.2))
+    check_("a ghost arm is one chain: base, joints, tool tip; near-duplicate joints merged",
+           sk == [(0, 0, 0), (0, 0, 0.2), (0, 0.1, 0.2), (0.6, 0.1, 0.2), (0.7, 0.1, 0.2)], sk)
 
     a = add_authored([{"id": "cat", "hub": "rest", "csv": "x.csv"}], ROOT + "/tests/csv/cat.csv", "greet", "cat")
     check_("authored: same id replaced, path made relative",
