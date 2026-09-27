@@ -73,11 +73,17 @@ Four spatial ideas, each with one job:
 So a hub lives **inside** the stage (checked), usually **inside** its zone
 (designed), and the range narrows both for the whole show.
 
-## Editing the show in the rig scene
+## Editing the show in Houdini
 
-`scripts/show_rig.py` puts the show next to the robot_arm asset in
-`scenes/FR20_rig.hiplc`, as objects you drag in the viewport. Install it
-into the open scene from the Python Shell or the Houdini Agent bridge:
+Two scenes, two jobs:
+- `scenes/FR20_rig.hiplc` is the **hand tool**. Draw a curve, solve it,
+  and export a joint CSV.
+- `scenes/FR20_show.hiplc` is the **show**: the generated library, its
+  hubs and zones. `scripts/show_rig.py` puts it there as objects you drag
+  in the viewport.
+
+Rebuild the show scene with `hython scripts/build_show_scene.py`, or
+install the show objects into any open scene:
 
 ```python
 import show_rig; show_rig.install()          # shows/party.json
@@ -105,8 +111,14 @@ import show_rig; show_rig.install()          # shows/party.json
   sequence at a deleted hub, and says why. Keys the scene does not show
   are kept, for example OSC, sequences, canvas and scan.
 
-The older `scenes/FR20_show.hiplc` (`show_sop.py`) edits hubs as joint
-angles only. The rig scene supersedes it for zones and tool + look hubs.
+- **Play Segment on the Arm** and **Pose the Arm at Hub** drive the arm
+  through CELL_CTRL's clip.
+- **The room** is drawn the same way as in the Isaac scene (`room_geom`
+  looks, shared with `env_to_usd`):
+  - the floor and the objects are solid;
+  - each wall is one face turned into the room, so with the viewport's
+    Remove Backfaces on, the near walls vanish;
+  - zones are only their bottom and top rings.
 
 ## Python or Houdini
 

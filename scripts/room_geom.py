@@ -13,6 +13,13 @@ turned into the room itself:
                      ceiling -- (name, [4 corners], outward normal)
     edges(obj)       the 12 edges of a box / the rings of a cylinder, for
                      drawing a zone (work / keep-out / slow) as an outline
+    zone_lines(o, fp)  how a zone is drawn: its bottom and top rings only,
+                     up to the walls (the uprights crowd the view)
+
+How the room looks is also here -- LOOKS (colour, roughness, metal,
+opacity by name), look_key(name), SOLID_WALLS, ZONE_RGB -- so Isaac and
+Houdini draw it alike: floor and objects solid, each wall one face turned
+into the room (hidden from outside: a cutaway), zones as thin rings.
 
 Used by the Houdini cell display (cell_sop.py) and the USD export
 (env_to_usd.py), so both show the same room. Pure Python.
@@ -28,6 +35,41 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 OPEN_HALF = 3.0          # where no wall closes a side, the room stops this far from the base
+
+SOLID_WALLS = ("wall_tv",)          # every other measured wall is glass
+# name keyword -> (diffuse rgb, roughness, metallic, opacity)
+LOOKS = {
+    "floor": ((0.36, 0.24, 0.15), 0.55, 0.0, 1.0),
+    "wall": ((0.86, 0.85, 0.82), 0.9, 0.0, 1.0),
+    "glass": ((0.8, 0.9, 0.95), 0.0, 0.0, 0.08),
+    "glass_face": ((0.78, 0.86, 0.9), 0.15, 0.0, 1.0),   # a glass wall seen from inside: pale blue-grey, opaque
+    "tv": ((0.02, 0.02, 0.025), 0.2, 0.0, 1.0),
+    "cart": ((0.62, 0.08, 0.06), 0.45, 0.2, 1.0),
+    "shelves": ((0.28, 0.28, 0.3), 0.4, 0.7, 1.0),
+    "furniture": ((0.55, 0.4, 0.28), 0.6, 0.0, 1.0),
+    "plant": ((0.2, 0.42, 0.18), 0.8, 0.0, 1.0),
+    "base_plate": ((0.78, 0.64, 0.45), 0.7, 0.0, 1.0),
+    "canvas": ((0.96, 0.96, 0.93), 0.9, 0.0, 1.0),
+    "obstacle": ((0.6, 0.6, 0.62), 0.7, 0.0, 1.0),
+}
+ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1.0, 0.65, 0.1),
+            "ceiling": (0.7, 0.72, 0.75)}
+
+
+def look_key(name):
+    """The LOOKS entry for an object, by its name."""
+    n = name.lower()
+    for k in ("glass", "canvas", "base_plate", "cart", "tv", "shelves", "furniture", "plant", "floor"):
+        if k in n:
+            return k
+    if n.startswith("wall") or "partition" in n:
+        return "wall"
+    return "obstacle"
+
+
+def wall_look(name):
+    """The LOOKS entry for a wall's inward face."""
+    return "wall" if name in SOLID_WALLS else "glass_face"
 
 
 def _norm2(n):
@@ -118,6 +160,13 @@ def edges(o, sides=48, uprights=8):
     raise ValueError("no outline for %r" % o["type"])
 
 
+def zone_lines(o, fp):
+    """A zone as drawn: the horizontal rings of its outline (bottom and top),
+    clipped to the footprint."""
+    rings = [l for l in edges(o) if len({round(p[2], 9) for p in l}) == 1 and len(l) > 2]
+    return clip_polylines(rings, fp)
+
+
 def inside(fp, p, eps=1e-9):
     """Is p (x, y[, z]) inside the convex counter-clockwise footprint fp?"""
     return all((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= -eps
@@ -181,6 +230,13 @@ def self_test():
           max(p[0] for l in clipped for p in l) if clipped else None)
     e = edges({"type": "box", "center": [0, 0, 1], "size": [2, 2, 2]})
     check("a box zone outlines as 2 rings + 4 uprights", len(e) == 6 and len(e[0]) == 5)
+    zl = zone_lines({"type": "box", "center": [0, 0, 1], "size": [1, 1, 1]}, footprint(box))
+    check("a zone is drawn as its two rings, no uprights", len(zl) == 2 and all(len(l) == 5 for l in zl), len(zl))
+    zc = zone_lines({"type": "cylinder", "center": [0, 0, 0], "radius": 0.5, "height": 1.0}, footprint(box))
+    check("a cylinder zone too", len(zc) == 2, len(zc))
+    check("looks by name", look_key("wall_right_glass") == "glass" and look_key("partition_left") == "wall"
+          and look_key("control_cart") == "cart" and wall_look("wall_tv") == "wall"
+          and wall_look("wall_back") == "glass_face")
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

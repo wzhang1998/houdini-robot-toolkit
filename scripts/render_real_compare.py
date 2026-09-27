@@ -117,7 +117,7 @@ def render(csv, frames_dir, frame=None, res=(1280, 720), view="phone", span=None
         env = hou.node("/obj").createNode("geo", "compare_room", run_init_scripts=False)
         sop = env.createNode("python", "room")
         sop.parm("python").set("import sys\nsys.path.insert(0, %r)\nimport cell_sop, collision\n"
-                               "cell_sop.env_geometry(hou.pwd().geometry(), collision.load_env(%r))\n"
+                               "cell_sop.env_geometry(hou.pwd().geometry(), collision.load_env(%r), walls=False)\n"
                                % (ROOT + "/scripts", ROOT + "/envs/volvox_lab.json"))
         cut = env.createNode("attribwrangle", "outlines")
         cut.setInput(0, sop)

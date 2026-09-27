@@ -4,9 +4,10 @@ parameter expressions can call it: hou.session.joint(3).
 
     clip      a joint CSV (the asset's export) or a clip JSON (the factories),
               from /obj/CELL_CTRL's Clip; sampled at the current frame, 24 fps
-    env_geo   Python SOP: the environment file as geometry, coloured by role
-              (obstacle grey, keep_out red, slow orange, work green; zones
-              and tall walls see-through, with solid outlines)
+    env_geo   Python SOP: the environment file as geometry, drawn like the
+              Isaac scene (room_geom's looks): floor and objects solid, walls
+              one face turned in (a cutaway with Remove Backfaces), zones as
+              their bottom and top rings coloured by role
     capsule_geo  Python SOP: the robot's collision capsules at this frame,
               each coloured by its clearance (green far .. red at the margin),
               detail attributes min_clearance_m / nearest / violations
@@ -31,9 +32,6 @@ import collision as CL  # noqa: E402
 
 FPS = 24.0
 _CACHE = {}
-ROLE_COLOUR = {"obstacle": (0.55, 0.57, 0.6), "keep_out": (0.95, 0.15, 0.1),
-               "slow": (1.0, 0.6, 0.1), "work": (0.2, 0.85, 0.35)}
-ROLE_ALPHA = {"obstacle": 1.0, "keep_out": 0.35, "slow": 0.12, "work": 0.06}
 
 
 def _ctrl():
@@ -166,27 +164,6 @@ def _polyline(geo, xs, cd, name, closed=False):
     _prim_attrs(geo, poly, cd, 1.0, name)
 
 
-def _box_outline(geo, center, size, yaw, cd, name):
-    c, s = center, size
-    cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
-    k = [[(c[0] + cy * dx * s[0] / 2 - sy * dy * s[1] / 2, c[1] + sy * dx * s[0] / 2 + cy * dy * s[1] / 2,
-           c[2] + dz * s[2] / 2) for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))] for dz in (-1, 1)]
-    for ring in k:
-        _polyline(geo, ring, cd, name, closed=True)
-    for a, b in zip(k[0], k[1]):
-        _polyline(geo, (a, b), cd, name)
-
-
-def _cylinder_outline(geo, center, radius, height, cd, name, sides=48, uprights=8):
-    def at(a, z):
-        return (center[0] + radius * math.cos(a), center[1] + radius * math.sin(a), z)
-    for z in (center[2], center[2] + height):
-        _polyline(geo, [at(2 * math.pi * k / sides, z) for k in range(sides)], cd, name, closed=True)
-    for k in range(uprights):
-        a = 2 * math.pi * k / uprights
-        _polyline(geo, (at(a, center[2]), at(a, center[2] + height)), cd, name)
-
-
 def _prim_attrs(geo, prim, cd, alpha, name):
     prim.setAttribValue("Cd", cd)
     prim.setAttribValue("Alpha", alpha)
@@ -197,79 +174,75 @@ def env_geo(node):
     env_geometry(node.geometry(), env())
 
 
-def env_geometry(geo, cell):
+def env_geometry(geo, cell, walls=True):
     """Draw an environment (collision.load_env) into geo: prim Cd / Alpha /
-    name / role. Also used by the robot_arm asset's Show Cell toggle."""
+    name / role. Also used by the robot_arm asset's Show Cell toggle.
+
+    The same look as the Isaac scene (room_geom's LOOKS and rules): floor and
+    objects solid, each wall one face turned into the room -- with the
+    viewport's Remove Backfaces on, the walls near the camera vanish (a
+    cutaway) -- and zones as their bottom and top rings. walls=False leaves
+    the walls out (renders from outside the room)."""
+    import room_geom as RG
     geo.clear()
     geo.addAttrib(hou.attribType.Prim, "Cd", (1.0, 1.0, 1.0))
     geo.addAttrib(hou.attribType.Prim, "Alpha", 1.0)
     geo.addAttrib(hou.attribType.Prim, "name", "")
     geo.addAttrib(hou.attribType.Prim, "role", "")
-    import room_geom as RG
     fp = RG.footprint(cell)
     for o in cell.get("objects", []):
-        cd, a = ROLE_COLOUR[o["role"]], ROLE_ALPHA[o["role"]]
-        if o["role"] != "obstacle" and o["type"] in ("box", "cylinder"):
-            # a zone is a volume the checks use, not a thing in the room:
-            # its outline only, up to the walls
-            n0 = len(geo.prims())
-            for line in RG.clip_polylines(RG.edges(o), fp):
-                _polyline(geo, line, cd, o["name"])
-            for pr in geo.prims()[n0:]:
-                pr.setAttribValue("role", o["role"])
-            continue
-        tall = (o.get("size") or [0, 0, 0])[2] > 1.5 or o.get("height", 0) > 1.5
-        if o["role"] == "obstacle" and tall:
-            a = 0.22                                          # walls and shelves: see-through, so the robot shows
         n0 = len(geo.prims())
-        # a see-through face alone is all but invisible in the viewport (a
-        # zone at alpha 0.06): see-through objects also get solid outlines
-        edge = (0.8, 0.82, 0.85) if o["role"] == "obstacle" else cd
-        if o["type"] == "box":
-            _box(geo, o["center"], o["size"], o.get("yaw_deg", 0.0), cd, a, o["name"])
-            if a < 1.0:
-                _box_outline(geo, o["center"], o["size"], o.get("yaw_deg", 0.0), edge, o["name"])
-        elif o["type"] == "cylinder":
-            _cylinder(geo, o["center"], o["radius"], o["height"], cd, a, o["name"])
-            if a < 1.0:
-                _cylinder_outline(geo, o["center"], o["radius"], o["height"], edge, o["name"])
-        elif o["type"] == "sphere":
-            c, r = o["center"], o["radius"]
-            _cylinder(geo, (c[0], c[1], c[2] - r), r, 2 * r, cd, a, o["name"])
-            if a < 1.0:
-                _cylinder_outline(geo, (c[0], c[1], c[2] - r), r, 2 * r, edge, o["name"])
-        elif o["type"] == "halfspace":
+        if o["type"] == "halfspace":
             continue                                          # the room's planes: drawn closed, below
+        if o["role"] != "obstacle":
+            # a zone is a volume the checks use, not a thing in the room
+            for line in RG.zone_lines(o, fp):
+                _polyline(geo, line, RG.ZONE_RGB.get(o["role"], (1.0, 1.0, 1.0)), o["name"])
+        else:
+            cd = RG.LOOKS[RG.look_key(o["name"])][0]
+            if o["type"] == "box":
+                _box(geo, o["center"], o["size"], o.get("yaw_deg", 0.0), cd, 1.0, o["name"])
+            elif o["type"] == "cylinder":
+                _cylinder(geo, o["center"], o["radius"], o["height"], cd, 1.0, o["name"])
+            elif o["type"] == "sphere":
+                c, r = o["center"], o["radius"]
+                _cylinder(geo, (c[0], c[1], c[2] - r), r, 2 * r, cd, 1.0, o["name"])
         for pr in geo.prims()[n0:]:
             pr.setAttribValue("role", o["role"])
-    _room(geo, cell)
+    _room(geo, cell, walls)
 
 
-def _room(geo, cell):
-    """Floor, walls and ceiling as a closed room (room_geom.py): the walls
-    meet at the corners instead of running on as planes. Floor opaque, walls
-    see-through with a solid outline (the robot shows through them), the
-    ceiling grid's height as an outline."""
+def _face(geo, corners, cd, name, facing=None):
+    """A polygon over corners (robot frame); turned so its normal points
+    along `facing` (Houdini frame) when given."""
+    poly = geo.createPolygon()
+    pts = []
+    for c in corners:
+        pt = geo.createPoint()
+        pt.setPosition(_h(c))
+        poly.addVertex(pt)
+        pts.append(pt)
+    if facing is not None and poly.normal().dot(hou.Vector3(facing)) < 0.0:
+        geo.deletePrims([poly], keep_points=False)
+        return _face(geo, list(reversed(corners)), cd, name)
+    _prim_attrs(geo, poly, cd, 1.0, name)
+    return poly
+
+
+def _room(geo, cell, walls=True):
+    """Floor, walls and ceiling as a closed room (room_geom.py): the floor
+    solid, each wall one face turned into the room, the ceiling grid's
+    height as an outline."""
     import room_geom as RG
     fp = RG.footprint(cell)
     z0, z1 = RG.heights(cell)
     n0 = len(geo.prims())
-    poly = geo.createPolygon()
-    for x, y in reversed(fp):                                 # Houdini faces are clockwise from the front
-        pt = geo.createPoint()
-        pt.setPosition(_h((x, y, z0)))
-        poly.addVertex(pt)
-    _prim_attrs(geo, poly, (0.36, 0.28, 0.2), 1.0, "floor")
-    for name, corners, _ in RG.walls(cell):
-        glass = "glass" in name
-        poly = geo.createPolygon()
-        for c in corners:
-            pt = geo.createPoint()
-            pt.setPosition(_h(c))
-            poly.addVertex(pt)
-        _prim_attrs(geo, poly, (0.6, 0.75, 0.85) if glass else (0.86, 0.85, 0.82), 0.08 if glass else 0.15, name)
-        _polyline(geo, corners, (0.8, 0.82, 0.85), name, closed=True)
-    _polyline(geo, [(x, y, z1) for x, y in fp], (0.7, 0.72, 0.75), "ceiling", closed=True)
+    _face(geo, [(x, y, z0) for x, y in fp], RG.LOOKS["floor"][0], "floor", facing=(0.0, 1.0, 0.0))
+    if walls:
+        for name, corners, outward in RG.walls(cell):
+            inward = _h([-x for x in outward])
+            _face(geo, corners, RG.LOOKS[RG.wall_look(name)][0], name, facing=inward)
+    _polyline(geo, [(x, y, z1) for x, y in fp], RG.ZONE_RGB["ceiling"], "ceiling", closed=True)
     for pr in geo.prims()[n0:]:
         pr.setAttribValue("role", "obstacle")
 

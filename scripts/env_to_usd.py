@@ -10,16 +10,20 @@ Robot base frame, Z up, metres (Isaac's convention too). The room is built
 closed and finite (room_geom.py), as a set would be, not as the infinite
 planes the collision check uses:
 
-    /Room/Structure   floor slab over the room's footprint (wood), one wall
-                      panel per measured wall, meeting at the corners
-                      (plaster; the glass wall as glass), the ceiling grid's
-                      height as an outline -- all with UsdPhysics collision
+    /Room/Structure   floor slab over the room's footprint (wood); per
+                      measured wall a single-sided face turned into the room
+                      (a cutaway: hidden from outside; plaster, or pale
+                      blue-grey for glass) and an invisible collision slab;
+                      the ceiling grid's height as an outline
     /Room/Objects     obstacles as solids with plausible materials (the red
                       control cart, the TV, shelves, the plywood base plate,
                       the paper) and collision
-    /Room/Zones       work / keep-out / slow zones as OUTLINES only
-                      (BasisCurves), coloured by role -- they are volumes the
-                      checks use, not things in the room
+    /Room/Zones       work / keep-out / slow zones as their bottom and top
+                      rings only (BasisCurves), coloured by role -- they are
+                      volumes the checks use, not things in the room
+
+Colours and the wall / zone drawing rules are room_geom's, shared with the
+Houdini cell display (cell_sop.py), so both look alike.
 
 Every prim carries motionlab:role and motionlab:margin_m. --show adds the
 show's paper (canvas) and its stage. The JSON stays the source; this is
@@ -37,35 +41,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import room_geom as RG  # noqa: E402
 
 WALL_T = 0.08
-SOLID_WALLS = ("wall_tv",)          # every other measured wall is glass
+SOLID_WALLS, LOOKS, ZONE_RGB = RG.SOLID_WALLS, RG.LOOKS, RG.ZONE_RGB   # shared with Houdini (cell_sop)
 FLOOR_T = 0.05
-# name keyword -> (diffuse rgb, roughness, metallic, opacity)
-LOOKS = {
-    "floor": ((0.36, 0.24, 0.15), 0.55, 0.0, 1.0),
-    "wall": ((0.86, 0.85, 0.82), 0.9, 0.0, 1.0),
-    "glass": ((0.8, 0.9, 0.95), 0.0, 0.0, 0.08),
-    "glass_face": ((0.78, 0.86, 0.9), 0.15, 0.0, 1.0),   # a glass wall seen from inside: pale blue-grey, opaque
-    "tv": ((0.02, 0.02, 0.025), 0.2, 0.0, 1.0),
-    "cart": ((0.62, 0.08, 0.06), 0.45, 0.2, 1.0),
-    "shelves": ((0.28, 0.28, 0.3), 0.4, 0.7, 1.0),
-    "furniture": ((0.55, 0.4, 0.28), 0.6, 0.0, 1.0),
-    "plant": ((0.2, 0.42, 0.18), 0.8, 0.0, 1.0),
-    "base_plate": ((0.78, 0.64, 0.45), 0.7, 0.0, 1.0),
-    "canvas": ((0.96, 0.96, 0.93), 0.9, 0.0, 1.0),
-    "obstacle": ((0.6, 0.6, 0.62), 0.7, 0.0, 1.0),
-}
-ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1.0, 0.65, 0.1),
-            "ceiling": (0.7, 0.72, 0.75)}
-
-
-def _look_key(name):
-    n = name.lower()
-    for k in ("glass", "canvas", "base_plate", "cart", "tv", "shelves", "furniture", "plant", "floor"):
-        if k in n:
-            return k
-    if n.startswith("wall") or "partition" in n:
-        return "wall"
-    return "obstacle"
 
 
 def _material(stage, key):
@@ -184,9 +161,7 @@ def export(env, out, extra=()):
         _tag(w, "obstacle", o.get("margin_m", margin), o.get("note"), None, True)
         UsdGeom.Imageable(w).MakeInvisible()
         face = _inward_face(stage, "/Room/Structure/" + _safe(name) + "_face", corners, outward)
-        _tag(face, "obstacle", o.get("margin_m", margin), None, "wall" if name in SOLID_WALLS else "glass_face")
-        ring = list(corners) + [corners[0]]
-        _curves(stage, "/Room/Structure/" + _safe(name) + "_outline", [ring], ZONE_RGB["ceiling"], 0.01)
+        _tag(face, "obstacle", o.get("margin_m", margin), None, RG.wall_look(name))
     ring = [(x, y, z1) for x, y in fp]
     ce = _curves(stage, "/Room/Structure/ceiling_grid", [ring + ring[:1]], ZONE_RGB["ceiling"], 0.015)
     _tag(ce, "obstacle", by_name.get("ceiling", {}).get("margin_m", margin),
@@ -198,7 +173,7 @@ def export(env, out, extra=()):
             continue
         name, role = _safe(o["name"]), o["role"]
         if role != "obstacle":                                  # a volume the checks use: outline only
-            lines = RG.clip_polylines(RG.edges(o), fp)                # up to the walls, not through them
+            lines = RG.zone_lines(o, fp)                              # its rings, up to the walls
             if not lines:
                 continue
             c = _curves(stage, "/Room/Zones/" + name, lines, ZONE_RGB.get(role, (1, 1, 1)))
@@ -222,7 +197,7 @@ def export(env, out, extra=()):
             UsdGeom.Xformable(prim).AddTranslateOp().Set(Gf.Vec3d(*o["center"]))
         else:
             raise ValueError("unknown shape %r" % o["type"])
-        _tag(prim, role, o.get("margin_m", margin), o.get("note"), _look_key(o["name"]), True)
+        _tag(prim, role, o.get("margin_m", margin), o.get("note"), RG.look_key(o["name"]), True)
     stage.GetRootLayer().Save()
     return stage
 

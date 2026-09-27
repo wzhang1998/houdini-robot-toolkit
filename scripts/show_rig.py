@@ -1,12 +1,19 @@
-"""The show, edited in the rig scene (scenes/FR20_rig.hiplc): zones, hubs,
-the operating range and the library as objects and parameters next to the
-robot_arm asset, written back to the show config (shows/*.json).
+"""The show, edited in Houdini: zones, hubs, the operating range and the
+library as objects and parameters next to the arm, written back to the
+show config (shows/*.json). It lives in the show scene
+(scenes/FR20_show.hiplc, built by scripts/build_show_scene.py); the rig
+scene (FR20_rig.hiplc) stays the hand-authoring tool.
 
-Install it into the open scene (the Python Shell, or the Houdini Agent
-bridge); it adds objects and does not touch /obj/fr20:
+Install it into an open scene (the Python Shell, or the Houdini Agent
+bridge); it adds objects and leaves the arm alone:
 
     import show_rig; show_rig.install()                  # shows/party.json
     import show_rig; show_rig.install("D:/.../shows/other.json")
+
+In the show scene it also plays a built segment, or holds a hub's pose, on
+the arm (CELL_CTRL's clip), draws the room once (cell_env; the robot_arm's
+own Show Cell off), hides the collision capsules, and turns the viewport's
+Remove Backfaces on (the room's walls face in: a cutaway, as in Isaac).
 
 What it adds (/obj, in a network box "SHOW"):
 
@@ -60,6 +67,7 @@ HUB_RGB = [(0.95, 0.45, 0.2), (0.3, 0.7, 1.0), (0.55, 0.9, 0.35), (0.85, 0.4, 0.
 ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.6, 0.85, 0.4),
             "stage": (0.2, 0.9, 0.35)}
 BAD_RGB = (1.0, 0.1, 0.1)
+GHOST_SCALE = 0.55                 # ghost arms thinner than the collision capsules: they read as a pose
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 FAMILIES = "look wave nod reach tilt trace"
 
@@ -332,6 +340,16 @@ def _show_parms(node, config):
                                             min=1.0, max=120.0))
     run.addParmTemplate(T.ButtonParmTemplate("dry_b", "Dry Run", **_cb("dry_run()")))
     run.addParmTemplate(T.ToggleParmTemplate("show_paths", "Show Built Paths", default_value=True))
+    run.addParmTemplate(T.StringParmTemplate(
+        "segment", "Play Segment on the Arm", 1, menu_type=T.menuType.Normal,
+        item_generator_script="import show_rig; return show_rig.segment_menu()",
+        item_generator_script_language=T.scriptLanguage.Python,
+        help="A built segment played on the arm (the show scene: CELL_CTRL's clip)",
+        **_cb("preview_segment()")))
+    run.addParmTemplate(T.StringParmTemplate(
+        "pose_hub", "Pose the Arm at Hub", 1, menu_type=T.menuType.Normal,
+        item_generator_script="import show_rig; return show_rig.hub_menu()",
+        item_generator_script_language=T.scriptLanguage.Python, **_cb("preview_hub()")))
     run.addParmTemplate(T.StringParmTemplate("report", "Report", 1, tags={"editor": "1", "editorlines": "10-30"}))
     g.append(run)
     node.setParmTemplateGroup(g)
@@ -383,18 +401,31 @@ def zone_menu():
 
 
 def _box(node, rgb):
-    """A unit box drawn as its edges, in the object's colour."""
-    if node.node("box"):
+    """A unit box drawn as its bottom and top rings (the uprights crowd the
+    view, as in the Isaac scene), in the object's colour."""
+    if node.node("rings"):
         return
-    box = node.createNode("box", "box")
-    lines = node.createNode("convertline", "edges")
-    lines.setInput(0, box)
+    for c in node.children():
+        c.destroy()
+    sop = node.createNode("python", "rings")
+    sop.parm("python").set("import show_rig\nshow_rig.unit_rings(hou.pwd())\n")
     col = node.createNode("color", "colour")
-    col.setInput(0, lines)
+    col.setInput(0, sop)
     col.parmTuple("color").set(rgb)
     col.setDisplayFlag(True)
     col.setRenderFlag(True)
     node.layoutChildren()
+
+
+def unit_rings(node):
+    """Python SOP of a zone object: the unit box's bottom and top rings."""
+    geo = node.geometry()
+    for y in (-0.5, 0.5):
+        poly = geo.createPolygon(is_closed=False)
+        for x, z in ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5), (-0.5, -0.5)):
+            pt = geo.createPoint()
+            pt.setPosition((x, y, z))
+            poly.addVertex(pt)
 
 
 def _zone_obj(name):
@@ -433,8 +464,10 @@ def _look_obj(name, colour):
 def _viz_obj():
     hou = _hou()
     viz = hou.node("/obj/show_viz")
-    if viz:
+    if viz and viz.node("tubes"):
         return viz
+    if viz:
+        viz.destroy()                                # the older show panel's drawing
     viz = hou.node("/obj").createNode("geo", "show_viz", run_init_scripts=False)
     sop = viz.createNode("python", "show")
     sop.parm("python").set("import show_rig\nshow_rig.viz(hou.pwd())\n")
@@ -477,8 +510,53 @@ def install(config=DEFAULT_CONFIG):
         show.parm("config").set(config)
         _viz_obj()
         load_config(show)
+        _tidy_show_scene()
         _layout()
+    clean_view()
     return show
+
+
+def _tidy_show_scene():
+    """In the show scene (it has CELL_CTRL): the room is drawn once, by
+    cell_env -- the robot_arm's own Show Cell is turned off -- and the
+    collision capsules are hidden (they cover the arm)."""
+    hou = _hou()
+    if hou.node("/obj/CELL_CTRL") is None:
+        return
+    arm = hou.node("/obj/fr20/robot_arm")
+    if arm is not None and arm.parm("show_cell") is not None:
+        arm.parm("show_cell").set(0)
+    for name in ("capsules", "ghosts", "CELL_CTRL"):           # CELL_CTRL: its null's axes sit on the base
+        n = hou.node("/obj/" + name)
+        if n is not None:
+            n.setDisplayFlag(False)
+    old = hou.node("/obj/SHOW_CTRL")                # the older show panel (joint-angle hubs only)
+    if old is not None:
+        old.destroy()
+
+
+def clean_view(viewers=None):
+    """Remove Backfaces on in the scene viewers: the room's walls face in,
+    so the walls near the camera vanish (the cutaway the Isaac scene has)."""
+    hou = _hou()
+    if not hou.isUIAvailable():
+        return
+    for pane in viewers or hou.ui.paneTabs():
+        if pane.type() == hou.paneTabType.SceneViewer:
+            for vp in pane.viewports():
+                vp.settings().setRemoveBackfaces(True)
+
+
+def clean_view_on_load():
+    """For a scene's hou.session: clean_view once the UI is up."""
+    hou = _hou()
+    if not hou.isUIAvailable():
+        return
+
+    def once():
+        hou.ui.removeEventLoopCallback(once)
+        clean_view()
+    hou.ui.addEventLoopCallback(once)
 
 
 # --- config <-> scene ---------------------------------------------------------
@@ -709,6 +787,51 @@ def add_clip(node=None):
             % (clip_id, node.evalParm("auth_hub"), os.path.basename(cfg_path(node))))
 
 
+def segment_menu(node=None):
+    """(token, label) of the built segments, from the preview manifest."""
+    node = node or _show()
+    man = preview_dir(node) + "/manifest.json"
+    items = []
+    if os.path.exists(man):
+        for s in json.load(open(man))["segments"]:
+            items += [s["name"], "%s  (%s, %.1f s)" % (s["name"], s["kind"], s["duration_s"])]
+    return items or ["", "(build the show first)"]
+
+
+def _play_on_arm(path):
+    hou = _hou()
+    ctrl = hou.node("/obj/CELL_CTRL")
+    if ctrl is None:
+        _report(_show(), "Playing on the arm needs the show scene (CELL_CTRL)", error=True)
+        return
+    import cell_sop
+    ctrl.parm("clip").set(path)
+    cell_sop.fit_range()
+
+
+def preview_segment(node=None):
+    node = node or _show()
+    name = node.evalParm("segment")
+    if name:
+        _play_on_arm(preview_dir(node) + "/" + name + ".json")
+
+
+def preview_hub(node=None):
+    """The arm held at a hub's pose (a two-point still clip)."""
+    node = node or _show()
+    name = node.evalParm("pose_hub")
+    h = scene_parts(node)["hubs"].get(name)
+    q = h and _hub_q(h)
+    if q is None:
+        _report(node, "hub %s: no pose to show" % name, error=True)
+        return
+    os.makedirs(preview_dir(node), exist_ok=True)
+    path = preview_dir(node) + "/_hub_%s.json" % name
+    with open(path, "w") as f:
+        json.dump({"id": "hub", "points": [{"t": 0.0, "q": list(q)}, {"t": 1.0, "q": list(q)}]}, f)
+    _play_on_arm(path)
+
+
 def _run(args, title):
     hou = _hou()
     with hou.InterruptableOperation(title, open_interrupt_dialog=True):
@@ -852,7 +975,7 @@ def viz(node):
         if q is not None:
             caps, tcp = C.capsules(_cmodel(), q)
             for link, a, b, rad in caps:
-                line([a, b], cd, "hub_%s/%s" % (name, link), rad)
+                line([a, b], cd, "hub_%s/%s" % (name, link), rad * GHOST_SCALE)
             if h.get("look"):
                 line([tcp, h["look"]], cd, "look_" + name, 0.004)
         elif h.get("look"):
