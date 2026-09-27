@@ -1,8 +1,8 @@
 """The show (scripts/show.py's state machine and clip graph) in Isaac Sim:
 the FR20 from its URDF, the room from envs/volvox_lab.usda, physics on.
 
-    C:/isaacsim/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
-    C:/isaacsim/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
 
 The same Runner as the dry run and (next) the real arm: each physics step
 asks it for joints and sends them to the arm's position drives. Triggers:
@@ -100,8 +100,7 @@ def main():
     cfg_path = os.path.abspath(args.config)
     cfg = json.load(open(cfg_path))
     graph = show.Graph.load(show.compiled_path(cfg_path))
-    runner = show.Runner(graph, show.Selector(graph.idle(), cfg["select"]["no_repeat"], seed=args.seed),
-                         log=lambda *a: print("[show]", *a))
+    runner = show.runner_for(graph, seed=args.seed, log=lambda *a: print("[show]", *a))
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
@@ -116,8 +115,7 @@ def main():
     world.reset()
     names = list(robot.dof_names)
     idx = [names.index("j%d" % i) for i in range(1, 7)]
-    home = graph.hubs["home"]
-    robot.set_joint_positions(np.radians(home), joint_indices=np.array(idx))
+    robot.set_joint_positions(np.radians(runner.seg.q[0]), joint_indices=np.array(idx))
     print("[show] robot %s, dofs %s" % (prim_path, names))
 
     # contacts between the arm and the room
@@ -160,11 +158,14 @@ def main():
             return True
         inp = carb.input.acquire_input_interface()
         inp.subscribe_to_keyboard_events(omni.appwindow.get_default_app_window().get_keyboard(), on_key)
-        win = ui.Window("Show", width=340, height=230)
+        win = ui.Window("Show", width=360, height=300)
         with win.frame:
             with ui.VStack(spacing=6):
                 label = ui.Label("", height=90, word_wrap=True)
                 ui.Button("Trigger scan  (T)", clicked_fn=lambda: runner.trigger("scan"))
+                with ui.HStack(spacing=6):
+                    for name in runner.sequences:
+                        ui.Button(name, clicked_fn=lambda n=name: runner.trigger(n))
                 with ui.HStack(spacing=6):
                     ui.Button("Pause (P)", clicked_fn=runner.pause)
                     ui.Button("Resume (R)", clicked_fn=runner.resume)
@@ -205,8 +206,8 @@ def main():
         if bridge is not None and int(runner.clock / PHYSICS_DT) % 4 == 0:
             bridge.send(q)
         if label is not None:
-            label.text = "%s   %s\nprogress %.0f%%   scan %s\npending %s%s" % (
-                st["state"], st["clip"], 100 * st["progress"],
+            label.text = "%s   %s   hub %s   %s\nprogress %.0f%%   scan %s\npending %s%s" % (
+                st["state"], st["clip"], st["hub"], st["sequence"] or "", 100 * st["progress"],
                 ("%.0f%%" % (100 * st["scan"])) if st["scan"] >= 0 else "-", st["pending"] or "-",
                 ("\nFAULT " + st["fault"]) if st["fault"] else "")
         if end is not None and runner.clock >= end:
@@ -215,7 +216,8 @@ def main():
     played = [c for _, c in runner.history]
     summary = {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "log": os.path.relpath(log_path, ROOT).replace("\\", "/"),
                "sim_seconds": round(runner.clock, 1), "clips_played": len(played), "scans": played.count("scan"),
-               "distinct_idle": len(set(c for c in played if c not in ("scan", "to_scan", "from_scan"))),
+               "distinct_idle": len(set(c for c in played if show.graph_kind(graph, c) == "idle")),
+               "hubs_visited": sorted(set(show.graph_start(graph, c) for c in played if show.graph_kind(graph, c) == "idle")),
                "trigger_to_scan_s": {"max": round(max(waits), 2) if waits else None,
                                      "mean": round(sum(waits) / len(waits), 2) if waits else None},
                "tracking_max_deg": [round(x, 3) for x in worst],
