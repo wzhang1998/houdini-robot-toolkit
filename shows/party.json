@@ -1,18 +1,73 @@
 {
- "schema": "motionlab.show/1",
+ "schema": "motionlab.show/2",
  "name": "party",
- "note": "Volvox party piece: the arm idles through the generated library and, on a trigger (TouchDesigner, OSC), sweeps an LED strip across UV paper. Paper size, place and the LED strip are not decided yet: the canvas and the scan below are PLACEHOLDERS (the canvas is the plane of the user's cat curve, which the real arm has reached).",
+ "note": "Volvox party piece: the arm idles through a library generated for this stage and, on a trigger (TouchDesigner, OSC), plays a sequence or sweeps an LED strip across UV paper. Edited by hand or by the Houdini show scene. The canvas and the scan are PLACEHOLDERS until the paper and strip are decided (the canvas is the plane of the user's cat curve).",
  "env": "envs/volvox_lab.json",
- "idle_manifest": "geo/stage",
+ "start_hub": "center",
  "hubs": {
-  "home": [
-   -60.0,
-   -90.0,
-   90.0,
-   -90.0,
-   -90.0,
-   0.0
-  ]
+  "center": {
+   "q": [
+    -60.0,
+    -90.0,
+    90.0,
+    -90.0,
+    -90.0,
+    0.0
+   ],
+   "clips": 10,
+   "note": "the stage home; facing the stage's centre"
+  },
+  "left": {
+   "q": [
+    -30.0,
+    -85.0,
+    95.0,
+    -100.0,
+    -90.0,
+    0.0
+   ],
+   "clips": 8
+  },
+  "right": {
+   "q": [
+    -90.0,
+    -85.0,
+    95.0,
+    -100.0,
+    -90.0,
+    0.0
+   ],
+   "clips": 8
+  }
+ },
+ "library": {
+  "bars": [
+   1,
+   2
+  ],
+  "bpm": [
+   80,
+   125
+  ],
+  "duration_s": [
+   4.0,
+   10.0
+  ],
+  "seed": 11,
+  "tries": 6,
+  "actions": []
+ },
+ "sequences": {
+  "greet": {
+   "hub": "center",
+   "count": 2,
+   "mood": "punch"
+  },
+  "calm": {
+   "hub": "center",
+   "count": 2,
+   "mood": "float"
+  }
  },
  "canvas": {
   "placeholder": true,
@@ -36,7 +91,8 @@
   "placeholder": true,
   "length_m": 0.8,
   "standoff_m": 0.25,
-  "safety": 0.5
+  "safety": 0.5,
+  "from_hub": "center"
  },
  "margins": {
   "idle_canvas_m": 0.15,
@@ -44,8 +100,11 @@
  },
  "transition_safety": 0.5,
  "select": {
-  "no_repeat": 8,
-  "max_idle_s": 18.0
+  "no_repeat": 6,
+  "hub_stay": [
+   2,
+   4
+  ]
  },
  "osc": {
   "listen_port": 9000,

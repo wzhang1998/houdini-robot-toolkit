@@ -1,35 +1,42 @@
 """A show: the arm plays through a clip library, switching on outside events
 (TouchDesigner over OSC), always between validated motions.
 
-    python scripts/show.py build shows/party.json          compile: every motion made and checked
+    python scripts/show.py build shows/party.json          make and check every motion
     python scripts/show.py dry-run shows/party.json [--minutes 10] [--trigger-every 45]
     python scripts/show.py osc shows/party.json            dry-run clock, driven by OSC (TouchDesigner)
     python scripts/show.py --self-test
 
-The motion graph (the usual motion-graph / hub idea: every motion starts and
-ends at rest at a hub, so any two join without a jump):
+A motion graph with hubs (as in game motion graphs and Boston Dynamics'
+Choreographer): every motion starts and ends at rest at a hub, so any two
+join without a jump.
 
-    home --idle clip--> home          the generated library (tests/csv/stage), turned to face the stage
-    home --to_scan----> scan_start    a checked MoveJ-like move (safe_move.route), timed by retime_topp
-    scan_start --scan-> scan_end      the fixed sweep across the paper (a PLACEHOLDER line for now)
-    scan_end --from_scan--> home
+    hub --idle clip--> same hub       generated for that hub (choreo.py phrases that start and
+                                      end at the hub pose, facing the hub's own J1)
+    hub --move--> other hub           a checked MoveJ-like move (safe_move.route, retime_topp)
+    scan hub --to_scan--> scan_start --scan--> scan_end --from_scan--> scan hub
+                                      the fixed sweep across the paper (a PLACEHOLDER line for now)
 
-Everything is made and checked at BUILD time, against the room (collision.py,
-the lab env, the controller's work area) plus the canvas: idle clips keep
-idle_canvas_m from the paper, the scan and its moves scan_canvas_m. At show
-time nothing is planned, only chosen: the runner walks the graph.
+The show config (shows/*.json) says where the hubs are, how many clips
+each gets, how long they may be, the stage (work zone) and the paper. The
+Houdini show scene edits the same file. Everything is made and checked at
+BUILD time against the room (collision.py, the lab env, the controller's
+work area, the stage) plus the paper: idle clips and moves keep
+margins.idle_canvas_m from it, the scan and its moves scan_canvas_m. At
+show time nothing is planned, only chosen.
 
-Runner states: IDLE -> (trigger) -> TO_SCAN -> SCAN -> FROM_SCAN -> IDLE;
-PAUSED (holds at home); FAULT (holds, needs reset). A trigger is taken at the
-end of the running clip (the worst wait is the longest idle clip,
-select.max_idle_s). Selection: weighted random, no repeat within the last
-select.no_repeat, weighted towards a mood (a Laban action) and an energy
-(0 calm .. 1 lively) that TouchDesigner may send.
+Runner: plays idle clips at a hub, moves to another hub every few clips
+(select.hub_stay), and takes requests at the end of the running clip:
+    scan            route to the scan hub, to_scan, scan, from_scan
+    <sequence>      route to its hub, play its clips (count, mood), back to idling
+States: IDLE, MOVE, TO_SCAN, SCAN, FROM_SCAN, PAUSED (holds at a hub), FAULT
+(holds, needs reset). Selection: weighted random, no repeat within the last
+select.no_repeat at a hub, weighted towards a mood (a Laban action) and an
+energy (0 calm .. 1 lively) that TouchDesigner may send.
 
-OSC in:  /robot/trigger [name]   /robot/pause   /robot/resume   /robot/reset
-         /robot/mood <action>    /robot/energy <0..1>
-OSC out: /robot/state s  /robot/clip s  /robot/progress f  /robot/scan f (0..1 while
-         scanning: the LED strip's column clock)  /robot/joints f*6
+OSC in:  /robot/trigger [name] (default scan)   /robot/pause   /robot/resume   /robot/reset
+         /robot/mood <action>   /robot/energy <0..1>
+OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
+         /robot/scan f (0..1 while scanning: the LED strip's column clock)  /robot/joints f*6
 
 Backends (who moves): the dry-run clock here; Isaac Sim
 (scripts/isaac/run_show.py); SimMachine / the real FR20 next (a ServoJ
@@ -48,8 +55,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
-SCHEMA = "motionlab.show.compiled/1"
+SCHEMA = "motionlab.show.compiled/2"
 STEP_DEG = 1.0                      # joint-space sampling of a planned move
+STATE_OF = {"idle": "IDLE", "move": "MOVE", "to_scan": "TO_SCAN", "scan": "SCAN", "from_scan": "FROM_SCAN"}
 
 
 # --------------------------------------------------------------------------
@@ -96,11 +104,35 @@ class Graph:
     def __init__(self, hubs, segments, info=None):
         self.hubs, self.segments, self.info = hubs, segments, info or {}
 
-    def idle(self):
-        return [s for s in self.segments if s.kind == "idle"]
+    def idle(self, hub=None):
+        return [s for s in self.segments if s.kind == "idle" and (hub is None or s.start == hub)]
 
     def one(self, kind):
         return [s for s in self.segments if s.kind == kind][0]
+
+    def move(self, a, b):
+        m = [s for s in self.segments if s.kind == "move" and s.start == a and s.end == b]
+        return m[0] if m else None
+
+    def idle_hubs(self):
+        return sorted(set(s.start for s in self.idle()))
+
+    def route(self, a, b):
+        """Hub-to-hub moves from a to b (breadth first), [] when a == b, None if none."""
+        if a == b:
+            return []
+        seen, frontier = {a: []}, [a]
+        while frontier:
+            nxt = []
+            for h in frontier:
+                for s in self.segments:
+                    if s.kind == "move" and s.start == h and s.end not in seen:
+                        seen[s.end] = seen[h] + [s]
+                        if s.end == b:
+                            return seen[b]
+                        nxt.append(s.end)
+            frontier = nxt
+        return None
 
     def save(self, path):
         with open(path, "w") as f:
@@ -136,9 +168,18 @@ def canvas_box(c):
             "size": [c.get("thickness", 0.02), c["size"][0], c["size"][1]], "yaw_deg": yaw}
 
 
-def _env_with_canvas(env, cfg, margin):
-    box = dict(canvas_box(cfg["canvas"]), margin_m=margin)
-    return dict(env, objects=list(env["objects"]) + [box])
+def show_env(env, cfg, canvas_margin):
+    """The room for this show: the config's stage replaces the env's work zone
+    of that name; the paper is an obstacle with canvas_margin."""
+    objs = []
+    stage = cfg.get("stage")
+    for o in env["objects"]:
+        if stage and o["name"] == stage.get("name", "stage"):
+            o = dict(o, center=list(stage["center"]), size=list(stage["size"]), yaw_deg=stage.get("yaw_deg", 0.0))
+        objs.append(o)
+    if cfg.get("canvas"):
+        objs.append(dict(canvas_box(cfg["canvas"]), margin_m=canvas_margin))
+    return dict(env, objects=objs)
 
 
 def timed_move(waypoints, safety, vel, acc):
@@ -153,7 +194,52 @@ def timed_move(waypoints, safety, vel, acc):
     return t, q
 
 
+def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print):
+    """n idle clips for one hub: choreo phrases made facing the robot's front
+    from the hub's pose with J1 = 0, then turned by the hub's J1 (as
+    stage_set.py turns clips), then checked in the room. [Segment], [why dropped]."""
+    import choreo
+    import collision as C
+    import stage_set
+    local = [0.0] + list(hub[1:])
+    lo, hi = lib["duration_s"]
+    got, dropped, tries = [], [], 0
+    while len(got) < n and tries < n * lib.get("tries", 6):
+        tries += 1
+        spec = choreo.random_spec(rng, bars=rng.choice(lib["bars"]),
+                                  actions=None if not lib.get("actions") else
+                                  [rng.choice(lib["actions"]) for _ in range(rng.choice(lib["bars"]))])
+        spec["bpm"] = int(min(max(spec["bpm"], lib["bpm"][0]), lib["bpm"][1]))
+        spec["start"] = local
+        clip = choreo.make_clip(spec, seed=rng.randrange(10 ** 9), env=None, kin=kin)
+        if not clip["safety"].get("ok"):
+            dropped.append(clip["safety"]["reasons"][0][:80])
+            continue
+        d = clip["points"][-1]["t"]
+        if not lo <= d <= hi:
+            dropped.append("%.1f s, outside %g-%g s" % (d, lo, hi))
+            continue
+        c = stage_set.turned(clip, hub[0])
+        t, q = [p["t"] for p in c["points"]], [p["q"] for p in c["points"]]
+        if not all(-172.0 < x[0] < 172.0 for x in q):
+            dropped.append("J1 past its limit")
+            continue
+        rep = C.check(model, env, t, q)
+        if not rep["ok"]:
+            dropped.append(C.describe(rep)[:80])
+            continue
+        m = (clip.get("labels") or {}).get("measured") or {}
+        labels = {"action": m.get("action"), "effort": {k: m.get(k) for k in ("weight", "time", "space", "flow")},
+                  "intent": [b["action"] for b in spec["bars"]], "bpm": spec["bpm"],
+                  "clearance_m": rep["min_env_clearance_m"]}
+        seg_name = "%s_%02d_%s" % (name, len(got), "-".join(labels["intent"]))
+        got.append(Segment(seg_name, "idle", t, q, name, name, labels))
+    log("  %s: %d clips from %d tries" % (name, len(got), tries))
+    return got, dropped
+
+
 def build(cfg_path, log=print):
+    import choreo
     import collision as C
     import robot_profile as RP
     import safe_move
@@ -162,60 +248,71 @@ def build(cfg_path, log=print):
     vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
     model = C.load_model("fr20")
     env = C.load_env(os.path.join(ROOT, cfg["env"]))
-    hubs = {k: list(v) for k, v in cfg["hubs"].items()}
-    home = hubs["home"]
-    segs, dropped = [], []
+    idle_env = show_env(env, cfg, cfg["margins"]["idle_canvas_m"])
+    scan_env = show_env(env, cfg, cfg["margins"]["scan_canvas_m"])
+    hubs = {k: list(v["q"]) for k, v in cfg["hubs"].items()}
+    menv = safe_move.move_env(idle_env)
+    for k, q in hubs.items():
+        hit = safe_move.blocked(model, menv, q)
+        if hit:
+            raise SystemExit("hub %s is not clear: %s near %s (%.3f m)" % (k, hit[0], hit[1], hit[2]))
+    lib = cfg["library"]
+    rng = random.Random(lib.get("seed", 1))
+    kin = choreo.Kin()
+    segs, dropped = [], {}
+    log("idle clips (%g-%g s, bars %s):" % (lib["duration_s"][0], lib["duration_s"][1], lib["bars"]))
+    for k, h in cfg["hubs"].items():
+        got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log)
+        segs += got
+        dropped[k] = why
+        if h.get("clips", 0) and not got:
+            raise SystemExit("hub %s: no clip could be made (%s)" % (k, "; ".join(why[:3])))
 
-    # idle: the stage library (every clip home -> home), kept off the paper
-    idle_env = _env_with_canvas(env, cfg, cfg["margins"]["idle_canvas_m"])
-    src = os.path.join(ROOT, cfg["idle_manifest"])
-    max_s = cfg["select"].get("max_idle_s", 1e9)
-    for f in sorted(os.listdir(src)):
-        if not f.endswith(".json") or f == "manifest.json":
-            continue
-        c = json.load(open(os.path.join(src, f)))
-        if not (c.get("safety") or {}).get("ok") or not c.get("points"):
-            continue
-        t, q = [p["t"] for p in c["points"]], [p["q"] for p in c["points"]]
-        if t[-1] > max_s:
-            dropped.append((c["id"], "longer than %.0f s (trigger latency)" % max_s))
-            continue
-        rep = C.check(model, idle_env, t, q)
-        if not rep["ok"]:
-            dropped.append((c["id"], C.describe(rep)))
-            continue
-        m = (c.get("labels") or {}).get("measured") or {}
-        labels = {"action": m.get("action"), "effort": {k: m.get(k) for k in ("weight", "time", "space", "flow")},
-                  "intent": (c.get("style") or {}).get("bars") and [b.get("action") for b in c["style"]["bars"]]}
-        segs.append(Segment(c["id"], "idle", t, q, "home", "home", labels))
-    log("idle: %d clips (%d dropped)" % (len(segs), len(dropped)))
+    # moves between the hubs, both ways
+    for a in hubs:
+        for b in hubs:
+            if a == b:
+                continue
+            path, why = safe_move.route(hubs[a], hubs[b], idle_env, model)
+            if path is None:
+                log("  no move %s -> %s: %s" % (a, b, why))
+                continue
+            t, q = timed_move([hubs[a]] + path, cfg["transition_safety"], vel, acc)
+            rep = C.check(model, idle_env, t, q)
+            if not rep["ok"]:
+                log("  move %s -> %s refused: %s" % (a, b, C.describe(rep)))
+                continue
+            segs.append(Segment("move_%s_%s" % (a, b), "move", t, q, a, b))
 
-    # scan: a PLACEHOLDER straight sweep in front of the canvas, tool at the paper
-    scan_env = _env_with_canvas(env, cfg, cfg["margins"]["scan_canvas_m"])
-    scan = placeholder_scan(cfg, scan_env)
-    if not scan["safety"]["ok"]:
-        raise SystemExit("scan: %s" % scan["safety"]["reasons"])
-    st, sq = [p["t"] for p in scan["points"]], [p["q"] for p in scan["points"]]
-    hubs["scan_start"], hubs["scan_end"] = list(sq[0]), list(sq[-1])
-    segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end"))
-
-    # the moves joining them: planned once, checked, timed
-    for name, kind, a, b in (("to_scan", "to_scan", "home", "scan_start"),
-                             ("from_scan", "from_scan", "scan_end", "home")):
-        path, why = safe_move.route(hubs[a], hubs[b], scan_env, model)
-        if path is None:
-            raise SystemExit("%s: %s" % (name, why))
-        t, q = timed_move([hubs[a]] + path, cfg["transition_safety"], vel, acc)
-        rep = C.check(model, scan_env, t, q)
-        if not rep["ok"]:
-            raise SystemExit("%s: %s" % (name, C.describe(rep)))
-        segs.append(Segment(name, kind, t, q, a, b))
-        log("%s: %.1f s, %s" % (name, t[-1], why))
-    g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "built": time.strftime("%Y-%m-%d %H:%M"),
-                           "dropped": [{"id": i, "why": w} for i, w in dropped], "canvas": cfg["canvas"]})
+    # the scan (PLACEHOLDER line) and the moves to and from it
+    if cfg.get("scan"):
+        scan = placeholder_scan(cfg, scan_env)
+        if not scan["safety"]["ok"]:
+            raise SystemExit("scan: %s" % scan["safety"]["reasons"])
+        st, sq = [p["t"] for p in scan["points"]], [p["q"] for p in scan["points"]]
+        hubs["scan_start"], hubs["scan_end"] = list(sq[0]), list(sq[-1])
+        segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end"))
+        home = cfg["scan"]["from_hub"]
+        for name, kind, a, b in (("to_scan", "to_scan", home, "scan_start"), ("from_scan", "from_scan", "scan_end", home)):
+            path, why = safe_move.route(hubs[a], hubs[b], scan_env, model)
+            if path is None:
+                raise SystemExit("%s: %s" % (name, why))
+            t, q = timed_move([hubs[a]] + path, cfg["transition_safety"], vel, acc)
+            rep = C.check(model, scan_env, t, q)
+            if not rep["ok"]:
+                raise SystemExit("%s: %s" % (name, C.describe(rep)))
+            segs.append(Segment(name, kind, t, q, a, b))
+            log("%s: %.1f s, %s" % (name, t[-1], why))
+    g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
+                           "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
+                           "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
+                           "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     bad = g.check_joins()
     if bad:
         raise SystemExit("segments do not meet at their hubs: %s" % bad)
+    unreachable = [h for h in g.idle_hubs() if g.route(cfg["start_hub"], h) is None]
+    if unreachable:
+        raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
     return g
 
 
@@ -235,22 +332,45 @@ def compiled_path(cfg_path):
     return os.path.splitext(cfg_path)[0] + ".compiled.json"
 
 
+def write_preview(graph, out_dir):
+    """Every segment as a motion clip JSON (t, q, TCP by FK) and a manifest,
+    for Houdini (the show scene previews any of them on the arm)."""
+    import motion_clip as M
+    os.makedirs(out_dir, exist_ok=True)
+    for f in os.listdir(out_dir):
+        if f.endswith(".json"):
+            os.remove(os.path.join(out_dir, f))
+    rows = []
+    for s in graph.segments:
+        clip = {"schema": M.SCHEMA, "id": s.name, "robot": "fr20", "joint_names": ["j%d" % i for i in range(1, 7)],
+                "units": {"angle": "deg", "time": "s", "length": "m"},
+                "points": [{"t": t, "q": q} for t, q in zip(s.t, s.q)], "tcp": M._tcp_path("fr20", s.q),
+                "meta": {"duration_s": s.duration, "show": {"kind": s.kind, "start": s.start, "end": s.end}},
+                "labels": s.labels, "safety": {"ok": True}}
+        M.save(clip, os.path.join(out_dir, s.name + ".json"))
+        rows.append({"name": s.name, "kind": s.kind, "start": s.start, "end": s.end,
+                     "duration_s": round(s.duration, 2), "labels": s.labels})
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        json.dump({"hubs": graph.hubs, "segments": rows}, f, indent=1)
+
+
 # --------------------------------------------------------------------------
 # choosing and running
 # --------------------------------------------------------------------------
 
 class Selector:
-    """Next idle clip: weighted random, no repeat within the last
+    """Next idle clip at a hub: weighted random, no repeat within the last
     no_repeat, weighted towards a mood (Laban action) and an energy."""
 
-    def __init__(self, clips, no_repeat=8, seed=None):
+    def __init__(self, clips, no_repeat=6, seed=None):
         self.clips, self.no_repeat = clips, no_repeat
         self.recent, self.mood, self.energy = [], None, None
         self.rng = random.Random(seed)
 
-    def weight(self, c):
+    def weight(self, c, mood=None):
         w = 1.0
-        if self.mood and c.labels.get("action") == self.mood:
+        mood = mood or self.mood
+        if mood and c.labels.get("action") == mood:
             w *= 4.0
         e = (c.labels.get("effort") or {})
         if self.energy is not None and e.get("time") is not None:
@@ -258,10 +378,10 @@ class Selector:
             w *= 0.25 + 1.5 * (1.0 - abs(lively - self.energy))
         return w
 
-    def pick(self):
-        pool = [c for c in self.clips if c.name not in self.recent[-self.no_repeat:]] or self.clips
-        ws = [self.weight(c) for c in pool]
-        c = self.rng.choices(pool, weights=ws)[0]
+    def pick(self, hub=None, mood=None):
+        at = [c for c in self.clips if hub is None or c.start == hub]
+        pool = [c for c in at if c.name not in self.recent[-self.no_repeat:]] or at
+        c = self.rng.choices(pool, weights=[self.weight(x, mood) for x in pool])[0]
         self.recent.append(c.name)
         return c
 
@@ -269,15 +389,23 @@ class Selector:
 class Runner:
     """Walks the graph one step at a time: step(dt) -> joints (degrees)."""
 
-    def __init__(self, graph, selector, log=None):
+    def __init__(self, graph, selector, start_hub=None, hub_stay=(2, 4), sequences=None, seed=None, log=None):
         self.g, self.sel, self.log = graph, selector, log or (lambda *a: None)
-        self.state, self.pending, self.paused, self.fault_reason = "IDLE", [], False, None
-        self.clock, self.seg_t = 0.0, 0.0
-        self.seg = self._next_idle()
+        self.hub = start_hub or graph.info.get("start_hub") or graph.idle_hubs()[0]
+        self.hub_stay, self.sequences = hub_stay, sequences if sequences is not None else graph.info.get("sequences", {})
+        self.rng = random.Random(seed)
+        self.pending, self.queue, self.paused, self.fault_reason = [], [], False, None
+        self.clock, self.seg_t, self.sequence = 0.0, 0.0, None
+        self.stay = self.rng.randint(*self.hub_stay)
         self.history = []
+        self.seg = self.sel.pick(self.hub)
+        self.state = "IDLE"
 
     # events (from OSC, a keyboard, a test script)
     def trigger(self, name="scan"):
+        if name != "scan" and name not in self.sequences:
+            self.log("%.2f unknown trigger %r" % (self.clock, name))
+            return
         if name not in self.pending:
             self.pending.append(name)
             self.log("%.2f trigger %s (in %s, %.1f s left)" % (self.clock, name, self.seg.name, self.seg.duration - self.seg_t))
@@ -296,42 +424,61 @@ class Runner:
         if self.state == "FAULT":
             self.state, self.fault_reason = "HOLD", None
 
-    def _next_idle(self):
-        s = self.sel.pick()
-        self.state = "IDLE"
-        return s
+    def _plan_next(self):
+        """Fill the queue with what comes next, from self.hub."""
+        if self.pending:
+            name = self.pending.pop(0)
+            if name == "scan":
+                via = self.g.route(self.hub, self.g.one("to_scan").start)
+                self.queue += via + [self.g.one("to_scan"), self.g.one("scan"), self.g.one("from_scan")]
+                self.sequence = "scan"
+                return
+            seq = self.sequences[name]
+            via = self.g.route(self.hub, seq.get("hub", self.hub)) or []
+            self.queue += via
+            self.queue += [("seq", name, seq.get("hub", self.hub), seq.get("mood"))] * int(seq.get("count", 2))
+            self.sequence = name
+            return
+        self.sequence = None
+        hubs = self.g.idle_hubs()
+        self.stay -= 1
+        if self.stay <= 0 and len(hubs) > 1:
+            other = self.rng.choice([h for h in hubs if h != self.hub])
+            route = self.g.route(self.hub, other)
+            if route:
+                self.queue += route
+                self.stay = self.rng.randint(*self.hub_stay)
+                return
+        self.queue.append(self.sel.pick(self.hub))
 
     def _advance(self):
-        k = self.seg.kind
         self.history.append((round(self.clock, 3), self.seg.name))
-        if k == "idle" and "scan" in self.pending:
-            self.pending.remove("scan")
-            nxt, self.state = self.g.one("to_scan"), "TO_SCAN"
-        elif k == "to_scan":
-            nxt, self.state = self.g.one("scan"), "SCAN"
-        elif k == "scan":
-            nxt, self.state = self.g.one("from_scan"), "FROM_SCAN"
-        elif self.paused:
+        self.hub = self.seg.end if self.seg.end in self.g.hubs else self.hub
+        if self.paused and not self.queue and not self.pending and self.seg.end in self.g.idle_hubs():
             self.state = "PAUSED"
             return
-        else:
-            nxt = self._next_idle()
-        self.log("%.2f %s -> %s (%s)" % (self.clock, self.seg.name, nxt.name, self.state))
+        if not self.queue:
+            self._plan_next()
+        nxt = self.queue.pop(0)
+        if isinstance(nxt, tuple):                              # a sequence's clip, chosen now
+            _, name, hub, mood = nxt
+            nxt = self.sel.pick(hub, mood)
+        self.log("%.2f %s -> %s" % (self.clock, self.seg.name, nxt.name))
         self.seg, self.seg_t = nxt, 0.0
+        self.state = STATE_OF[nxt.kind]
 
     def step(self, dt):
         self.clock += dt
         if self.state in ("FAULT", "HOLD"):
             return self.seg.at(self.seg_t)
         if self.state == "PAUSED":
-            if self.paused and "scan" not in self.pending:
+            if self.paused and not self.pending:
                 return self.seg.at(self.seg_t)
             self.state = "IDLE"
-            self.seg_t = self.seg.duration
             self._advance()
             return self.seg.at(self.seg_t)
         self.seg_t += dt
-        while self.seg_t >= self.seg.duration and self.state not in ("PAUSED",):
+        while self.seg_t >= self.seg.duration:
             left = self.seg_t - self.seg.duration
             self._advance()
             if self.state == "PAUSED":
@@ -342,9 +489,16 @@ class Runner:
 
     def status(self):
         prog = self.seg_t / self.seg.duration if self.seg.duration > 0 else 1.0
-        return {"state": self.state, "clip": self.seg.name, "progress": round(min(1.0, prog), 4),
+        return {"state": self.state, "clip": self.seg.name, "hub": self.hub, "sequence": self.sequence,
+                "progress": round(min(1.0, prog), 4),
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
                 "pending": list(self.pending), "fault": self.fault_reason}
+
+
+def runner_for(graph, seed=None, log=None):
+    sel = graph.info.get("select", {})
+    return Runner(graph, Selector(graph.idle(), sel.get("no_repeat", 6), seed=seed),
+                  hub_stay=tuple(sel.get("hub_stay", (2, 4))), seed=seed, log=log)
 
 
 # --------------------------------------------------------------------------
@@ -374,6 +528,7 @@ class OscBridge:
         s = self.runner.status()
         self.client.send_message("/robot/state", s["state"])
         self.client.send_message("/robot/clip", s["clip"])
+        self.client.send_message("/robot/hub", s["hub"])
         self.client.send_message("/robot/progress", float(s["progress"]))
         self.client.send_message("/robot/scan", float(s["scan"]))
         self.client.send_message("/robot/joints", [float(x) for x in q])
@@ -386,34 +541,45 @@ class OscBridge:
 # dry run
 # --------------------------------------------------------------------------
 
-def dry_run(graph, minutes=10.0, trigger_every=45.0, dt=0.008, seed=1, log=print):
-    """The show on a clock, no robot: triggers every trigger_every s (with
-    jitter). Returns a report: continuity (largest joint step per tick),
-    trigger latencies, clips played."""
-    sel = Selector(graph.idle(), no_repeat=8, seed=seed)
-    r = Runner(graph, sel, log=log)
+def dry_run(graph, minutes=10.0, trigger_every=45.0, dt=0.008, seed=1, log=print, triggers=("scan",)):
+    """The show on a clock, no robot: a trigger (from triggers, in turn)
+    every ~trigger_every s. Returns a report: continuity (largest joint step
+    per tick), trigger latencies, clips played, hubs visited."""
+    r = runner_for(graph, seed=seed, log=log)
     rng = random.Random(seed)
-    next_trig = trigger_every * (0.5 + rng.random())
-    prev, worst, latencies, t_trig = r.step(0.0), 0.0, [], None
+    next_trig = trigger_every * (0.5 + rng.random()) if trigger_every else float("inf")
+    prev, worst, latencies, t_trig, k = r.step(0.0), 0.0, [], None, 0
     t, end = 0.0, minutes * 60.0
     while t < end:
         t += dt
         if t >= next_trig:
-            r.trigger("scan")
+            r.trigger(triggers[k % len(triggers)])
+            k += 1
             t_trig = t
             next_trig = t + trigger_every * (0.5 + rng.random())
         q = r.step(dt)
         worst = max(worst, max(abs(a - b) for a, b in zip(q, prev)))
         prev = q
-        if t_trig is not None and r.state == "SCAN":
+        if t_trig is not None and r.sequence is not None and r.state != "IDLE" or (t_trig is not None and r.state == "SCAN"):
             latencies.append(t - t_trig)
             t_trig = None
     played = [n for _, n in r.history]
-    return {"minutes": minutes, "clips_played": len(played), "scans": played.count("scan"),
-            "distinct_idle": len(set(n for n in played if n not in ("scan", "to_scan", "from_scan"))),
+    idle = [n for n in played if graph_kind(graph, n) == "idle"]
+    return {"minutes": minutes, "segments_played": len(played), "scans": played.count("scan"),
+            "idle_clips_played": len(idle), "distinct_idle": len(set(idle)), "idle_available": len(graph.idle()),
+            "hubs_visited": sorted(set(graph_start(graph, n) for n in idle)),
+            "moves": sum(1 for n in played if graph_kind(graph, n) == "move"),
             "worst_step_deg_per_tick": round(worst, 4), "max_step_allowed": round(max_step(dt), 4),
-            "trigger_to_scan_s": {"max": round(max(latencies), 2) if latencies else None,
-                                  "mean": round(sum(latencies) / len(latencies), 2) if latencies else None}}
+            "trigger_to_start_s": {"max": round(max(latencies), 2) if latencies else None,
+                                   "mean": round(sum(latencies) / len(latencies), 2) if latencies else None}}
+
+
+def graph_kind(graph, name):
+    return next((s.kind for s in graph.segments if s.name == name), None)
+
+
+def graph_start(graph, name):
+    return next((s.start for s in graph.segments if s.name == name), None)
 
 
 def max_step(dt):
@@ -430,50 +596,82 @@ def self_test():
         if not ok:
             fails.append(label)
 
-    home = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
-    a = [10.0] + home[1:]
-    b = [20.0] + home[1:]
+    A = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+    B = [30.0] + A[1:]
+    S0, S1 = [10.0] + A[1:], [20.0] + A[1:]
 
-    def seg(name, kind, q0, q1, start, end, dur=2.0):
+    def seg(name, kind, q0, q1, start, end, dur=2.0, action="float", time_=-1.0):
         return Segment(name, kind, [0.0, dur / 2, dur], [q0, [(x + y) / 2 for x, y in zip(q0, q1)], q1], start, end,
-                       {"action": "punch" if name == "i1" else "float", "effort": {"time": 1.0 if name == "i1" else -1.0}})
+                       {"action": action, "effort": {"time": time_}})
 
-    g = Graph({"home": home, "scan_start": a, "scan_end": b},
-              [seg("i1", "idle", home, home, "home", "home", 3.0), seg("i2", "idle", home, home, "home", "home", 3.0),
-               seg("to_scan", "to_scan", home, a, "home", "scan_start"), seg("scan", "scan", a, b, "scan_start", "scan_end"),
-               seg("from_scan", "from_scan", b, home, "scan_end", "home")])
+    segs = [seg("a1", "idle", A, A, "a", "a", 3.0, "punch", 1.0), seg("a2", "idle", A, A, "a", "a", 3.0),
+            seg("b1", "idle", B, B, "b", "b", 3.0), seg("b2", "idle", B, B, "b", "b", 3.0, "punch", 1.0),
+            seg("move_a_b", "move", A, B, "a", "b"), seg("move_b_a", "move", B, A, "b", "a"),
+            seg("to_scan", "to_scan", A, S0, "a", "scan_start"), seg("scan", "scan", S0, S1, "scan_start", "scan_end"),
+            seg("from_scan", "from_scan", S1, A, "scan_end", "a")]
+    g = Graph({"a": A, "b": B, "scan_start": S0, "scan_end": S1}, segs,
+              {"start_hub": "a", "sequences": {"greet": {"hub": "b", "count": 2, "mood": "punch"}}})
     check("segments meet at their hubs", not g.check_joins())
-    r = Runner(g, Selector(g.idle(), no_repeat=1, seed=0))
+    check("routes between hubs", [s.name for s in g.route("b", "a")] == ["move_b_a"] and g.route("a", "a") == [])
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
+    hubs = set()
+    prev = r.step(0.0)
+    jump = 0.0
+    for _ in range(2000):
+        q = r.step(0.05)
+        jump = max(jump, max(abs(x - y) for x, y in zip(q, prev)))
+        prev = q
+        if r.seg.kind == "idle":
+            hubs.add(r.seg.start)
+    check("idling visits every hub, moving between them", hubs == {"a", "b"}, hubs)
+    check("no jump between segments", jump < 20.0 * 0.05 * 2, round(jump, 3))
+    # a scan from hub b: route to a, then to_scan, scan, from_scan
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, start_hub="b")
+    r.seg = g.idle("b")[0]
+    r.hub = "b"
     r.step(1.0)
     r.trigger("scan")
-    states = []
-    for _ in range(200):
+    seen = []
+    for _ in range(400):
         r.step(0.05)
-        states.append(r.state)
-    order = [s for i, s in enumerate(states) if i == 0 or s != states[i - 1]]
-    check("a trigger waits for the clip, then to_scan -> scan -> from_scan -> idle",
-          order[:4] == ["IDLE", "TO_SCAN", "SCAN", "FROM_SCAN"] and "IDLE" in order[4:], order)
+        if not seen or seen[-1] != r.seg.name:
+            seen.append(r.seg.name)
+    check("scan from another hub: move there first, then to_scan, scan, from_scan",
+          seen[1:5] == ["move_b_a", "to_scan", "scan", "from_scan"], seen[:6])
+    # a sequence: to its hub, its clips with its mood
+    r = Runner(g, Selector(g.idle(), 0, seed=4), hub_stay=(99, 99), seed=0)
+    r.step(0.5)
+    r.trigger("greet")
+    seen = []
+    for _ in range(300):
+        r.step(0.05)
+        if not seen or seen[-1] != r.seg.name:
+            seen.append(r.seg.name)
+    check("a sequence goes to its hub and plays its clips there", seen[1] == "move_a_b" and
+          all(x.startswith("b") for x in seen[2:4]), seen[:5])
+    r.trigger("nonsense")
+    check("an unknown trigger is ignored", "nonsense" not in r.pending)
     r.pause()
-    for _ in range(200):
+    for _ in range(400):
         r.step(0.05)
-    check("pause holds at home after the running clip", r.state == "PAUSED" and r.step(0.05) == home, r.state)
+    check("pause holds at a hub after the running clip", r.state == "PAUSED" and r.seg.end in ("a", "b"), r.state)
     r.resume()
     r.step(0.05)
-    check("resume goes on idling", r.state == "IDLE", r.state)
+    check("resume goes on", r.state != "PAUSED", r.state)
     r.fault("test")
     q = r.step(0.5)
     check("a fault holds the pose", r.state == "FAULT" and q == r.step(0.5))
     sel = Selector(g.idle(), no_repeat=1, seed=3)
-    picks = [sel.pick().name for _ in range(50)]
+    picks = [sel.pick("a").name for _ in range(50)]
     check("no repeat within the window", all(x != y for x, y in zip(picks, picks[1:])), picks[:6])
     sel = Selector(g.idle(), no_repeat=0, seed=3)
     sel.mood = "punch"
-    picks = [sel.pick().name for _ in range(400)]
-    check("a mood makes its clips likelier", picks.count("i1") > 2 * picks.count("i2"), (picks.count("i1"), picks.count("i2")))
+    picks = [sel.pick("a").name for _ in range(400)]
+    check("a mood makes its clips likelier", picks.count("a1") > 2 * picks.count("a2"), (picks.count("a1"), picks.count("a2")))
     sel = Selector(g.idle(), no_repeat=0, seed=3)
     sel.energy = 1.0
-    picks = [sel.pick().name for _ in range(400)]
-    check("energy 1 prefers sudden clips", picks.count("i1") > 2 * picks.count("i2"), (picks.count("i1"), picks.count("i2")))
+    picks = [sel.pick("a").name for _ in range(400)]
+    check("energy 1 prefers sudden clips", picks.count("a1") > 2 * picks.count("a2"), (picks.count("a1"), picks.count("a2")))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
@@ -484,20 +682,26 @@ def main(argv=None):
     ap.add_argument("config")
     ap.add_argument("--minutes", type=float, default=10.0)
     ap.add_argument("--trigger-every", type=float, default=45.0)
+    ap.add_argument("--triggers", default="scan", help="comma separated, used in turn")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
     if a.command == "build":
+        t0 = time.time()
         g = build(cfg_path)
         g.save(compiled_path(cfg_path))
-        print("wrote %s: %d segments, hubs %s" % (os.path.relpath(compiled_path(cfg_path), ROOT), len(g.segments), list(g.hubs)))
+        name = os.path.splitext(os.path.basename(cfg_path))[0]
+        write_preview(g, os.path.join(ROOT, "geo", "show", name))
+        print("wrote %s: %d segments (%d idle at %s), hubs %s, %.0f s" % (
+            os.path.relpath(compiled_path(cfg_path), ROOT), len(g.segments), len(g.idle()), g.idle_hubs(),
+            list(g.hubs), time.time() - t0))
         return 0
     g = Graph.load(compiled_path(cfg_path))
     if a.command == "dry-run":
-        rep = dry_run(g, a.minutes, a.trigger_every, log=lambda *x: None)
+        rep = dry_run(g, a.minutes, a.trigger_every, log=lambda *x: None, triggers=a.triggers.split(","))
         print(json.dumps(rep, indent=1))
         return 0 if rep["worst_step_deg_per_tick"] <= rep["max_step_allowed"] else 1
     cfg = json.load(open(cfg_path))
-    r = Runner(g, Selector(g.idle(), cfg["select"]["no_repeat"]), log=print)
+    r = runner_for(g, log=print)
     o = cfg["osc"]
     bridge = OscBridge(r, o["listen_port"], o["send_host"], o["send_port"])
     print("OSC in :%d, out %s:%d -- Ctrl+C to stop" % (o["listen_port"], o["send_host"], o["send_port"]))

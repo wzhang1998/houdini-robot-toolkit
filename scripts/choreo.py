@@ -33,7 +33,8 @@ moves chosen for its action:
     look     the wrist turns the tool to a gaze point and back
     hold     stillness (with a slow breath when flow is free)
 
-Every phrase starts and ends at rest in HOME, so clips chain. A clip must
+Every phrase starts and ends at rest in HOME, so clips chain -- or at the
+pose in spec["start"] (a show's hub pose). A clip must
 play at its designed speed (fairino_player's measure) and clear the cell
 (collision.py): intensity is reduced first -- smaller oscillations and
 detours, softer attacks, so the beat is kept -- and only then the tempo.
@@ -186,7 +187,7 @@ def random_spec(rng, bars=None, actions=None, flow=None, bpm=None):
             "flow": flow if flow is not None else round(rng.uniform(-1, 1), 2)}
 
 
-def _target(kind, eff, act, cur, kin, rng, tries=16):
+def _target(kind, eff, act, cur, kin, rng, tries=16, home=None):
     """Where a travel goes. Strong actions (travel_far / travel_curve): a
     kinesphere pose by IK -- the whole arm moves. Light ones (travel_near):
     the wrist leads -- J4-J6 turn, J2/J3 follow a little, J1 hardly. Every
@@ -201,7 +202,7 @@ def _target(kind, eff, act, cur, kin, rng, tries=16):
             span = [3, 6, 10, 30, 25, 45]
             if sudden:
                 span = [x * 0.4 for x in span]
-            q = [c + 0.25 * (h - c) + rng.uniform(-s_, s_) for c, h, s_ in zip(cur, HOME, span)]
+            q = [c + 0.25 * (h - c) + rng.uniform(-s_, s_) for c, h, s_ in zip(cur, home or HOME, span)]
         else:
             reach = 1.25 + 0.15 * eff["weight"] + rng.uniform(-0.15, 0.1)
             q = kin.pose(rng.choice(("low", "mid", "mid", "high")), rng.choice(list(DIRECTIONS)),
@@ -266,7 +267,8 @@ def _plan(spec, kin, rng):
     beat = 60.0 / spec["bpm"]
     flow = spec.get("flow", 0.0)
     t = beat                                                  # a beat of stillness first
-    cur = list(HOME)
+    home = list(spec.get("start") or HOME)
+    cur = list(home)
     segs = []
     for bi, bar in enumerate(spec["bars"]):
         act = bar["action"]
@@ -280,7 +282,7 @@ def _plan(spec, kin, rng):
             t0, t1 = t, t + nb * beat
             seg = {"t0": t0, "t1": t1, "kind": kind, "eff": eff, "act": act, "bar": bi}
             if kind.startswith("travel"):
-                target = _target(kind, eff, act, cur, kin, rng)
+                target = _target(kind, eff, act, cur, kin, rng, home=home)
                 if target is None:
                     seg["kind"] = "hold"
                 else:
@@ -304,8 +306,8 @@ def _plan(spec, kin, rng):
                              "phase": 0.0, "beat": beat, "cap": [1e9] * 6})
                 t += beat
     # home again, then a beat of stillness
-    nb = max(2, int(math.ceil(_travel_time(kin, cur, HOME) * 1.1 / beat - 1e-9)))
-    segs.append({"t0": t, "t1": t + nb * beat, "kind": "travel_home", "from": list(cur), "to": list(HOME),
+    nb = max(2, int(math.ceil(_travel_time(kin, cur, home) * 1.1 / beat - 1e-9)))
+    segs.append({"t0": t, "t1": t + nb * beat, "kind": "travel_home", "from": list(cur), "to": list(home),
                  "eff": efforts_of("glide", flow), "act": "glide", "detour": [0.0] * 6, "phase": 0.0,
                  "beat": beat, "cap": [1e9] * 6})
     return segs, t + (nb + 1) * beat
@@ -392,7 +394,7 @@ def _travel(seg, tt, k, flow):
     return s, det
 
 
-def _sample(segs, total, k, flow, scale=1.0):
+def _sample(segs, total, k, flow, scale=1.0, home=None):
     """24 fps frames of the phrase played `scale` times slower: frame i is at
     i / FPS, and shows the plan at i / FPS / scale. (Stretching the frame
     times instead gave a slowed phrase frames at 17 fps -- fine for the
@@ -400,7 +402,7 @@ def _sample(segs, total, k, flow, scale=1.0):
     ts = [i / FPS for i in range(int(math.ceil(total * scale * FPS)) + 1)]
     qs = []
     for tt in (t / scale for t in ts):
-        q = list(HOME)
+        q = list(home or HOME)
         for seg in segs:
             if "to" in seg:
                 s, det = _travel(seg, tt, k, flow)
@@ -423,7 +425,7 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
         segs, total = _plan(spec, kin, rng)
         k, bpm_scale = 1.0, 1.0
         for _ in range(8):
-            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale)
+            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale, spec.get("start"))
             if any(not lo + 1.0 < x < hi - 1.0 for q in qs for x, (lo, hi) in zip(q, kin.limits)):
                 k *= 0.7
                 continue
@@ -543,6 +545,11 @@ if __name__ == "__main__":
         q0, q1 = c["points"][0]["q"], c["points"][-1]["q"]
         check("a phrase starts and ends at rest in HOME (clips chain)",
               max(abs(a - b) for a, b in zip(q0, HOME)) < 1e-6 and max(abs(a - b) for a, b in zip(q1, HOME)) < 1e-3)
+    hub = [0.0, -75.0, 110.0, -125.0, -90.0, 0.0]                 # a lower pose, as a show's hub
+    ts_h, qs_h, _ = phrase({"bars": [{"action": "dab"}], "bpm": 100, "flow": 0.0, "start": hub}, seed=3, kin=kin)
+    check("a phrase given a start pose starts and ends there (show hubs)",
+          qs_h is not None and max(abs(a - b) for a, b in zip(qs_h[0], hub)) < 1e-6
+          and max(abs(a - b) for a, b in zip(qs_h[-1], hub)) < 1e-3, str(qs_h and [round(x, 2) for x in qs_h[-1]]))
     # measured efforts follow the intent (same seed, one axis flipped)
     def measured(act, flow=0.0, seed=2):
         spec = {"bars": [{"action": act}] * 2, "bpm": 90, "flow": flow}
