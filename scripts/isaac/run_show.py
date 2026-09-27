@@ -37,11 +37,12 @@ ap.add_argument("--auto-trigger", type=float, default=0.0, help="a scan trigger 
 ap.add_argument("--no-osc", action="store_true")
 ap.add_argument("--seed", type=int, default=None)
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
+ap.add_argument("--snapshot", default="", help="render ~3 s, save the viewport to this PNG, stop")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": args.headless, "width": 1600, "height": 900})
+app = SimulationApp({"headless": args.headless, "width": 1600, "height": 900, "renderer": "RaytracedLighting"})
 
 import numpy as np  # noqa: E402
 import omni.kit.commands  # noqa: E402
@@ -50,11 +51,29 @@ from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
 from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
-from pxr import PhysxSchema, UsdLux, UsdPhysics, Sdf  # noqa: E402
+from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdLux, UsdPhysics  # noqa: E402
 
 import show  # noqa: E402
 
 PHYSICS_DT = 1.0 / 120.0
+
+
+def show_camera(env, cfg):
+    """(eye, target): the room's corner farthest from the operator (keep-out
+    zones), 0.35 m in from the walls and just under the ceiling, looking at
+    the stage's centre -- a view of the whole working area from inside."""
+    import room_geom as RG
+    fp = RG.footprint(env)
+    z0, z1 = RG.heights(env)
+    cx, cy = sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp)
+    people = [o["center"] for o in env["objects"] if o["role"] == "keep_out"] or [(cx, cy)]
+    corner = max(fp, key=lambda p: min(math.hypot(p[0] - q[0], p[1] - q[1]) for q in people))
+    d = math.hypot(cx - corner[0], cy - corner[1])
+    k = min(1.0, 0.9 / d)                                     # ~0.6 m off both walls (clear of a plant in the corner)
+    eye = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, z1 - 0.2]
+    st = cfg.get("stage") or next((o for o in env["objects"] if o["name"] == "stage"), None)
+    target = [st["center"][0] / 2, st["center"][1] / 2, 0.7] if st else [cx, cy, 0.8]   # between the base and the stage
+    return eye, target
 URDF = os.path.join(ROOT, "assets", "fairino_description", "urdf", "fairino20_v6.urdf")
 PKG = os.path.join(ROOT, "assets", "fairino_description")
 STIFFNESS = 1.0e5      # Nm/rad: stiff position drives, so tracking shows the dynamics, not a soft spring
@@ -120,7 +139,11 @@ def main():
         raise SystemExit("no %s: export it first (hython scripts/env_to_usd.py %s %s --show %s)"
                          % (room_usd, cfg["env"], room_usd, args.config))
     add_reference_to_stage(room_usd, "/World/Room")
-    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(800)
+    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
+    key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))       # a soft key from above
+    key.CreateIntensityAttr(2500)
+    key.CreateAngleAttr(8.0)
+    UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
     prim_path = import_robot()
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
     world.reset()
@@ -154,13 +177,26 @@ def main():
         except Exception as e:
             print("[show] OSC off: %s" % e)
 
+    # our own camera, inside the room, made the viewport's active one
+    import carb.settings
+    from isaacsim.core.utils.viewports import set_camera_view
+    from omni.kit.viewport.utility import get_active_viewport
+    carb.settings.get_settings().set("/rtx/rendermode", "RaytracedLighting")   # real time, no path-traced grain
+    cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/ShowCam"))
+    cam.CreateFocalLengthAttr(13.0)
+    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
+    import collision as CL
+    eye, target = show_camera(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg)
+    set_camera_view(eye=eye, target=target, camera_prim_path="/World/ShowCam")
+    vp = get_active_viewport()
+    if vp is not None:
+        vp.camera_path = "/World/ShowCam"
     label = None
     if not args.headless:
         import carb.input
         import omni.appwindow as appwindow
         import omni.ui as ui
-        from isaacsim.core.utils.viewports import set_camera_view
-        set_camera_view(eye=[2.2, -1.6, 2.3], target=[-0.3, 0.6, 0.8])
+        pass
         keys = {"T": lambda: runner.trigger("scan"), "P": runner.pause, "R": runner.resume, "X": runner.reset}
 
         def on_key(e, *a):
@@ -196,7 +232,7 @@ def main():
     while app.is_running():
         q = runner.step(PHYSICS_DT)
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=np.array(idx)))
-        world.step(render=not args.headless)
+        world.step(render=(not args.headless) or bool(args.snapshot))
         sim = np.degrees(robot.get_joint_positions(joint_indices=np.array(idx)))
         if runner.clock > 1.0:                                     # settle first
             for j in range(6):
@@ -221,6 +257,13 @@ def main():
                 st["state"], st["clip"], st["hub"], st["sequence"] or "", 100 * st["progress"],
                 ("%.0f%%" % (100 * st["scan"])) if st["scan"] >= 0 else "-", st["pending"] or "-",
                 ("\nFAULT " + st["fault"]) if st["fault"] else "")
+        if args.snapshot and runner.clock >= 3.0:
+            from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
+            capture_viewport_to_file(get_active_viewport(), os.path.abspath(args.snapshot))
+            for _ in range(30):                                 # let the capture finish
+                app.update()
+            print("[show] snapshot %s" % args.snapshot)
+            break
         if end is not None and runner.clock >= end:
             break
     log.close()

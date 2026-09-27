@@ -1,96 +1,141 @@
 """The room (envs/*.json, collision.py's cell) as a USD stage, for Isaac Sim
 and anything else that reads OpenUSD.
 
-    <python with pxr> scripts/env_to_usd.py envs/volvox_lab.json envs/volvox_lab.usda [--show shows/party.json]
+    hython scripts/env_to_usd.py envs/volvox_lab.json envs/volvox_lab.usda [--show shows/party.json]
 
 Run it with hython (Houdini's pxr). Isaac Sim's python.bat has pxr only
 inside a SimulationApp; the system Python usually has none.
 
-Robot base frame, Z up, metres (Isaac's convention too: metersPerUnit 1,
-upAxis Z). One prim per object under /Room, named as in the env:
+Robot base frame, Z up, metres (Isaac's convention too). The room is built
+closed and finite (room_geom.py), as a set would be, not as the infinite
+planes the collision check uses:
 
-    obstacle     a Cube / Cylinder with UsdPhysics.CollisionAPI, grey
-    keep_out, slow, work   visual only (no collision), see-through, coloured
-    halfspace    a slab 0.1 m thick behind the plane, 8 m across
+    /Room/Structure   floor slab over the room's footprint (wood), one wall
+                      panel per measured wall, meeting at the corners
+                      (plaster; the glass wall as glass), the ceiling grid's
+                      height as an outline -- all with UsdPhysics collision
+    /Room/Objects     obstacles as solids with plausible materials (the red
+                      control cart, the TV, shelves, the plywood base plate,
+                      the paper) and collision
+    /Room/Zones       work / keep-out / slow zones as OUTLINES only
+                      (BasisCurves), coloured by role -- they are volumes the
+                      checks use, not things in the room
 
-Every prim carries motionlab:role and motionlab:margin_m, so the stage says
-what collision.py checks. --show adds the show's canvas (the paper) as an
-obstacle. The JSON stays the source for now; this is derived from it.
+Every prim carries motionlab:role and motionlab:margin_m. --show adds the
+show's paper (canvas) and its stage. The JSON stays the source; this is
+derived from it.
 """
 
 import json
 import math
+import os
 import sys
 
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
 
-ROLE_RGB = {"obstacle": (0.55, 0.56, 0.58), "keep_out": (0.9, 0.2, 0.15), "slow": (1.0, 0.65, 0.1),
-            "work": (0.2, 0.85, 0.35)}
-SLAB = 0.1
-SPAN = 8.0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import room_geom as RG  # noqa: E402
+
+WALL_T = 0.08
+FLOOR_T = 0.05
+# name keyword -> (diffuse rgb, roughness, metallic, opacity)
+LOOKS = {
+    "floor": ((0.36, 0.24, 0.15), 0.55, 0.0, 1.0),
+    "wall": ((0.86, 0.85, 0.82), 0.9, 0.0, 1.0),
+    "glass": ((0.8, 0.9, 0.95), 0.0, 0.0, 0.08),
+    "tv": ((0.02, 0.02, 0.025), 0.2, 0.0, 1.0),
+    "cart": ((0.62, 0.08, 0.06), 0.45, 0.2, 1.0),
+    "shelves": ((0.28, 0.28, 0.3), 0.4, 0.7, 1.0),
+    "furniture": ((0.55, 0.4, 0.28), 0.6, 0.0, 1.0),
+    "plant": ((0.2, 0.42, 0.18), 0.8, 0.0, 1.0),
+    "base_plate": ((0.78, 0.64, 0.45), 0.7, 0.0, 1.0),
+    "canvas": ((0.96, 0.96, 0.93), 0.9, 0.0, 1.0),
+    "obstacle": ((0.6, 0.6, 0.62), 0.7, 0.0, 1.0),
+}
+ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1.0, 0.65, 0.1),
+            "ceiling": (0.7, 0.72, 0.75)}
 
 
-def _material(stage, role):
-    path = "/Room/Looks/" + role
+def _look_key(name):
+    n = name.lower()
+    for k in ("glass", "canvas", "base_plate", "cart", "tv", "shelves", "furniture", "plant", "floor"):
+        if k in n:
+            return k
+    if n.startswith("wall") or "partition" in n:
+        return "wall"
+    return "obstacle"
+
+
+def _material(stage, key):
+    path = "/Room/Looks/" + key
     if stage.GetPrimAtPath(path):
         return UsdShade.Material.Get(stage, path)
+    rgb, rough, metal, opacity = LOOKS[key]
     mat = UsdShade.Material.Define(stage, path)
     sh = UsdShade.Shader.Define(stage, path + "/Surface")
     sh.CreateIdAttr("UsdPreviewSurface")
-    sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*ROLE_RGB[role]))
-    sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(1.0 if role == "obstacle" else 0.15)
-    sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.8)
+    sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*rgb))
+    sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(rough)
+    sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(metal)
+    sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(opacity)
+    if opacity < 1.0:
+        sh.CreateInput("ior", Sdf.ValueTypeNames.Float).Set(1.5)
     mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
     return mat
 
 
-def _xform(prim, t, rot=None, scale=None):
-    x = UsdGeom.Xformable(prim)
-    x.AddTranslateOp().Set(Gf.Vec3d(*t))
-    if rot is not None:
-        x.AddOrientOp().Set(Gf.Quatf(rot.GetQuat()))
-    if scale is not None:
-        x.AddScaleOp().Set(Gf.Vec3f(*scale))
-
-
-def add_object(stage, o, default_margin):
-    name = o["name"].replace(" ", "_").replace("-", "_")
-    path = "/Room/" + name
-    role = o["role"]
-    t = o["type"]
-    if t in ("box", "halfspace"):
-        prim = UsdGeom.Cube.Define(stage, path)
-        prim.CreateSizeAttr(1.0)
-        if t == "box":
-            rot = Gf.Rotation(Gf.Vec3d(0, 0, 1), o.get("yaw_deg", 0.0))
-            _xform(prim, o["center"], rot, o["size"])
-        else:
-            n = Gf.Vec3d(*o["normal"]).GetNormalized()
-            centre = n * (o["offset"] - SLAB / 2.0)
-            rot = Gf.Rotation(Gf.Vec3d(1, 0, 0), n)
-            _xform(prim, centre, rot, (SLAB, SPAN, SPAN))
-    elif t == "cylinder":
-        prim = UsdGeom.Cylinder.Define(stage, path)
-        prim.CreateAxisAttr("Z")
-        prim.CreateRadiusAttr(o["radius"])
-        prim.CreateHeightAttr(o["height"])
-        c = o["center"]
-        _xform(prim, (c[0], c[1], c[2] + o["height"] / 2.0))
-    elif t == "sphere":
-        prim = UsdGeom.Sphere.Define(stage, path)
-        prim.CreateRadiusAttr(o["radius"])
-        _xform(prim, o["center"])
-    else:
-        raise ValueError("unknown shape %r" % t)
+def _tag(prim, role, margin, doc=None, look=None, collide=False):
     p = prim.GetPrim()
     p.CreateAttribute("motionlab:role", Sdf.ValueTypeNames.String).Set(role)
-    p.CreateAttribute("motionlab:margin_m", Sdf.ValueTypeNames.Float).Set(float(o.get("margin_m", default_margin)))
-    if o.get("note"):
-        p.SetDocumentation(o["note"])
-    UsdShade.MaterialBindingAPI.Apply(p).Bind(_material(stage, role))
-    if role == "obstacle":
+    p.CreateAttribute("motionlab:margin_m", Sdf.ValueTypeNames.Float).Set(float(margin))
+    if doc:
+        p.SetDocumentation(doc)
+    if look:
+        UsdShade.MaterialBindingAPI.Apply(p).Bind(_material(prim.GetPrim().GetStage(), look))
+    if collide:
         UsdPhysics.CollisionAPI.Apply(p)
-    return p
+
+
+def _mesh(stage, path, points, faces):
+    m = UsdGeom.Mesh.Define(stage, path)
+    m.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*p) for p in points]))
+    m.CreateFaceVertexCountsAttr([len(f) for f in faces])
+    m.CreateFaceVertexIndicesAttr([i for f in faces for i in f])
+    m.CreateSubdivisionSchemeAttr("none")
+    return m
+
+
+def _prism(stage, path, ring, dz0, dz1):
+    """A slab: the polygon ring (x, y) from z = dz0 to dz1 (closed mesh)."""
+    n = len(ring)
+    pts = [(x, y, dz0) for x, y in ring] + [(x, y, dz1) for x, y in ring]
+    faces = [list(range(n))[::-1], list(range(n, 2 * n))]
+    faces += [[i, (i + 1) % n, n + (i + 1) % n, n + i] for i in range(n)]
+    return _mesh(stage, path, pts, faces)
+
+
+def _panel(stage, path, corners, outward, t):
+    """A wall: the 4 corners on the room side, extruded t outwards."""
+    o = [c for c in corners]
+    b = [(c[0] + outward[0] * t, c[1] + outward[1] * t, c[2]) for c in corners]
+    pts = o + b
+    faces = [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
+    return _mesh(stage, path, pts, faces)
+
+
+def _curves(stage, path, polylines, rgb, width=0.005):
+    c = UsdGeom.BasisCurves.Define(stage, path)
+    c.CreateTypeAttr(UsdGeom.Tokens.linear)
+    c.CreateCurveVertexCountsAttr([len(p) for p in polylines])
+    c.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*x) for p in polylines for x in p]))
+    c.CreateWidthsAttr(Vt.FloatArray([width]))
+    c.SetWidthsInterpolation(UsdGeom.Tokens.constant)
+    c.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant).Set([Gf.Vec3f(*rgb)])
+    return c
+
+
+def _safe(name):
+    return "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
 
 
 def export(env, out, extra=()):
@@ -100,25 +145,82 @@ def export(env, out, extra=()):
     root = UsdGeom.Xform.Define(stage, "/Room")
     stage.SetDefaultPrim(root.GetPrim())
     root.GetPrim().SetDocumentation("%s -- %s" % (env.get("name", ""), env.get("frame", "")))
+    for s in ("Structure", "Objects", "Zones", "Looks"):
+        UsdGeom.Scope.Define(stage, "/Room/" + s)
     margin = float(env.get("margin_m", 0.05))
+    by_name = {o["name"]: o for o in env["objects"]}
+
+    # structure: floor, walls, ceiling outline
+    fp = RG.footprint(env)
+    z0, z1 = RG.heights(env)
+    fl = by_name.get("floor", {"name": "floor"})
+    floor = _prism(stage, "/Room/Structure/floor", fp, z0 - FLOOR_T, z0)
+    _tag(floor, "obstacle", fl.get("margin_m", margin), fl.get("note"), "floor", True)
+    for name, corners, outward in RG.walls(env):
+        o = by_name[name]
+        w = _panel(stage, "/Room/Structure/" + _safe(name), corners, outward, WALL_T)
+        _tag(w, "obstacle", o.get("margin_m", margin), o.get("note"), _look_key(name), True)
+    ring = [(x, y, z1) for x, y in fp]
+    ce = _curves(stage, "/Room/Structure/ceiling_grid", [ring + ring[:1]], ZONE_RGB["ceiling"], 0.015)
+    _tag(ce, "obstacle", by_name.get("ceiling", {}).get("margin_m", margin),
+         "the ceiling grid's lowest point (%.2f m): drawn as its outline so the room can be seen from above" % z1)
+
+    # objects and zones
     for o in list(env["objects"]) + list(extra):
-        add_object(stage, o, margin)
+        if o["type"] == "halfspace":
+            continue
+        name, role = _safe(o["name"]), o["role"]
+        if role != "obstacle":                                  # a volume the checks use: outline only
+            lines = RG.clip_polylines(RG.edges(o), fp)                # up to the walls, not through them
+            if not lines:
+                continue
+            c = _curves(stage, "/Room/Zones/" + name, lines, ZONE_RGB.get(role, (1, 1, 1)))
+            _tag(c, role, o.get("margin_m", margin), o.get("note"))
+            continue
+        path = "/Room/Objects/" + name
+        if o["type"] == "box":
+            lo, hi = RG.box_corners(o["center"], o["size"], o.get("yaw_deg", 0.0))
+            prim = _mesh(stage, path, lo + hi, [[3, 2, 1, 0], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5],
+                                                [2, 3, 7, 6], [3, 0, 4, 7]])
+        elif o["type"] == "cylinder":
+            prim = UsdGeom.Cylinder.Define(stage, path)
+            prim.CreateAxisAttr("Z")
+            prim.CreateRadiusAttr(o["radius"])
+            prim.CreateHeightAttr(o["height"])
+            c = o["center"]
+            UsdGeom.Xformable(prim).AddTranslateOp().Set(Gf.Vec3d(c[0], c[1], c[2] + o["height"] / 2.0))
+        elif o["type"] == "sphere":
+            prim = UsdGeom.Sphere.Define(stage, path)
+            prim.CreateRadiusAttr(o["radius"])
+            UsdGeom.Xformable(prim).AddTranslateOp().Set(Gf.Vec3d(*o["center"]))
+        else:
+            raise ValueError("unknown shape %r" % o["type"])
+        _tag(prim, role, o.get("margin_m", margin), o.get("note"), _look_key(o["name"]), True)
     stage.GetRootLayer().Save()
     return stage
+
+
+def show_extras(cfg):
+    """The show's paper (an obstacle) and, when it overrides the env's, its stage."""
+    out = []
+    c = cfg.get("canvas")
+    if c:
+        n = c["normal"]
+        out.append({"name": "canvas", "type": "box", "center": c["center"], "role": "obstacle",
+                    "size": [c.get("thickness", 0.02), c["size"][0], c["size"][1]],
+                    "yaw_deg": math.degrees(math.atan2(n[1], n[0])), "note": "the show's paper (placeholder)"})
+    st = cfg.get("stage")
+    if st:
+        out.append({"name": "show_stage", "type": "box", "center": st["center"], "size": st["size"],
+                    "yaw_deg": st.get("yaw_deg", 0.0), "role": "work", "note": "the show's stage"})
+    return out
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     env = json.load(open(args[0]))
-    extra = []
-    if "--show" in args:
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        cfg = json.load(open(args[args.index("--show") + 1]))
-        c = cfg["canvas"]
-        n = c["normal"]
-        extra.append({"name": "canvas", "type": "box", "center": c["center"], "role": "obstacle",
-                      "size": [c.get("thickness", 0.02), c["size"][0], c["size"][1]],
-                      "yaw_deg": math.degrees(math.atan2(n[1], n[0])), "note": "the show's paper (placeholder)"})
+    extra = show_extras(json.load(open(args[args.index("--show") + 1]))) if "--show" in args else []
     export(env, args[1], extra)
-    print("wrote", args[1], len(env["objects"]) + len(extra), "objects")
+    print("wrote", args[1], "room %.1f m2, %d walls, %d objects" % (
+        0.5 * abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(RG.footprint(env), RG.footprint(env)[1:] + RG.footprint(env)[:1]))),
+        len(RG.walls(env)), len(env["objects"]) + len(extra)))

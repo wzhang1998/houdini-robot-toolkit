@@ -187,33 +187,6 @@ def _cylinder_outline(geo, center, radius, height, cd, name, sides=48, uprights=
         _polyline(geo, (at(a, center[2]), at(a, center[2] + height)), cd, name)
 
 
-def _plane_quad(geo, n, offset, cd, alpha, edge, name, half=3.0, zrange=(0.0, 2.7)):
-    """A see-through piece of the plane n . x = offset with a solid outline:
-    a wall 6 m wide from floor to ceiling (zrange), a ceiling 6 x 6 m;
-    centred where the plane is nearest a point above the base."""
-    anchor = (0.0, 0.0, 0.5 * (zrange[0] + zrange[1]))
-    d = CL.U._dot(n, anchor) - offset
-    c = [a - d * k for a, k in zip(anchor, n)]
-    wall = abs(n[2]) < 0.9
-    u = CL.U._normalize(CL.U._cross(n, (0.0, 0.0, 1.0)) if wall else CL.U._cross(n, (1.0, 0.0, 0.0)))
-    v = CL.U._cross(n, u)
-    corners = []
-    for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-        if wall:                                       # along v until the floor / ceiling height
-            z = zrange[0] if sv < 0 else zrange[1]
-            t = (z - c[2] - su * half * u[2]) / v[2] if abs(v[2]) > 1e-6 else sv * half
-        else:
-            t = sv * half
-        corners.append([c[i] + su * half * u[i] + t * v[i] for i in range(3)])
-    poly = geo.createPolygon()
-    for x in corners:
-        pt = geo.createPoint()
-        pt.setPosition(_h(x))
-        poly.addVertex(pt)
-    _prim_attrs(geo, poly, cd, alpha, name)
-    _polyline(geo, corners, edge, name, closed=True)
-
-
 def _prim_attrs(geo, prim, cd, alpha, name):
     prim.setAttribValue("Cd", cd)
     prim.setAttribValue("Alpha", alpha)
@@ -232,13 +205,19 @@ def env_geometry(geo, cell):
     geo.addAttrib(hou.attribType.Prim, "Alpha", 1.0)
     geo.addAttrib(hou.attribType.Prim, "name", "")
     geo.addAttrib(hou.attribType.Prim, "role", "")
-    zr = [0.0, 2.7]                                   # floor / ceiling heights at the base, for walls
-    for o in cell.get("objects", []):
-        if o["type"] == "halfspace" and abs(CL.U._normalize(o["normal"])[2]) > 0.9:
-            nz = CL.U._normalize(o["normal"])[2]
-            zr[0 if nz > 0 else 1] = o["offset"] / nz
+    import room_geom as RG
+    fp = RG.footprint(cell)
     for o in cell.get("objects", []):
         cd, a = ROLE_COLOUR[o["role"]], ROLE_ALPHA[o["role"]]
+        if o["role"] != "obstacle" and o["type"] in ("box", "cylinder"):
+            # a zone is a volume the checks use, not a thing in the room:
+            # its outline only, up to the walls
+            n0 = len(geo.prims())
+            for line in RG.clip_polylines(RG.edges(o), fp):
+                _polyline(geo, line, cd, o["name"])
+            for pr in geo.prims()[n0:]:
+                pr.setAttribValue("role", o["role"])
+            continue
         tall = (o.get("size") or [0, 0, 0])[2] > 1.5 or o.get("height", 0) > 1.5
         if o["role"] == "obstacle" and tall:
             a = 0.22                                          # walls and shelves: see-through, so the robot shows
@@ -260,13 +239,39 @@ def env_geometry(geo, cell):
             if a < 1.0:
                 _cylinder_outline(geo, (c[0], c[1], c[2] - r), r, 2 * r, edge, o["name"])
         elif o["type"] == "halfspace":
-            n = CL.U._normalize(o["normal"])
-            if abs(n[2]) > 0.9 and n[2] > 0:                 # a floor: a slab under the plane
-                _box(geo, (0.0, 0.0, o["offset"] - 0.01), (6.0, 6.0, 0.02), 0.0, (0.35, 0.3, 0.26), 1.0, o["name"])
-            else:                                             # a wall / ceiling (measured ones are planes)
-                _plane_quad(geo, n, o["offset"], cd, 0.12, (0.8, 0.82, 0.85), o["name"], zrange=zr)
+            continue                                          # the room's planes: drawn closed, below
         for pr in geo.prims()[n0:]:
             pr.setAttribValue("role", o["role"])
+    _room(geo, cell)
+
+
+def _room(geo, cell):
+    """Floor, walls and ceiling as a closed room (room_geom.py): the walls
+    meet at the corners instead of running on as planes. Floor opaque, walls
+    see-through with a solid outline (the robot shows through them), the
+    ceiling grid's height as an outline."""
+    import room_geom as RG
+    fp = RG.footprint(cell)
+    z0, z1 = RG.heights(cell)
+    n0 = len(geo.prims())
+    poly = geo.createPolygon()
+    for x, y in reversed(fp):                                 # Houdini faces are clockwise from the front
+        pt = geo.createPoint()
+        pt.setPosition(_h((x, y, z0)))
+        poly.addVertex(pt)
+    _prim_attrs(geo, poly, (0.36, 0.28, 0.2), 1.0, "floor")
+    for name, corners, _ in RG.walls(cell):
+        glass = "glass" in name
+        poly = geo.createPolygon()
+        for c in corners:
+            pt = geo.createPoint()
+            pt.setPosition(_h(c))
+            poly.addVertex(pt)
+        _prim_attrs(geo, poly, (0.6, 0.75, 0.85) if glass else (0.86, 0.85, 0.82), 0.08 if glass else 0.15, name)
+        _polyline(geo, corners, (0.8, 0.82, 0.85), name, closed=True)
+    _polyline(geo, [(x, y, z1) for x, y in fp], (0.7, 0.72, 0.75), "ceiling", closed=True)
+    for pr in geo.prims()[n0:]:
+        pr.setAttribValue("role", "obstacle")
 
 
 def _capsule_mesh(geo, a, b, r, cd, name, sides=14, cap_rings=4):
