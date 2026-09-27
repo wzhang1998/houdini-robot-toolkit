@@ -40,7 +40,7 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 | 2026-09-24 | Probe tip vs controller TCP 0.004 mm | -- |
 | 2026-09-25 | d01 dance clip played at speed 1.0, no controller error | -- |
 | 2026-09-27 | Show streamed from the state machine (`show_stream.py`, party show): 3 min, 22,634 ServoJ sends at 125 Hz, 0 skips, max lateness 3.6 ms, no controller error, ended at a hub at rest; largest step 67 % of the velocity limit; tracking after a 40 ms lag max 0.54 deg (RMS 0.06). OSC: `greet` and `scan` triggers played at the end of the running clip; `/robot/stop` stopped at once, no controller error | af7697f |
-| 2026-09-27 | Show stream, 30 min with TouchDesigner-style OSC (39 triggers greet / scan / calm, a pause and resume, energy changes), after the GC fix: 225,501 sends, 0 skips, max lateness 5.4 ms, no controller error, ended at a hub; 350 segments. The arm's lag grew 40 -> 68 ms over the run (clock drift, see Failures); tracking after the best single lag 2.2 deg max, RMS 0.29 | (this commit) |
+| 2026-09-27 | Show stream, 30 min with TouchDesigner-style OSC (39 triggers greet / scan / calm, a pause and resume, energy changes), after the GC fix: 225,501 sends, 0 skips, max lateness 5.4 ms, no controller error, ended at a hub; 350 segments. The arm's lag grew 40 -> 68 ms over the run (clock drift, see Failures); tracking after the best single lag 2.2 deg max, RMS 0.29 | 32ef7a8 |
 
 ## Houdini / unit
 
