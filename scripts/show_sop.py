@@ -231,6 +231,7 @@ def show_geo(node):
         for p in pts:
             pt = geo.createPoint()
             pt.setPosition(_h(p))
+            pt.setAttribValue("Cd", cd)
             poly.addVertex(pt)
         poly.setAttribValue("Cd", cd)
         poly.setAttribValue("name", name)

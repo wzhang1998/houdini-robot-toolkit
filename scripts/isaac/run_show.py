@@ -19,9 +19,9 @@ import argparse
 import json
 import math
 import os
-import re
+
 import sys
-import tempfile
+
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,43 +57,54 @@ import show  # noqa: E402
 PHYSICS_DT = 1.0 / 120.0
 URDF = os.path.join(ROOT, "assets", "fairino_description", "urdf", "fairino20_v6.urdf")
 PKG = os.path.join(ROOT, "assets", "fairino_description")
-STIFFNESS = 1.0e5      # angular drive, per degree (PhysX units): stiff, so tracking shows the dynamics, not a soft spring
-DAMPING = 1.0e3
+STIFFNESS = 1.0e5      # Nm/rad: stiff position drives, so tracking shows the dynamics, not a soft spring
+DAMPING = 1.0e3        # Nm*s/rad
+ROBOT_USD_DIR = os.path.join(ROOT, "geo", "isaac", "fr20_usd")
 
 
-def urdf_with_absolute_meshes():
-    """The vendor URDF with package://fairino_description/ resolved (the
-    importer does not know the ROS package)."""
-    text = open(URDF).read()
-    text = re.sub(r"package://fairino_description/", PKG.replace("\\", "/") + "/", text)
-    path = os.path.join(tempfile.gettempdir(), "fr20_isaac.urdf")
-    open(path, "w").write(text)
-    return path
+def robot_usd():
+    """The FR20 as USD, converted from the vendor URDF by Isaac Sim 6's
+    importer (URDF stays the source); converted again when the URDF is newer."""
+    import omni.kit.app
+    em = omni.kit.app.get_app().get_extension_manager()
+    for ext in ("omni.scene.optimizer.core", "isaacsim.robot.schema"):
+        em.set_extension_enabled_immediate(ext, True)
+    from isaacsim.asset.importer.urdf.impl import URDFImporter, URDFImporterConfig
+    done = os.path.join(ROBOT_USD_DIR, "converted.txt")
+    if os.path.exists(done) and os.path.getmtime(done) > os.path.getmtime(URDF):
+        return open(done).read().strip()
+    os.makedirs(ROBOT_USD_DIR, exist_ok=True)
+    cfg = URDFImporterConfig()
+    cfg.urdf_path = URDF
+    cfg.usd_path = ROBOT_USD_DIR
+    cfg.ros_package_paths = [{"name": "fairino_description", "path": PKG.replace("\\", "/")}]
+    cfg.fix_base = True
+    cfg.merge_fixed_joints = False
+    cfg.joint_target_type = "position"
+    cfg.override_joint_stiffness = STIFFNESS
+    cfg.override_joint_damping = DAMPING
+    usd = URDFImporter(cfg).import_urdf()
+    open(done, "w").write(usd)
+    print("[show] converted the URDF to %s" % usd)
+    return usd
 
 
 def import_robot():
-    from isaacsim.asset.importer.urdf._urdf import UrdfJointTargetType
-    _, cfg = omni.kit.commands.execute("URDFCreateImportConfig")
-    cfg.merge_fixed_joints = False
-    cfg.fix_base = True
-    cfg.import_inertia_tensor = True
-    cfg.distance_scale = 1.0
-    cfg.make_default_prim = False
-    cfg.create_physics_scene = False
-    cfg.default_drive_type = UrdfJointTargetType.JOINT_DRIVE_POSITION
-    _, prim_path = omni.kit.commands.execute("URDFParseAndImportFile", urdf_path=urdf_with_absolute_meshes(),
-                                             import_config=cfg, get_articulation_root=True)
+    """Reference the robot USD into the stage; the articulation root's path."""
+    usd = robot_usd()
+    add_reference_to_stage(usd, "/World/fr20")
     stage = omni.usd.get_context().get_stage()
+    root = None
     for prim in stage.Traverse():
-        if prim.IsA(UsdPhysics.RevoluteJoint) and prim.GetName() in ("j1", "j2", "j3", "j4", "j5", "j6"):
-            drive = UsdPhysics.DriveAPI.Apply(prim, "angular")
-            drive.CreateStiffnessAttr().Set(STIFFNESS)
-            drive.CreateDampingAttr().Set(DAMPING)
-            drive.CreateMaxForceAttr().Set(1.0e6)
-        if prim.GetPath().pathString.startswith("/fairino") or "link" in prim.GetName():
-            if prim.HasAPI(UsdPhysics.CollisionAPI):
-                PhysxSchema.PhysxContactReportAPI.Apply(prim).CreateThresholdAttr().Set(0.0)
-    return prim_path
+        if not prim.GetPath().pathString.startswith("/World/fr20"):
+            continue
+        if root is None and prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            root = prim.GetPath().pathString
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            PhysxSchema.PhysxContactReportAPI.Apply(prim).CreateThresholdAttr().Set(0.0)
+    if root is None:
+        raise SystemExit("no articulation root under /World/fr20 in %s" % usd)
+    return root
 
 
 def main():
@@ -129,7 +140,7 @@ def main():
                 if h.type == ContactEventType.CONTACT_FOUND:
                     a, b = str(h.actor0), str(h.actor1)
                     if ("/Room" in a) != ("/Room" in b):
-                        contacts.append((round(runner.clock, 3), a, b))
+                        contacts.append((round(float(runner.clock), 3), a, b))
         sub_contacts = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841
     except Exception as e:                                          # the report still has tracking and states
         print("[show] contact reports unavailable: %s" % e)
@@ -146,7 +157,7 @@ def main():
     label = None
     if not args.headless:
         import carb.input
-        import omni.appwindow
+        import omni.appwindow as appwindow
         import omni.ui as ui
         from isaacsim.core.utils.viewports import set_camera_view
         set_camera_view(eye=[2.2, -1.6, 2.3], target=[-0.3, 0.6, 0.8])
@@ -157,7 +168,7 @@ def main():
                 keys[e.input.name]()
             return True
         inp = carb.input.acquire_input_interface()
-        inp.subscribe_to_keyboard_events(omni.appwindow.get_default_app_window().get_keyboard(), on_key)
+        inp.subscribe_to_keyboard_events(appwindow.get_default_app_window().get_keyboard(), on_key)
         win = ui.Window("Show", width=360, height=300)
         with win.frame:
             with ui.VStack(spacing=6):
@@ -189,7 +200,7 @@ def main():
         sim = np.degrees(robot.get_joint_positions(joint_indices=np.array(idx)))
         if runner.clock > 1.0:                                     # settle first
             for j in range(6):
-                e = abs(sim[j] - q[j])
+                e = abs(float(sim[j]) - q[j])
                 worst[j] = max(worst[j], e)
                 sq[j] += e * e
             n += 1
