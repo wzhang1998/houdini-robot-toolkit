@@ -428,34 +428,22 @@ def zone_menu():
 
 
 def _box(node, rgb):
-    """A unit box drawn as its 12 edges, in the object's colour."""
-    if node.node("outline"):
+    """A zone object's look: a unit Box drawn as its 12 edges (Convert Line),
+    in the zone's colour. The object's transform places and sizes it."""
+    if node.node("box") and node.node("edges"):
         return
     for c in node.children():
         c.destroy()
-    sop = node.createNode("python", "outline")
-    sop.parm("python").set("import show_rig\nshow_rig.unit_box_edges(hou.pwd())\n")
+    box = node.createNode("box", "box")
+    edges = node.createNode("convertline", "edges")
+    edges.setInput(0, box)
+    edges.parm("computelength").set(0)
     col = node.createNode("color", "colour")
-    col.setInput(0, sop)
+    col.setInput(0, edges)
     col.parmTuple("color").set(rgb)
     col.setDisplayFlag(True)
     col.setRenderFlag(True)
     node.layoutChildren()
-
-
-def unit_box_edges(node):
-    """Python SOP of a zone object: the unit box's 12 edges (open polylines,
-    so nothing is drawn as a face)."""
-    geo = node.geometry()
-    square = ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5))
-    lines = [[(x, y, z) for x, z in square + square[:1]] for y in (-0.5, 0.5)]
-    lines += [[(x, -0.5, z), (x, 0.5, z)] for x, z in square]
-    for line in lines:
-        poly = geo.createPolygon(is_closed=False)
-        for p in line:
-            pt = geo.createPoint()
-            pt.setPosition(p)
-            poly.addVertex(pt)
 
 
 def _zone_obj(name):
