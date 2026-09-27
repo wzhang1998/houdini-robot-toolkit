@@ -68,27 +68,25 @@ class Segment:
     def __init__(self, name, kind, t, q, start, end, labels=None):
         self.name, self.kind, self.t, self.q = name, kind, list(t), [list(x) for x in q]
         self.start, self.end, self.labels = start, end, labels or {}
+        self._path = None                              # built on first use by at()
 
     @property
     def duration(self):
         return self.t[-1]
 
     def at(self, s):
-        """Joints at time s (linear between samples, held at the ends)."""
+        """Joints at time s, held at the ends. Between samples a
+        shape-preserving cubic (the player's PCHIP), so a 24 fps clip
+        streamed at 125 Hz has no velocity step at every sample."""
         t, q = self.t, self.q
         if s <= t[0]:
             return list(q[0])
         if s >= t[-1]:
             return list(q[-1])
-        lo, hi = 0, len(t) - 1
-        while hi - lo > 1:
-            mid = (lo + hi) // 2
-            if t[mid] <= s:
-                lo = mid
-            else:
-                hi = mid
-        f = (s - t[lo]) / (t[hi] - t[lo])
-        return [a + f * (b - a) for a, b in zip(q[lo], q[hi])]
+        if self._path is None:
+            import fairino_player
+            self._path = fairino_player.Path(t, q)
+        return self._path.at(s - t[0])
 
     def to_dict(self):
         return {"name": self.name, "kind": self.kind, "start": self.start, "end": self.end,
@@ -666,6 +664,8 @@ class OscBridge:
         d.map("/robot/reset", lambda a, *v: runner.reset())
         d.map("/robot/mood", lambda a, *v: setattr(runner.sel, "mood", str(v[0]) if v and v[0] else None))
         d.map("/robot/energy", lambda a, *v: setattr(runner.sel, "energy", float(v[0]) if v else None))
+        if hasattr(runner, "stop"):                    # the streaming backend: a software stop
+            d.map("/robot/stop", lambda a, *v: runner.stop())
         self.server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", listen_port), d)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

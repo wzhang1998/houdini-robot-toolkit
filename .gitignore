@@ -37,3 +37,6 @@ houdini.env
 *_actual_hardware_*.csv
 *_sim_2*.json
 *_hardware_2*.json
+
+# stream reports and joint logs (show_stream.py)
+logs/

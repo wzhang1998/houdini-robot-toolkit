@@ -59,6 +59,39 @@ Dry run, 20 minutes (2026-09-27):
 - Largest joint step per 8 ms tick: 0.96 deg (the limit is 1.44).
 - Trigger to scan: 7.5 s mean, 16.3 s max.
 
+## Playing it on the arm: one stream
+
+`scripts/show_stream.py` plays the show on the FR20, or on SimMachine, as
+**one continuous ServoJ stream at 125 Hz**. It sends the Runner's joints
+tick by tick. There is no CSV per run and no stop between clips.
+
+- **Timing.** The stream runs on an absolute clock, as the single-clip
+  player does. When a tick is late, the Runner advances by the ticks
+  missed and only the newest pose is sent. Feedback comes on a separate
+  connection.
+- **Checks on every tick.** Before a pose is sent, its joint step must be
+  within the velocity limits times the speed, and every joint within its
+  limits. The feedback thread polls the controller's error code. Either
+  failure is a FAULT: StopMotion, then ServoMoveEnd.
+- **Speed.** `--speed` scales the show's clock. Hardware defaults to 0.3.
+- **Start.** A MoveJ to the start hub through the checked route.
+- **End.** At the end of `--minutes` the running clip finishes at a hub,
+  at rest.
+- **Stop.** Ctrl+C or OSC `/robot/stop` is a software stop.
+- **TouchDesigner.** `--osc` puts the same OSC contract on the stream.
+  Triggers are queued and applied between ticks.
+- **Sampling.** Segments are sampled with PCHIP, the player's
+  shape-preserving cubic. A 24 fps clip streamed at 125 Hz then has no
+  velocity step at each sample.
+
+Compared with the other ways to drive the arm:
+- **CSV playback** (`fairino_player`) is one clip at a time and stops
+  between clips.
+- **Controller programs** (WebUI Lua) cannot react to TouchDesigner in
+  time.
+- **The stream** is the same Runner that the dry run and Isaac use, so
+  what was simulated is what plays.
+
 ## Hubs, zones, stage and range
 
 Four spatial ideas, each with one job:

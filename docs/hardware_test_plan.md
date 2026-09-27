@@ -187,6 +187,41 @@ python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report ac
 
 **所有移动都会检查房间**：Go to start / Go HOME 前，播放器会按 `playback.toml` 的 `robot.env`（默认 `envs/volvox_lab.json`）检查整条 MoveJ 路径，离天花板留 0.30 m，离其他障碍留 0.10 m；不够就绕开，绕不开就拒绝。
 
+## 6c. The show as one stream (show_stream.py) 🔴
+
+The whole show streamed from the state machine. The arm idles through the
+library, TouchDesigner can trigger sequences over OSC, and there is no CSV
+per run. On SimMachine (2026-09-27): 3 min, 22,634 ServoJ sends, 0 skips,
+no controller error, and tracking 0.54 deg max after a 40 ms lag. OSC
+triggers and `/robot/stop` were tested too.
+
+**Before**: `python scripts/show.py build shows/party.json` if the show
+changed (it writes `shows/party.compiled.json`). Film it (see the top of
+this file). Hand on the E-stop.
+
+**Runs, in order** (each asks for `yes` on hardware; the first move to the
+start hub goes through the checked route):
+1. `python scripts/show_stream.py shows/party.json --hardware --ip <IP> --speed 0.3 --minutes 3`
+2. The same at `--speed 0.6 --minutes 5`.
+3. With TouchDesigner: add `--osc`.
+   - Send `/robot/trigger greet`, then `/robot/trigger scan`.
+   - Send `/robot/pause` and `/robot/resume`.
+   - Last, send `/robot/stop`.
+
+**Stopping**: Ctrl+C or OSC `/robot/stop` sends StopMotion at once (a
+software stop). At the end of `--minutes` the running clip finishes at a
+hub, at rest. A controller error or a joint step past the limits stops
+the stream by itself (FAULT). None of this replaces the E-stop.
+
+**The report** (printed, and `logs/stream/stream_<time>.json` with the
+commanded and actual joints as CSV):
+- `ended` should be `at a hub`;
+- `controller_error` should be null;
+- `skipped` should be 0;
+- look at `tracking_after_lag_max_deg`.
+
+Send me the JSON of each run; they go into `docs/results.md`.
+
 ## 7. 回看真机轨迹（不动，Houdini）
 
 Record 生成的 `*_actual_*.csv` 可以直接回放：在 robot_arm 的 **Output > Import CSV** 里选它，按 Import。现在锁定的实例也能导入，文件是实时读的。

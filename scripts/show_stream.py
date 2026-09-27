@@ -1,0 +1,489 @@
+"""Stream the show to a Fairino arm: one continuous ServoJ stream driven by
+the show's state machine (show.Runner), instead of one CSV per run.
+
+    python scripts/show_stream.py --self-test
+    python scripts/show_stream.py shows/party.json --sim --minutes 5
+    python scripts/show_stream.py shows/party.json --sim --minutes 30 --osc      # TouchDesigner drives it
+    python scripts/show_stream.py shows/party.json --hardware --ip IP --speed 0.3 --minutes 10
+
+Every segment of the compiled show (shows/*.compiled.json, from `show.py
+build`) was checked in the room at build time and meets the next at rest,
+so the stream is the Runner's joints, tick by tick:
+
+  1. start: MoveJ to the start hub through safe_move's checked route
+     (fairino_player.move_checked; on hardware it asks first);
+  2. stream ServoJ at 125 Hz on an absolute clock -- when late, the Runner
+     is advanced by the ticks missed and only the newest pose is sent (the
+     skip is counted), never a burst;
+  3. every tick, before sending: the joint step is within the joints'
+     velocity limits (times the speed scale) and the pose within the joint
+     limits -- otherwise FAULT;
+  4. a feedback thread on its own connection reads the actual joints and
+     polls the controller's error code; an error is a FAULT;
+  5. FAULT, Ctrl+C or OSC /robot/stop: StopMotion, ServoMoveEnd, report --
+     a software stop, no substitute for the E-stop;
+  6. the end (--minutes): the Runner pauses, the running clip finishes at a
+     hub at rest, then the stream ends.
+
+--speed scales the show's clock: speed s runs every segment s times as fast
+(velocity x s, acceleration x s^2). Hardware defaults to 0.3.
+
+The report (--log DIR): sends, skips, lateness, the largest step per tick,
+tracking (actual vs commanded, after the best constant lag), the segments
+played, the events; the commanded and actual joints as CSV.
+"""
+
+import argparse
+import csv
+import json
+import os
+import queue
+import sys
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+
+import fairino_player as P  # noqa: E402
+
+RATE_HZ = 125.0
+STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limit x speed (rounding, sampling)
+ERROR_POLL_S = 0.1
+OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
+HARDWARE_SPEED = 0.3
+
+
+class StreamFault(RuntimeError):
+    pass
+
+
+class Commands:
+    """What OSC (another thread) asks of the Runner, applied by the stream
+    loop between ticks -- the Runner is not thread-safe. Looks like a Runner
+    to show.OscBridge."""
+
+    def __init__(self, runner):
+        self.runner, self.q = runner, queue.Queue()
+        self.sel = runner.sel                      # mood / energy: plain attribute sets
+        self.stop_requested = threading.Event()
+
+    def trigger(self, name="scan"):
+        self.q.put(("trigger", name))
+
+    def pause(self):
+        self.q.put(("pause",))
+
+    def resume(self):
+        self.q.put(("resume",))
+
+    def reset(self):
+        self.q.put(("reset",))
+
+    def stop(self):
+        self.stop_requested.set()
+
+    def status(self):
+        return self.runner.status()
+
+    def apply(self):
+        while True:
+            try:
+                cmd = self.q.get_nowait()
+            except queue.Empty:
+                return
+            getattr(self.runner, cmd[0])(*cmd[1:])
+
+
+class Link(P.Feedback):
+    """The actual joints (as P.Feedback) and, every ERROR_POLL_S, the
+    controller's error code: the first non-zero one is kept in .error."""
+
+    def __init__(self, ip, period_s=0.01):
+        super().__init__(ip, period_s)
+        self.error = None
+        self._last_poll = 0.0
+
+    def run(self):
+        while not self._halt.is_set():
+            t0 = time.perf_counter()
+            try:
+                self.samples.append((t0, self.c.joints()))
+                if t0 - self._last_poll >= ERROR_POLL_S:
+                    self._last_poll = t0
+                    err = list(self.c.error_code())
+                    if err[:3] != [0, 0, 0] and self.error is None:
+                        self.error = err
+            except Exception as e:                  # a lost link is a fault too
+                if self.error is None and not self._halt.is_set():
+                    self.error = ["feedback", str(e)[:120]]
+            left = self.period - (time.perf_counter() - t0)
+            if left > 0:
+                time.sleep(left)
+
+
+class Guard:
+    """Per-tick checks before a pose is sent."""
+
+    def __init__(self, vel_limits, limits_deg, dt, speed):
+        self.vel, self.limits, self.dt, self.speed = vel_limits, limits_deg, dt, speed
+        self.worst_ratio = 0.0
+
+    def check(self, prev, q, ticks):
+        for j, (a, b, v) in enumerate(zip(prev, q, self.vel)):
+            allowed = v * self.dt * self.speed * ticks * STEP_MARGIN
+            step = abs(b - a)
+            self.worst_ratio = max(self.worst_ratio, step / (v * self.dt * self.speed * ticks))
+            if step > allowed:
+                raise StreamFault("J%d steps %.3f deg in %d tick(s), allowed %.3f" % (j + 1, step, ticks, allowed))
+        for j, (x, (lo, hi)) in enumerate(zip(q, self.limits)):
+            if not lo <= x <= hi:
+                raise StreamFault("J%d at %.2f deg, outside its limits %g..%g" % (j + 1, x, lo, hi))
+
+
+def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print):
+    """The stream loop. The arm must already be at the Runner's start pose.
+    Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
+    report, not raised."""
+    ticks_cmd = []                                  # (tick, q) sent
+    sends_ms, late_ms, skipped = [], [], 0
+    events = []
+    runner.log = lambda text: events.append(text)
+    prev = runner.step(0.0)
+    end_at = minutes * 60.0
+    ending, fault = False, None
+    link.start()
+    ctrl.servo_start()
+    start = time.perf_counter() + 0.05
+    last = -1
+    try:
+        while True:
+            _wait = start + (last + 1) * dt
+            P._wait_until(_wait)
+            now = time.perf_counter()
+            due = int((now - start) / dt)
+            k = max(last + 1, due)
+            adv = k - last if last >= 0 else 1
+            skipped += adv - 1
+            late_ms.append((now - (start + k * dt)) * 1000.0)
+            if commands.stop_requested.is_set():
+                fault = "stop requested"
+                break
+            if link.error is not None:
+                raise StreamFault("controller error %s" % (link.error,))
+            commands.apply()
+            if not ending and k * dt >= end_at:
+                ending = True
+                runner.pause()
+                events.append("%.2f end of the run: finishing the clip at a hub" % runner.clock)
+            q = runner.step(dt * speed * adv) if last >= 0 else prev
+            guard.check(prev, q, adv)
+            t0 = time.perf_counter()
+            ret = ctrl.servo_j(q, dt, k)
+            sends_ms.append((time.perf_counter() - t0) * 1000.0)
+            code = ret[0] if isinstance(ret, (list, tuple)) else ret
+            if code != 0:
+                raise StreamFault("ServoJ tick %d returned %s" % (k, ret))
+            ticks_cmd.append((k, list(q)))
+            prev, last = q, k
+            if osc is not None and k % OSC_EVERY == 0:
+                try:
+                    osc.send(q)
+                except Exception:
+                    pass                            # status out is best effort; never stop the arm for it
+            if ending and runner.state == "PAUSED":
+                break
+    except StreamFault as e:
+        fault = str(e)
+    except KeyboardInterrupt:
+        fault = "stopped by the operator (Ctrl+C)"
+    finally:
+        if fault is not None:
+            try:
+                ctrl.stop()
+            except Exception:
+                pass
+            runner.fault(fault)
+        try:
+            ctrl.servo_end()
+        except Exception:
+            pass
+        time.sleep(0.3)
+        link.stop()
+    if fault:
+        log("STOPPED: %s" % fault)
+    rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed)
+    return rep, ticks_cmd, start
+
+
+def _dense(ticks_cmd):
+    """Commanded pose per tick from the first to the last sent (a skipped
+    tick holds the previous pose), for tracking()."""
+    out = []
+    k0 = ticks_cmd[0][0]
+    it = iter(ticks_cmd)
+    cur = next(it)
+    nxt = next(it, None)
+    for k in range(k0, ticks_cmd[-1][0] + 1):
+        while nxt is not None and nxt[0] <= k:
+            cur, nxt = nxt, next(it, None)
+        out.append(cur[1])
+    return out
+
+
+def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed):
+    rep = {"ended": "fault" if fault else "at a hub", "fault": fault, "speed": speed,
+           "sends": len(ticks_cmd), "skipped": skipped,
+           "duration_s": round(ticks_cmd[-1][0] * dt, 2) if ticks_cmd else 0.0,
+           "worst_step_of_limit": round(guard.worst_ratio, 3),
+           "segments_played": [n for _, n in runner.history],
+           "final_state": runner.state, "events": events[-200:]}
+    if sends_ms:
+        st = sorted(sends_ms)
+        rep.update(send_ms_p50=round(st[len(st) // 2], 2), send_ms_p95=round(st[int(len(st) * 0.95)], 2),
+                   send_ms_max=round(st[-1], 2), late_over_2ms=sum(1 for x in late_ms if x > 2.0),
+                   max_late_ms=round(max(late_ms), 2))
+    if len(ticks_cmd) > 1:
+        rep.update(P.tracking(start + ticks_cmd[0][0] * dt, _dense(ticks_cmd), dt, link.samples))
+    rep["feedback_samples"] = len(link.samples)
+    rep["controller_error"] = link.error
+    return rep
+
+
+def write_log(out_dir, stamp, rep, ticks_cmd, dt, feedback, start):
+    os.makedirs(out_dir, exist_ok=True)
+    base = os.path.join(out_dir, "stream_%s" % stamp)
+    with open(base + ".json", "w", newline="\n") as f:
+        json.dump(rep, f, indent=1)
+    with open(base + "_cmd.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time_s"] + ["j%d_deg" % i for i in range(1, 7)])
+        for k, q in ticks_cmd:
+            w.writerow(["%.4f" % (k * dt)] + ["%.4f" % x for x in q])
+    with open(base + "_actual.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time_s"] + ["j%d_deg" % i for i in range(1, 7)])
+        for t, q in feedback:
+            w.writerow(["%.4f" % (t - start)] + ["%.4f" % x for x in q])
+    return base
+
+
+# --------------------------------------------------------------------------
+
+def self_test():
+    """Against a fake controller, in real time (a few seconds)."""
+    import show as S
+    fails = []
+
+    def check(label, ok, detail=""):
+        print("%s  %s%s" % ("ok  " if ok else "FAIL", label, ("  -- " + str(detail)) if detail else ""))
+        if not ok:
+            fails.append(label)
+
+    A = [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+    B = [20.0] + A[1:]
+
+    def seg(name, kind, q0, q1, start, end, dur):
+        n = 20
+        t = [dur * i / n for i in range(n + 1)]
+        # smooth, at rest at both ends
+        q = [[a + (b - a) * (3 * (i / n) ** 2 - 2 * (i / n) ** 3) for a, b in zip(q0, q1)] for i in range(n + 1)]
+        return S.Segment(name, kind, t, q, start, end, {"action": "float", "effort": {"time": 0.0}})
+
+    wave = [5.0] + A[1:]
+    segs = [S.Segment("a_wave", "idle", [0.0, 0.5, 1.0], [A, wave, A], "a", "a", {"action": "float"}),
+            seg("a_hold", "idle", A, A, "a", "a", 0.8), seg("b_hold", "idle", B, B, "b", "b", 0.8),
+            seg("move_a_b", "move", A, B, "a", "b", 1.0), seg("move_b_a", "move", B, A, "b", "a", 1.0)]
+    graph = S.Graph({"a": A, "b": B}, segs, {"start_hub": "a", "sequences": {"visit": {"hub": "b", "count": 1}}})
+    vel = [120.0] * 6
+    lim = [(-175, 175), (-265, 85), (-162, 162), (-265, 85), (-175, 175), (-175, 175)]
+    dt = 1.0 / RATE_HZ
+
+    class FakeCtrl:
+        def __init__(self, error_after=None, slow_every=None):
+            self.q, self.sent, self.calls = list(A), [], []
+            self.error_after, self.slow_every = error_after, slow_every
+
+        def servo_start(self):
+            self.calls.append("start")
+
+        def servo_j(self, q, cmd_t, cmd_id):
+            if self.slow_every and len(self.sent) % self.slow_every == self.slow_every - 1:
+                time.sleep(3 * dt)
+            self.sent.append((cmd_id, list(q)))
+            self.q = list(q)
+            return 0
+
+        def servo_end(self):
+            self.calls.append("end")
+
+        def stop(self):
+            self.calls.append("stop")
+
+        def joints(self):
+            return list(self.q)
+
+        def error_code(self):
+            if self.error_after is not None and len(self.sent) > self.error_after:
+                return [0, 5, 7]
+            return [0, 0, 0]
+
+    class FakeLink(Link):
+        def __init__(self, ctrl):
+            threading.Thread.__init__(self, daemon=True)
+            self.c, self.period, self.samples, self.error, self._last_poll = ctrl, 0.01, [], None, 0.0
+            self._halt = threading.Event()
+
+    bad = [30.0] + A[1:]                             # a broken clip: 30 deg in 4 ms, mid-clip
+    broken = S.Graph({"a": A}, [S.Segment("a_broken", "idle", [0.0, 0.3, 0.304, 1.0], [A, A, bad, A], "a", "a",
+                                          {"action": "float"})], {"start_hub": "a"})
+
+    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph):
+        r = S.Runner(g_, S.Selector(g_.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
+        cmds = Commands(r)
+        if trigger:
+            cmds.trigger(trigger)
+        if stop_at:
+            threading.Timer(stop_at, cmds.stop).start()
+        g = Guard(vel, lim, dt, speed)
+        rep, _, _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None)
+        return rep, r
+
+    c = FakeCtrl()
+    rep, r = run(c, 3.0 / 60)
+    steps = [max(abs(x - y) for x, y in zip(a[1], b[1])) for a, b in zip(c.sent, c.sent[1:])]
+    check("a run ends at a hub, at rest, without a fault", rep["ended"] == "at a hub" and r.state == "PAUSED"
+          and c.sent[-1][1] in (A, B), (rep["ended"], r.state))
+    check("one continuous stream: ServoMoveStart once, ServoMoveEnd once, no StopMotion",
+          c.calls == ["start", "end"], c.calls)
+    check("no jump between segments (largest step within the limit)", rep["worst_step_of_limit"] <= 1.0,
+          rep["worst_step_of_limit"])
+    check("tick ids increase", all(b[0] > a[0] for a, b in zip(c.sent, c.sent[1:])))
+    check("the run lasted about the asked time (plus the clip that finishes)", 3.0 <= rep["duration_s"] <= 3.0 + 1.2,
+          rep["duration_s"])
+    check("segments were played through the graph", len(rep["segments_played"]) >= 3, rep["segments_played"])
+    check("tracking is reported", "tracking_after_lag_max_deg" in rep, list(rep)[-6:])
+
+    c = FakeCtrl()
+    rep, r = run(c, 3.0 / 60, trigger="visit")
+    check("a trigger from another thread is applied between ticks: the sequence plays",
+          "move_a_b" in rep["segments_played"] and "b_hold" in rep["segments_played"], rep["segments_played"])
+
+    c = FakeCtrl(error_after=60)
+    rep, r = run(c, 3.0 / 60)
+    check("a controller error stops the stream: FAULT, StopMotion, ServoMoveEnd",
+          rep["ended"] == "fault" and "controller error" in rep["fault"] and c.calls[-2:] == ["stop", "end"]
+          and r.state == "FAULT", (rep["fault"], c.calls))
+
+    c = FakeCtrl()
+    rep, r = run(c, 3.0 / 60, g_=broken)
+    check("a joint jump is refused before it is sent", rep["ended"] == "fault" and "steps" in rep["fault"]
+          and max(abs(q[0] - A[0]) for _, q in c.sent) < 30.0, rep["fault"])
+
+    c = FakeCtrl()
+    rep, r = run(c, 1.0, stop_at=0.6)
+    check("/robot/stop (or Ctrl+C) stops at once with StopMotion", rep["fault"] == "stop requested"
+          and "stop" in c.calls and rep["duration_s"] < 1.5, (rep["fault"], rep["duration_s"]))
+
+    c = FakeCtrl(slow_every=40)
+    rep, r = run(c, 2.0 / 60)
+    check("a slow send is caught up by skipping ticks, not bursting (and still no jump)",
+          rep["skipped"] > 0 and rep["worst_step_of_limit"] <= 1.0 and rep["ended"] == "at a hub",
+          (rep["skipped"], rep["worst_step_of_limit"]))
+
+    c = FakeCtrl()
+    rep, r = run(c, 2.0 / 60, speed=0.5)
+    check("speed 0.5 plays the same clips half as fast", rep["worst_step_of_limit"] <= 1.0
+          and rep["ended"] == "at a hub", rep["worst_step_of_limit"])
+    print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
+    return 1 if fails else 0
+
+
+def main(argv=None):
+    import robot_profile as RP
+    import show as S
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("config", help="the show config (its compiled graph is read: run show.py build first)")
+    tgt = ap.add_mutually_exclusive_group(required=True)
+    tgt.add_argument("--sim", action="store_true", help="the target is SimMachine")
+    tgt.add_argument("--hardware", action="store_true", help="the target is the physical arm: asks first, speed 0.3")
+    ap.add_argument("--ip", default=None, help="controller IP (default: playback.toml's)")
+    ap.add_argument("--speed", type=float, default=None, help="show clock scale (default 1.0 sim, 0.3 hardware)")
+    ap.add_argument("--minutes", type=float, default=5.0)
+    ap.add_argument("--osc", action="store_true", help="TouchDesigner in and out (the config's osc ports)")
+    ap.add_argument("--move-vel", type=float, default=None, help="MoveJ %% to the start hub (default 20 sim, 10 hardware)")
+    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.json"), help="the room, for the start move")
+    ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
+    a = ap.parse_args(argv)
+    speed = a.speed if a.speed is not None else (HARDWARE_SPEED if a.hardware else 1.0)
+    if not 0.05 <= speed <= 1.0:
+        ap.error("--speed must be within 0.05..1 (the clips are made at the show's range speed)")
+    ip = a.ip or _toml_ip()
+    cfg_path = os.path.abspath(a.config)
+    cfg = json.load(open(cfg_path))
+    graph = S.Graph.load(S.compiled_path(cfg_path))
+    prof = RP.load("fr20")
+    dt = 1.0 / RATE_HZ
+    runner = S.runner_for(graph, seed=a.seed)
+    start_q = runner.step(0.0)
+
+    def ask(text):
+        if not a.hardware or a.yes:
+            return True
+        return input(text + "\nType yes to go on: ").strip().lower() == "yes"
+
+    ctrl = P.Controller(ip)
+    print("%s at %s: %s" % ("HARDWARE" if a.hardware else "SimMachine", ip, ctrl.model()))
+    P._require_no_error(ctrl, "before starting")
+    rep = {"target": "hardware" if a.hardware else "sim", "config": os.path.relpath(cfg_path, ROOT)}
+    move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
+    off = P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, rep, "start", ask, "the start hub (%s)" % runner.hub)
+    if off is None:
+        print(json.dumps(rep, indent=1))
+        return 1
+    plan = ("Stream %s: %.1f min at speed %.2f from hub %s, ServoJ %g Hz%s.\nStop: Ctrl+C or OSC /robot/stop "
+            "(software stop). Keep a hand on the E-stop." % (cfg.get("name", "show"), a.minutes, speed, runner.hub,
+                                                              RATE_HZ, ", TouchDesigner on OSC" if a.osc else ""))
+    print(plan)
+    if not ask(plan):
+        return 1
+    cmds = Commands(runner)
+    osc = None
+    if a.osc:
+        o = cfg["osc"]
+        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"])
+        print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
+    guard = Guard(RP.velocity_limits(prof), [tuple(x) for x in prof["robot"]["limits_deg"]], dt, speed)
+    link = Link(ip)
+    try:
+        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc)
+    finally:
+        if osc is not None:
+            osc.close()
+    out.update(rep)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    base = write_log(a.log, stamp, out, ticks_cmd, dt, link.samples, start)
+    summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
+                                       "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
+                                       "send_ms_p95", "max_late_ms", "controller_error")}
+    print(json.dumps(summary, indent=1))
+    print("log:", base + ".json")
+    return 0 if out["ended"] == "at a hub" else 1
+
+
+def _toml_ip():
+    path = os.path.join(ROOT, "playback.toml")
+    for line in open(path):
+        s = line.split("#")[0].strip()
+        if s.startswith("ip") and "=" in s:
+            return s.split("=", 1)[1].strip().strip('"')
+    raise SystemExit("no ip in playback.toml: pass --ip")
+
+
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
+    sys.exit(main())

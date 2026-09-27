@@ -39,6 +39,7 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 | 2026-09-24 | ServoJ player: 240-frame curve, 2666 sends at 125.04 Hz, 0 skips, max lateness 0.55 ms, send p50/p95/max 1.2/3.4/8.3 ms; aligned tracking max 0.072 deg (RMS 0.018), lag ~40 ms | 4c64d36 |
 | 2026-09-24 | Probe tip vs controller TCP 0.004 mm | -- |
 | 2026-09-25 | d01 dance clip played at speed 1.0, no controller error | -- |
+| 2026-09-27 | Show streamed from the state machine (`show_stream.py`, party show): 3 min, 22,634 ServoJ sends at 125 Hz, 0 skips, max lateness 3.6 ms, no controller error, ended at a hub at rest; largest step 67 % of the velocity limit; tracking after a 40 ms lag max 0.54 deg (RMS 0.06). OSC: `greet` and `scan` triggers played at the end of the running clip; `/robot/stop` stopped at once, no controller error | (this commit) |
 
 ## Houdini / unit
 

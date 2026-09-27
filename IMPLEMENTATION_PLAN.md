@@ -262,6 +262,16 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   10 min at 0.3, then 0.6, stop / resume / fault drill.
 - **Tests**: player self-tests extended (segment joins in the stream, stop
   mid-clip, fault handling); SimMachine run.
+- **Status (2026-09-27)**: In Progress.
+  - Built as `scripts/show_stream.py`. `Segment.at` now samples with
+    PCHIP (no velocity step at the 24 fps samples).
+  - Self-test (fake controller): 11 checks pass.
+  - SimMachine:
+    - 3 min: 22,634 sends, 0 skips, no controller error, ended at a hub;
+      tracking 0.54 deg max after a 40 ms lag;
+    - OSC `greet` and `scan` triggers and `/robot/stop` checked.
+  - Still to do: the 30 min SimMachine run and the FR20 runs
+    (`docs/hardware_test_plan.md` section 6c).
 
 ### 6.4 TouchDesigner control surface (~0.5 day)
 - The OSC spec (docs/show_pipeline.md) as the contract.
