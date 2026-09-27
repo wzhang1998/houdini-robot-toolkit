@@ -401,14 +401,13 @@ def zone_menu():
 
 
 def _box(node, rgb):
-    """A unit box drawn as its bottom and top rings (the uprights crowd the
-    view, as in the Isaac scene), in the object's colour."""
-    if node.node("rings"):
+    """A unit box drawn as its 12 edges, in the object's colour."""
+    if node.node("outline"):
         return
     for c in node.children():
         c.destroy()
-    sop = node.createNode("python", "rings")
-    sop.parm("python").set("import show_rig\nshow_rig.unit_rings(hou.pwd())\n")
+    sop = node.createNode("python", "outline")
+    sop.parm("python").set("import show_rig\nshow_rig.unit_box_edges(hou.pwd())\n")
     col = node.createNode("color", "colour")
     col.setInput(0, sop)
     col.parmTuple("color").set(rgb)
@@ -417,14 +416,18 @@ def _box(node, rgb):
     node.layoutChildren()
 
 
-def unit_rings(node):
-    """Python SOP of a zone object: the unit box's bottom and top rings."""
+def unit_box_edges(node):
+    """Python SOP of a zone object: the unit box's 12 edges (open polylines,
+    so nothing is drawn as a face)."""
     geo = node.geometry()
-    for y in (-0.5, 0.5):
+    square = ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5))
+    lines = [[(x, y, z) for x, z in square + square[:1]] for y in (-0.5, 0.5)]
+    lines += [[(x, -0.5, z), (x, 0.5, z)] for x, z in square]
+    for line in lines:
         poly = geo.createPolygon(is_closed=False)
-        for x, z in ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5), (-0.5, -0.5)):
+        for p in line:
             pt = geo.createPoint()
-            pt.setPosition((x, y, z))
+            pt.setPosition(p)
             poly.addVertex(pt)
 
 

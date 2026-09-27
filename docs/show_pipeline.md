@@ -118,7 +118,9 @@ import show_rig; show_rig.install()          # shows/party.json
   - the floor and the objects are solid;
   - each wall is one face turned into the room, so with the viewport's
     Remove Backfaces on, the near walls vanish;
-  - zones are only their bottom and top rings.
+  - zones are outlines;
+  - only the walls vanish: every other solid faces outward, so Remove
+    Backfaces leaves it whole.
 
 ## Python or Houdini
 

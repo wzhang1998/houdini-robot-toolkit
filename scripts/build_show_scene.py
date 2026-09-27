@@ -16,7 +16,7 @@ its joints from CELL_CTRL's clip) plus the show objects of show_rig.py:
 
 The room is drawn once, like the Isaac scene (cell_sop / room_geom): solid
 floor and objects, walls facing in (Remove Backfaces makes the near ones
-vanish), zones as thin rings. The scene is generated -- rebuild it rather
+vanish), zones as outlines. The scene is generated -- rebuild it rather
 than hand-edit it; the rig scene (FR20_rig.hiplc) stays the hand tool.
 """
 

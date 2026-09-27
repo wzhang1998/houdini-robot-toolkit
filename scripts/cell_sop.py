@@ -7,7 +7,7 @@ parameter expressions can call it: hou.session.joint(3).
     env_geo   Python SOP: the environment file as geometry, drawn like the
               Isaac scene (room_geom's looks): floor and objects solid, walls
               one face turned in (a cutaway with Remove Backfaces), zones as
-              their bottom and top rings coloured by role
+              outlines coloured by role
     capsule_geo  Python SOP: the robot's collision capsules at this frame,
               each coloured by its clearance (green far .. red at the margin),
               detail attributes min_clearance_m / nearest / violations
@@ -110,6 +110,12 @@ def _model():
 # geometry
 # --------------------------------------------------------------------------
 
+def _outward(corners, center):
+    """Houdini-frame direction from a solid's centre to a face's centre."""
+    m = [sum(p[i] for p in corners) / len(corners) for i in range(3)]
+    return _h([m[i] - center[i] for i in range(3)])
+
+
 def _box(geo, center, size, yaw, cd, alpha, name):
     c, s = center, size
     cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
@@ -118,37 +124,23 @@ def _box(geo, center, size, yaw, cd, alpha, name):
         for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
             lx, ly = dx * s[0] / 2, dy * s[1] / 2
             corners.append((c[0] + cy * lx - sy * ly, c[1] + sy * lx + cy * ly, c[2] + dz * s[2] / 2))
-    pts = [geo.createPoint() for _ in corners]
-    for p, x in zip(pts, corners):
-        p.setPosition(_h(x))
     faces = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
     for f in faces:
-        poly = geo.createPolygon()
-        for i in f:
-            poly.addVertex(pts[i])
-        _prim_attrs(geo, poly, cd, alpha, name)
+        fc = [corners[i] for i in f]
+        poly = _face(geo, fc, cd, name, facing=_outward(fc, c))
+        poly.setAttribValue("Alpha", alpha)
 
 
 def _cylinder(geo, center, radius, height, cd, alpha, name, sides=24):
-    rings = []
-    for z in (center[2], center[2] + height):
-        ring = []
-        for k in range(sides):
-            a = 2 * math.pi * k / sides
-            p = geo.createPoint()
-            p.setPosition(_h((center[0] + radius * math.cos(a), center[1] + radius * math.sin(a), z)))
-            ring.append(p)
-        rings.append(ring)
-    for k in range(sides):
-        poly = geo.createPolygon()
-        for p in (rings[0][k], rings[0][(k + 1) % sides], rings[1][(k + 1) % sides], rings[1][k]):
-            poly.addVertex(p)
-        _prim_attrs(geo, poly, cd, alpha, name)
-    for ring, rev in ((rings[0], True), (rings[1], False)):
-        poly = geo.createPolygon()
-        for p in (reversed(ring) if rev else ring):
-            poly.addVertex(p)
-        _prim_attrs(geo, poly, cd, alpha, name)
+    mid = (center[0], center[1], center[2] + height / 2.0)
+    rings = [[(center[0] + radius * math.cos(2 * math.pi * k / sides),
+               center[1] + radius * math.sin(2 * math.pi * k / sides), z) for k in range(sides)]
+             for z in (center[2], center[2] + height)]
+    faces = [[rings[0][k], rings[0][(k + 1) % sides], rings[1][(k + 1) % sides], rings[1][k]]
+             for k in range(sides)] + rings
+    for fc in faces:
+        poly = _face(geo, fc, cd, name, facing=_outward(fc, mid))
+        poly.setAttribValue("Alpha", alpha)
 
 
 def _polyline(geo, xs, cd, name, closed=False):
@@ -181,7 +173,8 @@ def env_geometry(geo, cell, walls=True):
     The same look as the Isaac scene (room_geom's LOOKS and rules): floor and
     objects solid, each wall one face turned into the room -- with the
     viewport's Remove Backfaces on, the walls near the camera vanish (a
-    cutaway) -- and zones as their bottom and top rings. walls=False leaves
+    cutaway; everything else faces out, so only walls vanish) -- and zones
+    as outlines. walls=False leaves
     the walls out (renders from outside the room)."""
     import room_geom as RG
     geo.clear()

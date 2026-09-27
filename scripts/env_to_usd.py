@@ -18,8 +18,8 @@ planes the collision check uses:
     /Room/Objects     obstacles as solids with plausible materials (the red
                       control cart, the TV, shelves, the plywood base plate,
                       the paper) and collision
-    /Room/Zones       work / keep-out / slow zones as their bottom and top
-                      rings only (BasisCurves), coloured by role -- they are
+    /Room/Zones       work / keep-out / slow zones as outlines only
+                      (BasisCurves), coloured by role -- they are
                       volumes the checks use, not things in the room
 
 Colours and the wall / zone drawing rules are room_geom's, shared with the
@@ -173,7 +173,7 @@ def export(env, out, extra=()):
             continue
         name, role = _safe(o["name"]), o["role"]
         if role != "obstacle":                                  # a volume the checks use: outline only
-            lines = RG.zone_lines(o, fp)                              # its rings, up to the walls
+            lines = RG.zone_lines(o, fp)                              # up to the walls, not through them
             if not lines:
                 continue
             c = _curves(stage, "/Room/Zones/" + name, lines, ZONE_RGB.get(role, (1, 1, 1)))

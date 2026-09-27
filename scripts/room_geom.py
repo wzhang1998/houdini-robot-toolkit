@@ -13,13 +13,12 @@ turned into the room itself:
                      ceiling -- (name, [4 corners], outward normal)
     edges(obj)       the 12 edges of a box / the rings of a cylinder, for
                      drawing a zone (work / keep-out / slow) as an outline
-    zone_lines(o, fp)  how a zone is drawn: its bottom and top rings only,
-                     up to the walls (the uprights crowd the view)
+    zone_lines(o, fp)  how a zone is drawn: its outline, up to the walls
 
 How the room looks is also here -- LOOKS (colour, roughness, metal,
 opacity by name), look_key(name), SOLID_WALLS, ZONE_RGB -- so Isaac and
 Houdini draw it alike: floor and objects solid, each wall one face turned
-into the room (hidden from outside: a cutaway), zones as thin rings.
+into the room (hidden from outside: a cutaway), zones as outlines.
 
 Used by the Houdini cell display (cell_sop.py) and the USD export
 (env_to_usd.py), so both show the same room. Pure Python.
@@ -161,10 +160,8 @@ def edges(o, sides=48, uprights=8):
 
 
 def zone_lines(o, fp):
-    """A zone as drawn: the horizontal rings of its outline (bottom and top),
-    clipped to the footprint."""
-    rings = [l for l in edges(o) if len({round(p[2], 9) for p in l}) == 1 and len(l) > 2]
-    return clip_polylines(rings, fp)
+    """A zone as drawn: its outline (edges), clipped to the footprint."""
+    return clip_polylines(edges(o), fp)
 
 
 def inside(fp, p, eps=1e-9):
@@ -231,9 +228,9 @@ def self_test():
     e = edges({"type": "box", "center": [0, 0, 1], "size": [2, 2, 2]})
     check("a box zone outlines as 2 rings + 4 uprights", len(e) == 6 and len(e[0]) == 5)
     zl = zone_lines({"type": "box", "center": [0, 0, 1], "size": [1, 1, 1]}, footprint(box))
-    check("a zone is drawn as its two rings, no uprights", len(zl) == 2 and all(len(l) == 5 for l in zl), len(zl))
+    check("a zone is drawn as its full outline (rings and uprights)", len(zl) == 6, len(zl))
     zc = zone_lines({"type": "cylinder", "center": [0, 0, 0], "radius": 0.5, "height": 1.0}, footprint(box))
-    check("a cylinder zone too", len(zc) == 2, len(zc))
+    check("a cylinder zone too", len(zc) == 2 + 8, len(zc))
     check("looks by name", look_key("wall_right_glass") == "glass" and look_key("partition_left") == "wall"
           and look_key("control_cart") == "cart" and wall_look("wall_tv") == "wall"
           and wall_look("wall_back") == "glass_face")
