@@ -111,49 +111,49 @@ So a hub lives **inside** the stage (checked), usually **inside** its zone
 Two scenes, two jobs:
 - `scenes/FR20_rig.hiplc` is the **hand tool**. Draw a curve, solve it,
   and export a joint CSV.
-- `scenes/FR20_show.hiplc` is the **show**: the generated library, its
-  hubs and zones. `scripts/show_rig.py` puts it there as objects you drag
-  in the viewport.
+- `scenes/FR20_show.hiplc` is the **show**. It holds one node,
+  `/obj/robot_show` (`scripts/show_rig.py`), and every control is on that
+  node's parameter page.
 
-Rebuild the show scene with `hython scripts/build_show_scene.py`, or
-install the show objects into any open scene:
+Rebuild the show scene with `hython scripts/build_show_scene.py`, or put
+the tool into any open scene with `import show_rig; show_rig.install()`.
 
-```python
-import show_rig; show_rig.install()          # shows/party.json
-```
+| Tab | What is there |
+|---|---|
+| Setup | Robot Profile (profiles/*.json), Environment (envs/*.json), Show Config (shows/*.json); Load / Write / Check; **Edit in Viewport**: pick a zone or hub, press Handles On |
+| Zones | Zones as a multiparm: name, centre, size, yaw (robot frame, metres). "Use Zone 'stage' as the Stage" replaces the environment's work zone |
+| Hubs | Start hub; hubs as a multiparm: name, mode (Tool Tip + Look At, or Joint Angles), tool tip, look target, seed pose, clips, generator, zone, gesture families; Keep the Solved Pose as Seed |
+| Operating Range | J1 sector, tool tip height band, speed |
+| Library | clip length, bars, BPM, intensity, seed, clips per hub visit, no repeat; the authored clip (a joint CSV at a hub) |
+| Build and Preview | Build Show, Dry Run; play a built segment on the arm, or hold it at a hub; the report |
+| Display | robot, room, zones, hub ghosts, look rays, built paths, range |
 
-- **`zone_<name>`** is a box. Its Translate is the centre, Rotate Y the yaw,
-  and Scale the size. `zone_stage` is used when SHOW's "Override the Env's
-  Stage" is on.
-- **`hub_<name>`** is a null at the tool tip, with **`look_<name>`** as its
-  look target. Drag either one and `show_viz` re-solves the pose. It draws
-  the pose as a ghost arm in the hub's colour. The arm turns red when the
-  pose cannot be reached, is not clear of the room, or is outside the range.
-  "Keep the Solved Pose as Seed" keeps later drags in the same elbow / wrist
-  configuration. A joints hub's null is locked at its pose.
-- **`SHOW`** holds the controls:
-  - Load and Write the config.
-  - Start hub.
-  - Add Hub and Add Zone.
-  - The operating range and the library (clip length, bars, BPM,
-    intensity, seed, clips per hub visit).
-  - **Add Clip to the Library**: the robot_arm's exported joint CSV
-    becomes an authored clip at a hub.
-  - Check, Build Show and Dry Run, with a report.
+- **Edit in Viewport**: the handles work on the item picked in Setup.
+  - A zone gets a transform handle: move it, turn it about the vertical,
+    scale it.
+  - A hub gets two translate handles: its tool tip and its look target.
+  - The handles write the parameters. The pose is solved again at once,
+    and a hub that cannot be used turns red.
 - **Write refuses** a config that names something missing, such as a
-  sequence at a deleted hub, and says why. Keys the scene does not show
+  sequence at a deleted hub, and says why. Keys the node does not show
   are kept, for example OSC, sequences, canvas and scan.
 
-- **Play Segment on the Arm** and **Pose the Arm at Hub** drive the arm
-  through CELL_CTRL's clip.
-- **The room** is drawn the same way as in the Isaac scene (`room_geom`
-  looks, shared with `env_to_usd`):
-  - the floor and the objects are solid;
-  - each wall is one face turned into the room, so with the viewport's
-    Remove Backfaces on, the near walls vanish;
-  - zones are outlines;
-  - only the walls vanish: every other solid faces outward, so Remove
-    Backfaces leaves it whole.
+Inside the node, Python makes data only. The shapes come from Houdini's
+own nodes:
+- **the robot**: the `robot_arm` asset, which also draws the room;
+- **zones**: a Box, drawn with Convert Line, copied onto one point per
+  zone;
+- **hub ghosts**: the arm's own link meshes, posed per hub by For-Each
+  and Transform Pieces;
+- **the range**: Circle SOPs that read the node's parameters;
+- **rays and paths**: PolyWire.
+
+**The room** is drawn the same way as in the Isaac scene (`room_geom`
+looks, shared with `env_to_usd`):
+- the floor and the objects are solid, facing outward;
+- each wall is one face turned into the room, so with the viewport's
+  Remove Backfaces on (set on load), the near walls vanish;
+- zones are outlines.
 
 ## Python or Houdini
 

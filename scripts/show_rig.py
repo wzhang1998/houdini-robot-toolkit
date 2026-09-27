@@ -1,60 +1,34 @@
-"""The show, edited in Houdini: zones, hubs, the operating range and the
-library as objects and parameters next to the arm, written back to the
-show config (shows/*.json). It lives in the show scene
-(scenes/FR20_show.hiplc, built by scripts/build_show_scene.py); the rig
-scene (FR20_rig.hiplc) stays the hand-authoring tool.
+"""The show as one Houdini tool: /obj/robot_show, a Geometry whose parameter
+page holds everything -- robot profile, environment, show config, zones,
+hubs, operating range, library, authored clip, build / dry run / preview,
+display -- written back to the show config (shows/*.json).
 
-Install it into an open scene (the Python Shell, or the Houdini Agent
-bridge); it adds objects and leaves the arm alone:
+    import show_rig; show_rig.install()                    # shows/party.json
+    hython scripts/build_show_scene.py                     # scenes/FR20_show.hiplc
 
-    import show_rig; show_rig.install()                  # shows/party.json
-    import show_rig; show_rig.install("D:/.../shows/other.json")
+Inside the node (Python gives data only; the shapes are Houdini's nodes):
 
-In the show scene it also plays a built segment, or holds a hub's pose, on
-the arm (CELL_CTRL's clip), draws the room once (cell_env; the robot_arm's
-own Show Cell off), removes the cell scene's capsules and onion skin,
-and turns the viewport's Remove Backfaces on (the room's walls face in:
-a cutaway, as in Isaac).
+    robot_arm      the wenyi::robot_arm asset, FK from the preview clip
+                   (Arm Plays), drawing the room from Environment
+    zones          a Box drawn by Convert Line, copied onto one data point
+                   per zone (centre, yaw, size)
+    hub ghosts     the arm's own link meshes posed per hub (For-Each,
+                   Transform Pieces), in the hub's colour; red when the hub
+                   cannot be reached, is not clear, or is out of range
+    rays, paths    look rays and the built clips' tool paths, by PolyWire
+    range          the J1 sector and TCP height band, Circle SOPs on the
+                   node's parameters
+    each branch has a Display toggle; OUT merges them packed
 
-What it adds (/obj, in a network box "SHOW"):
+Zones and hubs are multiparms, in the robot base frame (Z up, metres: the
+numbers of the WebUI and the config). Edit in Viewport puts handles on the
+chosen zone (move, turn, scale) or hub (tool tip, look target); they write
+the parameters. Check / Build / Dry Run run show.py on the written config.
 
-    SHOW          the controls: config file; Load / Write; operating range
-                  (J1 sector, TCP height band, speed); library (clip length,
-                  bars, BPM, intensity, seed, clips per hub visit); Add Hub,
-                  Add Zone; Add the robot_arm's exported clip to the library;
-                  Build Show, Dry Run, Check; the report
-    zone_<name>   a box: move, rotate (Y only) and scale it in the viewport.
-                  Translate = centre, Rotate Y = yaw, Scale = size.
-                  zone_stage is the work zone the clips stay in (used when
-                  SHOW's "Override the Env's Stage" is on)
-    hub_<name>    a hub. Tool + Look mode: the null is where the tool tip
-                  is, look_<name> is what the tool looks at, and the arm pose
-                  is solved live (nearest the hub's Seed Pose). Joints mode:
-                  the pose is the hub's joint angles, the null sits at its
-                  tool tip (locked)
-    look_<name>   the look target of hub_<name>
-    hub_ghosts    each hub's pose as the robot itself, in the hub's colour
-                  (red when it cannot be reached, is not clear of the room,
-                  or is outside the operating range): Python gives only the
-                  posed skeletons; the asset's link meshes are posed by a
-                  For-Each over the hubs with Transform Pieces
-    show_viz      the look rays and the built clips' tool paths (PolyWire;
-                  idle in the hub's colour, moves white), and the operating
-                  range -- J1 sector and TCP height band -- as Circle SOPs
-                  that reference SHOW's parameters
+Frames: Houdini is Y up: (x, y, z) -> (x, z, -y); a yaw about the robot's Z
+is the same angle about Houdini's Y.
 
-Python makes data (poses, paths, config); the shapes are Houdini's own
-nodes.
-
-The config stays the one source: Load reads it into the objects, Write
-writes them back (keys the scene does not show -- OSC, sequences, canvas,
-scan, margins -- are kept), Build runs `python scripts/show.py build` on it.
-
-Frames: the config and collision.py are in the robot base frame (URDF, Z
-up); Houdini is Y up: (x, y, z) -> (x, z, -y). A yaw about the robot's Z is
-the same angle about Houdini's Y.
-
-    python scripts/show_rig.py --self-test               # the parts without hou
+    python scripts/show_rig.py --self-test                 # the parts without hou
 """
 
 import json
@@ -113,6 +87,14 @@ def xform_to_zone(t, r, s, scale=1.0):
     Only the rotation about Y is kept: zones are upright boxes."""
     return {"center": _r(to_r(t)), "size": _r((s[0] * scale, s[2] * scale, s[1] * scale)),
             "yaw_deg": round(_wrap(r[1]), 3)}
+
+
+def zone_instance(z):
+    """A zone {center, size, yaw_deg} -> (P, orient, scale) of the point a
+    unit Box is copied onto, in Houdini: orient turns by the yaw about +Y
+    (the same angle as about the robot's Z), scale is the size (Y up)."""
+    s, half = z["size"], math.radians(z.get("yaw_deg", 0.0)) / 2.0
+    return tuple(to_h(z["center"])), (0.0, math.sin(half), 0.0, math.cos(half)), (s[0], s[2], s[1])
 
 
 def zx_arc_angle(j1_deg):
@@ -199,20 +181,33 @@ def add_authored(authored, csv, hub, clip_id):
 
 
 # --------------------------------------------------------------------------
-# the scene (hou)
+# the tool (hou)
 # --------------------------------------------------------------------------
+
+TOOL = "robot_show"
+
 
 def _hou():
     import hou
     return hou
 
 
-def _show():
-    return _hou().node("/obj/SHOW")
+def tool(node=None):
+    """The show tool: the node given, or its parent (a SOP inside it), or
+    /obj/robot_show."""
+    hou = _hou()
+    for n in (node, node and node.parent()):
+        if n is not None and n.parm("config") is not None and n.parm("zones") is not None:
+            return n
+    return hou.node("/obj/" + TOOL)
 
 
 def cfg_path(node=None):
-    return (node or _show()).evalParm("config").replace("\\", "/")
+    return tool(node).evalParm("config").replace("\\", "/")
+
+
+def env_path(node=None):
+    return tool(node).evalParm("env_file").replace("\\", "/")
 
 
 def show_name(node=None):
@@ -221,6 +216,11 @@ def show_name(node=None):
 
 def preview_dir(node=None):
     return ROOT + "/geo/show/" + show_name(node)
+
+
+def _rel(path):
+    p = path.replace("\\", "/")
+    return p[len(ROOT) + 1:] if p.lower().startswith(ROOT.lower() + "/") else p
 
 
 def _cb(code):
@@ -232,184 +232,7 @@ def _cb(code):
 def _menu_script(fn):
     """A menu's item generator. Houdini runs a one-line menu script as an
     expression (no statements, no return): it must be more than one line."""
-    return "import show_rig\nreturn show_rig.%s()" % fn
-
-
-def fix_menus():
-    """Scenes installed before the menu scripts were two lines: rewrite the
-    item generators of SHOW's and the hubs' menus in place (values kept)."""
-    hou = _hou()
-    for node in [_show()] + list(_objs("hub").values()):
-        if node is None:
-            continue
-        g = node.parmTemplateGroup()
-        changed = False
-        for t in g.entriesWithoutFolders():
-            src = getattr(t, "itemGeneratorScript", lambda: "")()
-            if src.startswith("import show_rig; return show_rig."):
-                fn = src.split("show_rig.")[-1].split("(")[0]
-                t.setItemGeneratorScript(_menu_script(fn))
-                t.setItemGeneratorScriptLanguage(hou.scriptLanguage.Python)
-                g.replace(t.name(), t)
-                changed = True
-        if changed:
-            node.setParmTemplateGroup(g)
-
-
-def _objs(kind):
-    """{name: node} of the show's objects of a kind ("zone" / "hub" / "look")."""
-    out = {}
-    for n in _hou().node("/obj").children():
-        p = n.parm("show_role")
-        if p and p.evalAsString() == kind:
-            out[n.name()[len(kind) + 1:]] = n
-    return out
-
-
-def _role_parm(node, kind):
-    hou = _hou()
-    g = node.parmTemplateGroup()
-    if g.find("show_role") is None:
-        g.append(hou.StringParmTemplate("show_role", "Show Role", 1, default_value=(kind,), is_hidden=True))
-        node.setParmTemplateGroup(g)
-    node.parm("show_role").set(kind)
-
-
-def _xform(node):
-    ev = lambda n: node.parmTuple(n).eval()
-    return ev("t"), ev("r"), ev("s"), node.evalParm("scale")
-
-
-def _set_xform(node, t, r, s):
-    node.parmTuple("t").set(t)
-    node.parm("ry").set(r[1])                        # rx / rz are locked: zones turn about Y only
-    node.parmTuple("s").set(s)
-    node.parm("scale").set(1.0)
-
-
-# --- building the controls ---------------------------------------------------
-
-def _show_parms(node, config):
-    hou = _hou()
-    T = hou
-    g = node.parmTemplateGroup()
-    if g.find("config") is not None:
-        return
-    g.append(T.StringParmTemplate("config", "Show Config", 1, string_type=T.stringParmType.FileReference,
-                                  default_value=(config,)))
-    g.append(T.ButtonParmTemplate("load_b", "Load Config", help="Config -> the zone and hub objects",
-                                  **_cb("load_config()")))
-    g.append(T.ButtonParmTemplate("write_b", "Write Config", help="The scene -> the config file (other keys kept)",
-                                  **_cb("write_config()")))
-
-    hubs = T.FolderParmTemplate("hubs_f", "Hubs and Zones", folder_type=T.folderType.Simple)
-    hubs.addParmTemplate(T.StringParmTemplate(
-        "start_hub", "Start Hub", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script=_menu_script("hub_menu"),
-        item_generator_script_language=T.scriptLanguage.Python))
-    hubs.addParmTemplate(T.StringParmTemplate("new_name", "New Name", 1, default_value=("hub2",)))
-    hubs.addParmTemplate(T.ButtonParmTemplate("add_hub_b", "Add Hub (Tool + Look)", **_cb("add_hub()")))
-    hubs.addParmTemplate(T.ButtonParmTemplate("add_zone_b", "Add Zone", **_cb("add_zone()")))
-    hubs.addParmTemplate(T.ToggleParmTemplate(
-        "stage_override", "Override the Env's Stage", default_value=False,
-        help="Off: the stage (work zone) of the env file. On: zone_stage"))
-    g.append(hubs)
-
-    rng = T.FolderParmTemplate("range_f", "Operating Range", folder_type=T.folderType.Simple)
-    rng.addParmTemplate(T.FloatParmTemplate(
-        "j1_range", "J1 Range (deg)", 2, default_value=(-150.0, 150.0), min=-175.0, max=175.0,
-        help="The directions the arm may face. A clip whose J1 leaves it is dropped"))
-    rng.addParmTemplate(T.FloatParmTemplate(
-        "tcp_z", "Tool Tip Height (m)", 2, default_value=(0.35, 1.9), min=0.0, max=2.5,
-        help="The band the tool tip stays in, above the robot's base"))
-    rng.addParmTemplate(T.FloatParmTemplate(
-        "speed", "Speed (of the limits)", 1, default_value=(0.85,), min=0.05, max=1.0,
-        help="Clips are made at this fraction of the robot's measured velocity / acceleration limits"))
-    rng.addParmTemplate(T.FloatParmTemplate("guide_radius", "Guide Radius (m)", 1, default_value=(1.2,),
-                                            min=0.3, max=2.0, help="Only how the range is drawn"))
-    g.append(rng)
-
-    lib = T.FolderParmTemplate("lib_f", "Library", folder_type=T.folderType.Simple)
-    lib.addParmTemplate(T.FloatParmTemplate("duration", "Clip Length (s)", 2, default_value=(4.0, 12.0),
-                                            min=1.0, max=30.0))
-    lib.addParmTemplate(T.IntParmTemplate("bars", "Bars", 2, default_value=(1, 2), min=1, max=4))
-    lib.addParmTemplate(T.IntParmTemplate("bpm", "BPM", 2, default_value=(80, 125), min=40, max=180))
-    lib.addParmTemplate(T.FloatParmTemplate(
-        "intensity", "Intensity", 2, default_value=(0.4, 0.9), min=0.0, max=1.0,
-        help="How big and quick the gestures are (a range: each clip draws one)"))
-    lib.addParmTemplate(T.IntParmTemplate("seed", "Seed", 1, default_value=(11,)))
-    lib.addParmTemplate(T.IntParmTemplate("hub_stay", "Clips per Hub Visit", 2, default_value=(2, 4),
-                                          min=1, max=20))
-    lib.addParmTemplate(T.IntParmTemplate("no_repeat", "No Repeat Within", 1, default_value=(6,), min=0, max=40))
-    g.append(lib)
-
-    auth = T.FolderParmTemplate("auth_f", "Authored Clip", folder_type=T.folderType.Simple)
-    auth.addParmTemplate(T.LabelParmTemplate(
-        "auth_note", "", column_labels=("A curve drawn on the robot_arm, exported as a joint CSV, "
-                                        "played from a hub and back (checked moves in and out).",)))
-    auth.addParmTemplate(T.StringParmTemplate(
-        "auth_csv", "Joint CSV", 1, string_type=T.stringParmType.FileReference,
-        default_value=('`chs("/obj/fr20/robot_arm/export_csv")`',)))
-    auth.addParmTemplate(T.StringParmTemplate(
-        "auth_hub", "Play at Hub", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script=_menu_script("hub_menu"),
-        item_generator_script_language=T.scriptLanguage.Python))
-    auth.addParmTemplate(T.StringParmTemplate("auth_id", "Clip Id", 1, default_value=("cat",)))
-    auth.addParmTemplate(T.ButtonParmTemplate("auth_b", "Add Clip to the Library", **_cb("add_clip()")))
-    g.append(auth)
-
-    run = T.FolderParmTemplate("run_f", "Build and Check", folder_type=T.folderType.Simple)
-    run.addParmTemplate(T.ButtonParmTemplate("check_b", "Check", help="Hubs reachable and clear, names consistent",
-                                             **_cb("check()")))
-    run.addParmTemplate(T.ButtonParmTemplate("build_b", "Build Show", help="Write, make and check every clip "
-                                             "(a minute or more)", **_cb("build_show()")))
-    run.addParmTemplate(T.FloatParmTemplate("dry_minutes", "Dry Run Minutes", 1, default_value=(10.0,),
-                                            min=1.0, max=120.0))
-    run.addParmTemplate(T.ButtonParmTemplate("dry_b", "Dry Run", **_cb("dry_run()")))
-    run.addParmTemplate(T.ToggleParmTemplate("show_paths", "Show Built Paths", default_value=True))
-    run.addParmTemplate(T.StringParmTemplate(
-        "segment", "Play Segment on the Arm", 1, menu_type=T.menuType.Normal,
-        item_generator_script=_menu_script("segment_menu"),
-        item_generator_script_language=T.scriptLanguage.Python,
-        help="A built segment played on the arm (the show scene: CELL_CTRL's clip)",
-        **_cb("preview_segment()")))
-    run.addParmTemplate(T.StringParmTemplate(
-        "pose_hub", "Pose the Arm at Hub", 1, menu_type=T.menuType.Normal,
-        item_generator_script=_menu_script("hub_menu"),
-        item_generator_script_language=T.scriptLanguage.Python, **_cb("preview_hub()")))
-    run.addParmTemplate(T.StringParmTemplate("report", "Report", 1, tags={"editor": "1", "editorlines": "10-30"}))
-    g.append(run)
-    node.setParmTemplateGroup(g)
-
-
-def _hub_parms(node):
-    hou = _hou()
-    T = hou
-    g = node.parmTemplateGroup()
-    if g.find("hub_mode") is not None:
-        return
-    f = T.FolderParmTemplate("hub_f", "Hub", folder_type=T.folderType.Simple)
-    f.addParmTemplate(T.MenuParmTemplate(
-        "hub_mode", "Mode", ("tool", "joints"), ("Tool + Look", "Joints"),
-        help="Tool + Look: this null is the tool tip, look_<name> what it aims at; the pose is solved. "
-             "Joints: the pose is Seed Pose as given", **_cb("hub_mode_changed(kwargs['node'])")))
-    f.addParmTemplate(T.FloatParmTemplate(
-        "hub_q", "Seed Pose (deg)", 6, default_value=tuple(REST_Q), min=-270.0, max=270.0,
-        help="Joints mode: the hub pose. Tool + Look: the solve picks the pose nearest this "
-             "(keeps the elbow / wrist configuration)"))
-    f.addParmTemplate(T.ButtonParmTemplate("keep_b", "Keep the Solved Pose as Seed",
-                                           **_cb("keep_solve(kwargs['node'])")))
-    f.addParmTemplate(T.IntParmTemplate("hub_clips", "Clips", 1, default_value=(8,), min=0, max=40))
-    f.addParmTemplate(T.MenuParmTemplate("hub_gen", "Generator", ("choreo", "gestures"),
-                                         ("Dance phrases (choreo)", "Gestures (tool + look)")))
-    f.addParmTemplate(T.StringParmTemplate(
-        "hub_zone", "Zone", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script=_menu_script("zone_menu"),
-        item_generator_script_language=T.scriptLanguage.Python))
-    f.addParmTemplate(T.StringParmTemplate("hub_families", "Gesture Families", 1, default_value=(FAMILIES,),
-                                           help="Space separated: " + FAMILIES))
-    g.append(f)
-    node.setParmTemplateGroup(g)
+    return "import show_rig\nreturn show_rig.%s(kwargs['node'])" % fn
 
 
 def _menu(names):
@@ -419,111 +242,330 @@ def _menu(names):
     return out
 
 
-def hub_menu():
-    return _menu(sorted(_objs("hub")))
+def hub_menu(node=None):
+    return _menu(hub_names(node))
 
 
-def zone_menu():
-    return ["", "(none)"] + _menu(sorted(_objs("zone")))       # an empty label drops the whole menu
+def zone_menu(node=None):
+    return ["", "(none)"] + _menu(sorted(zone_names(node)))   # an empty label drops the whole menu
 
 
-def _box(node, rgb):
-    """A zone object's look: a unit Box drawn as its 12 edges (Convert Line),
-    in the zone's colour. The object's transform places and sizes it."""
-    if node.node("box") and node.node("edges"):
+def profile_menu(node=None):
+    names = sorted(os.path.splitext(f)[0] for f in os.listdir(ROOT + "/profiles") if f.endswith(".json"))
+    return _menu(names)
+
+
+def segment_menu(node=None):
+    """(token, label) of the built segments, from the preview manifest."""
+    man = preview_dir(node) + "/manifest.json"
+    items = []
+    if os.path.exists(man):
+        for s in json.load(open(man))["segments"]:
+            items += [s["name"], "%s  (%s, %.1f s)" % (s["name"], s["kind"], s["duration_s"])]
+    return items or ["", "(build the show first)"]
+
+
+def edit_menu(node=None):
+    """What the viewport handles edit: a zone or a hub."""
+    items = []
+    for n in zone_names(node):
+        items += ["zone:" + n, "Zone  " + n]
+    for n in hub_names(node):
+        items += ["hub:" + n, "Hub  " + n]
+    return items or ["", "(nothing to edit)"]
+
+
+def zone_names(node=None):
+    t = tool(node)
+    return [t.evalParm("zone_name%d" % i) for i in range(1, t.evalParm("zones") + 1)]
+
+
+def hub_names(node=None):
+    t = tool(node)
+    return [t.evalParm("hub_name%d" % i) for i in range(1, t.evalParm("hubs") + 1)]
+
+
+# --- the parameters -----------------------------------------------------------
+
+def _parms(node, config, env):
+    """Every control of the tool, in tabs, on the one node."""
+    hou = _hou()
+    T = hou
+    g = node.parmTemplateGroup()
+    if g.find("config") is not None:
         return
+
+    setup = T.FolderParmTemplate("setup_f", "Setup", folder_type=T.folderType.Tabs)
+    setup.addParmTemplate(T.StringParmTemplate(
+        "robot_profile", "Robot Profile", 1, default_value=("fr20",), menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("profile_menu"),
+        item_generator_script_language=T.scriptLanguage.Python,
+        help="profiles/<name>.json: the arm drawn and checked. The show generator is made for the FR20",
+        **_cb("profile_changed(kwargs['node'])")))
+    setup.addParmTemplate(T.StringParmTemplate(
+        "env_file", "Environment", 1, default_value=(env,), string_type=T.stringParmType.FileReference,
+        file_type=T.fileType.Any, tags={"filechooser_pattern": "*.json"},
+        help="envs/<room>.json: the measured room the clips are checked against"))
+    setup.addParmTemplate(T.StringParmTemplate(
+        "config", "Show Config", 1, default_value=(config,), string_type=T.stringParmType.FileReference,
+        file_type=T.fileType.Any, tags={"filechooser_pattern": "*.json"},
+        help="shows/<name>.json: the show this node edits"))
+    setup.addParmTemplate(T.ButtonParmTemplate("load_b", "Load Config", join_with_next=True,
+                                               help="The config file -> these parameters", **_cb("load_config(kwargs['node'])")))
+    setup.addParmTemplate(T.ButtonParmTemplate("write_b", "Write Config", join_with_next=True,
+                                               help="These parameters -> the config file (other keys kept)",
+                                               **_cb("write_config(kwargs['node'])")))
+    setup.addParmTemplate(T.ButtonParmTemplate("check_b", "Check", help="Hubs reachable, clear, in range; names consistent",
+                                               **_cb("check(kwargs['node'])")))
+    setup.addParmTemplate(T.SeparatorParmTemplate("setup_sep"))
+    setup.addParmTemplate(T.StringParmTemplate(
+        "edit_item", "Edit in Viewport", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("edit_menu"), item_generator_script_language=T.scriptLanguage.Python,
+        help="The zone or hub the viewport handles move", join_with_next=True))
+    setup.addParmTemplate(T.ButtonParmTemplate("edit_b", "Handles On", help="Viewport handles for the item above "
+                                               "(Esc or another tool leaves them)", **_cb("edit_in_viewport(kwargs['node'])")))
+    g.append(setup)
+
+    zones = T.FolderParmTemplate("zones_f", "Zones", folder_type=T.folderType.Tabs)
+    zones.addParmTemplate(T.ToggleParmTemplate(
+        "stage_override", "Use Zone 'stage' as the Stage", default_value=False,
+        help="Off: the stage (work zone) of the environment file. On: the zone named 'stage' here"))
+    zl = T.FolderParmTemplate("zones", "Zones", folder_type=T.folderType.MultiparmBlock)
+    zl.addParmTemplate(T.StringParmTemplate("zone_name#", "Name", 1))
+    zl.addParmTemplate(T.FloatParmTemplate("zone_center#", "Centre (robot frame, m)", 3,
+                                           help="Robot base frame, Z up, metres: the numbers of the WebUI / config"))
+    zl.addParmTemplate(T.FloatParmTemplate("zone_size#", "Size (m)", 3, default_value=(0.6, 0.6, 0.6), min=0.01, max=5.0))
+    zl.addParmTemplate(T.FloatParmTemplate("zone_yaw#", "Yaw (deg)", 1, min=-180.0, max=180.0))
+    zones.addParmTemplate(zl)
+    g.append(zones)
+
+    hubs = T.FolderParmTemplate("hubs_f", "Hubs", folder_type=T.folderType.Tabs)
+    hubs.addParmTemplate(T.StringParmTemplate(
+        "start_hub", "Start Hub", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("hub_menu"), item_generator_script_language=T.scriptLanguage.Python))
+    hl = T.FolderParmTemplate("hubs", "Hubs", folder_type=T.folderType.MultiparmBlock)
+    hl.addParmTemplate(T.StringParmTemplate("hub_name#", "Name", 1))
+    hl.addParmTemplate(T.MenuParmTemplate(
+        "hub_mode#", "Mode", ("tool", "joints"), ("Tool Tip + Look At", "Joint Angles"),
+        help="Tool Tip + Look At: the pose is solved nearest the Seed Pose. Joint Angles: the Seed Pose is the pose",
+        **_cb("hub_mode_changed(kwargs)")))
+    hl.addParmTemplate(T.FloatParmTemplate("hub_tcp#", "Tool Tip (robot frame, m)", 3,
+                                           disable_when="{ hub_mode# == joints }"))
+    hl.addParmTemplate(T.FloatParmTemplate("hub_look#", "Look At (robot frame, m)", 3,
+                                           disable_when="{ hub_mode# == joints }"))
+    hl.addParmTemplate(T.FloatParmTemplate(
+        "hub_q#", "Seed Pose (deg)", 6, default_value=tuple(REST_Q), min=-270.0, max=270.0,
+        help="Joint Angles: the hub pose. Tool Tip + Look At: the solve picks the pose nearest this "
+             "(keeps the elbow / wrist configuration)"))
+    hl.addParmTemplate(T.ButtonParmTemplate("hub_keep#", "Keep the Solved Pose as Seed",
+                                            disable_when="{ hub_mode# == joints }", **_cb("keep_solve(kwargs)")))
+    hl.addParmTemplate(T.IntParmTemplate("hub_clips#", "Clips", 1, default_value=(8,), min=0, max=40))
+    hl.addParmTemplate(T.MenuParmTemplate("hub_gen#", "Generator", ("choreo", "gestures"),
+                                          ("Dance Phrases", "Gestures (needs Tool Tip + Look At)")))
+    hl.addParmTemplate(T.StringParmTemplate(
+        "hub_zone#", "Zone", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("zone_menu"), item_generator_script_language=T.scriptLanguage.Python))
+    hl.addParmTemplate(T.StringParmTemplate("hub_families#", "Gesture Families", 1, default_value=(FAMILIES,),
+                                            disable_when="{ hub_gen# == choreo }", help="Space separated: " + FAMILIES))
+    hubs.addParmTemplate(hl)
+    g.append(hubs)
+
+    rng = T.FolderParmTemplate("range_f", "Operating Range", folder_type=T.folderType.Tabs)
+    rng.addParmTemplate(T.FloatParmTemplate(
+        "j1_range", "J1 Range (deg)", 2, default_value=(-150.0, 150.0), min=-175.0, max=175.0,
+        help="The directions the arm may face. A clip whose J1 leaves it is dropped"))
+    rng.addParmTemplate(T.FloatParmTemplate("tcp_z", "Tool Tip Height (m)", 2, default_value=(0.35, 1.9),
+                                            min=0.0, max=2.5, help="The band the tool tip stays in, above the base"))
+    rng.addParmTemplate(T.FloatParmTemplate(
+        "speed", "Speed (of the limits)", 1, default_value=(0.85,), min=0.05, max=1.0,
+        help="Clips are made at this fraction of the robot's measured velocity / acceleration limits"))
+    rng.addParmTemplate(T.FloatParmTemplate("guide_radius", "Guide Radius (m)", 1, default_value=(1.2,),
+                                            min=0.3, max=2.0, help="Only how the range is drawn"))
+    g.append(rng)
+
+    lib = T.FolderParmTemplate("lib_f", "Library", folder_type=T.folderType.Tabs)
+    lib.addParmTemplate(T.FloatParmTemplate("duration", "Clip Length (s)", 2, default_value=(4.0, 12.0),
+                                            min=1.0, max=30.0))
+    lib.addParmTemplate(T.IntParmTemplate("bars", "Bars", 2, default_value=(1, 2), min=1, max=4))
+    lib.addParmTemplate(T.IntParmTemplate("bpm", "BPM", 2, default_value=(80, 125), min=40, max=180))
+    lib.addParmTemplate(T.FloatParmTemplate("intensity", "Intensity", 2, default_value=(0.4, 0.9), min=0.0, max=1.0,
+                                            help="How big and quick the gestures are (each clip draws one)"))
+    lib.addParmTemplate(T.IntParmTemplate("seed", "Seed", 1, default_value=(11,)))
+    lib.addParmTemplate(T.IntParmTemplate("hub_stay", "Clips per Hub Visit", 2, default_value=(2, 4), min=1, max=20))
+    lib.addParmTemplate(T.IntParmTemplate("no_repeat", "No Repeat Within", 1, default_value=(6,), min=0, max=40))
+    lib.addParmTemplate(T.SeparatorParmTemplate("lib_sep"))
+    lib.addParmTemplate(T.LabelParmTemplate(
+        "auth_note", "Authored Clip", column_labels=("A curve drawn on a robot_arm (the rig scene), exported as a "
+                                                     "joint CSV, played from a hub and back.",)))
+    lib.addParmTemplate(T.StringParmTemplate(
+        "auth_csv", "Joint CSV", 1, string_type=T.stringParmType.FileReference, file_type=T.fileType.Any,
+        tags={"filechooser_pattern": "*.csv"}, help="The robot_arm's Export CSV (Output tab)"))
+    lib.addParmTemplate(T.StringParmTemplate(
+        "auth_hub", "Play at Hub", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("hub_menu"), item_generator_script_language=T.scriptLanguage.Python))
+    lib.addParmTemplate(T.StringParmTemplate("auth_id", "Clip Id", 1, default_value=("cat",)))
+    lib.addParmTemplate(T.ButtonParmTemplate("auth_b", "Add Clip to the Library", **_cb("add_clip(kwargs['node'])")))
+    g.append(lib)
+
+    run = T.FolderParmTemplate("run_f", "Build and Preview", folder_type=T.folderType.Tabs)
+    run.addParmTemplate(T.ButtonParmTemplate("build_b", "Build Show", join_with_next=True,
+                                             help="Write, then make and check every clip (a minute or more)",
+                                             **_cb("build_show(kwargs['node'])")))
+    run.addParmTemplate(T.ButtonParmTemplate("dry_b", "Dry Run", join_with_next=True, **_cb("dry_run(kwargs['node'])")))
+    run.addParmTemplate(T.FloatParmTemplate("dry_minutes", "Minutes", 1, default_value=(10.0,), min=1.0, max=120.0))
+    run.addParmTemplate(T.StringParmTemplate(
+        "segment", "Play Segment on the Arm", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("segment_menu"), item_generator_script_language=T.scriptLanguage.Python,
+        **_cb("preview_segment(kwargs['node'])")))
+    run.addParmTemplate(T.StringParmTemplate(
+        "pose_hub", "Hold the Arm at Hub", 1, menu_type=T.menuType.Normal,
+        item_generator_script=_menu_script("hub_menu"), item_generator_script_language=T.scriptLanguage.Python,
+        **_cb("preview_hub(kwargs['node'])")))
+    run.addParmTemplate(T.StringParmTemplate(
+        "preview_clip", "Arm Plays", 1, string_type=T.stringParmType.FileReference, file_type=T.fileType.Any,
+        help="The clip on the arm (a segment, a hub, or any joint CSV / clip JSON)"))
+    run.addParmTemplate(T.ButtonParmTemplate("fit_b", "Fit the Timeline to It", **_cb("fit_range(kwargs['node'])")))
+    run.addParmTemplate(T.StringParmTemplate("report", "Report", 1, tags={"editor": "1", "editorlines": "10-30"}))
+    g.append(run)
+
+    disp = T.FolderParmTemplate("display_f", "Display", folder_type=T.folderType.Tabs)
+    for name, label, on in (("show_robot", "Robot", True), ("show_room", "Room", True), ("show_zones", "Zones", True),
+                            ("show_ghosts", "Hub Ghosts", True), ("show_rays", "Look Rays", True),
+                            ("show_paths", "Built Tool Paths", True), ("show_range", "Operating Range", True)):
+        disp.addParmTemplate(T.ToggleParmTemplate(name, label, default_value=on))
+    g.append(disp)
+    node.setParmTemplateGroup(g)
+
+
+# --- the network inside -------------------------------------------------------
+
+def _py(parent, name, fn):
+    sop = parent.createNode("python", name)
+    sop.parm("python").set("import show_rig\nshow_rig.%s(hou.pwd())\n" % fn)
+    return sop
+
+
+def _switch(parent, name, source, toggle):
+    """A branch shown when the tool's toggle is on, packed so the final merge
+    sees no attribute mismatch between branches."""
+    pack = parent.createNode("pack", name + "_packed")
+    pack.setInput(0, source)
+    sw = parent.createNode("switch", name)
+    sw.setInput(0, parent.createNode("null", name + "_off"))
+    sw.setInput(1, pack)
+    sw.parm("input").setExpression('ch("../%s")' % toggle)
+    return sw
+
+
+def _tube(parent, name, source):
+    wire = parent.createNode("polywire", name)
+    wire.setInput(0, source)
+    wire.parm("radius").set(1.0)
+    wire.parm("usescaleattrib").set(1)
+    wire.parm("scaleattrib").set("pscale")
+    wire.parm("div").set(8)
+    return wire
+
+
+def _network(node):
+    """Everything inside the tool. Python SOPs give data only (points and
+    lines with attributes); the shapes are Houdini's nodes."""
+    hou = _hou()
     for c in node.children():
         c.destroy()
-    box = node.createNode("box", "box")
-    edges = node.createNode("convertline", "edges")
+
+    # the robot (and, through it, the room), playing the preview clip
+    arm = node.createNode("wenyi::robot_arm::1.0", "robot_arm")
+    arm.parm("robot_profile").set(node.evalParm("robot_profile"))
+    arm.hdaModule().on_profile_changed(arm)
+    arm.parm("pose_source").set(0)                               # FK
+    for j in range(1, 7):
+        arm.parm("fk_j%d" % j).setExpression("__import__('show_rig').joint(hou.pwd(), %d)" % j,
+                                             hou.exprLanguage.Python)
+    arm.parm("env_file").set('`chs("../env_file")`')
+    arm.parm("show_cell").setExpression('ch("../show_room")')
+    arm.parm("show_robot").setExpression('ch("../show_robot")')     # the robot and the room: the arm's own toggles
+
+    # zones: a Box, drawn as its edges, copied onto one data point per zone
+    zpts = _py(node, "zone_points", "zone_points")
+    box = node.createNode("box", "unit_box")
+    edges = node.createNode("convertline", "box_edges")
     edges.setInput(0, box)
     edges.parm("computelength").set(0)
-    col = node.createNode("color", "colour")
-    col.setInput(0, edges)
-    col.parmTuple("color").set(rgb)
-    col.setDisplayFlag(True)
-    col.setRenderFlag(True)
-    node.layoutChildren()
+    zones = node.createNode("copytopoints::2.0", "zones")
+    zones.setInput(0, edges)
+    zones.setInput(1, zpts)
+    zones.parm("targetattribs").set(1)
+    zones.parm("applyto1").set(0)
+    zones.parm("applymethod1").set(0)
+    zones.parm("applyattribs1").set("Cd")
 
+    # hub ghosts: the arm's own link meshes, posed per hub by Transform Pieces
+    poses = _py(node, "hub_poses", "hub_poses")
+    links = node.createNode("object_merge", "robot_links")
+    links.parm("objpath1").set("../robot_arm/urdf_normals")
+    moving = node.createNode("blast", "moving_links")            # the base does not move: the arm's own base shows
+    moving.setInput(0, links)
+    moving.parm("group").set("@name=base")
+    moving.parm("grouptype").set("prims")
+    rest = node.createNode("object_merge", "rest_skeleton")
+    rest.parm("objpath1").set("../robot_arm/urdf_skeleton")
+    begin = node.createNode("block_begin", "each_hub")
+    begin.setInput(0, poses)
+    begin.parm("method").set("piece")
+    begin.parm("blockpath").set("../each_hub_end")
+    pose = node.createNode("xformpieces", "pose_links")
+    pose.setInput(0, moving)
+    pose.setInput(1, begin)
+    pose.setInput(2, rest)
+    colour = node.createNode("color", "hub_colour")
+    colour.setInput(0, pose)
+    for i, c in enumerate("rgb"):
+        colour.parm("color" + c).setExpression('point("../each_hub", 0, "Cd", %d)' % i)
+    end = node.createNode("block_end", "each_hub_end")
+    end.setInput(0, colour)
+    end.parm("itermethod").set("pieces")
+    end.parm("method").set("merge")
+    end.parm("class").set("point")
+    end.parm("useattrib").set(1)
+    end.parm("attrib").set("hub")
+    end.parm("blockpath").set("../each_hub")
+    end.parm("templatepath").set("../each_hub")
+    ghosts = node.createNode("material", "ghost_material")
+    ghosts.setInput(0, end)
+    ghosts.parm("shop_materialpath1").set(_ghost_material().path())
 
-def _zone_obj(name):
-    hou = _hou()
-    node = hou.node("/obj/zone_" + name) or hou.node("/obj").createNode("geo", "zone_" + name,
-                                                                        run_init_scripts=False)
-    _role_parm(node, "zone")
-    rgb = ZONE_RGB.get(name, (0.8, 0.8, 0.8))
-    _box(node, rgb)
-    node.setColor(hou.Color(rgb))
-    for p in ("rx", "rz"):
-        node.parm(p).lock(True)                  # zones are upright boxes: yaw only
-    return node
+    # look rays and hub markers, built paths: data lines, tubes by PolyWire
+    rays = _tube(node, "ray_tubes", _py(node, "rays", "rays"))
+    paths = _tube(node, "path_tubes", _py(node, "paths", "paths"))
 
-
-def _null(name, kind, rgb, size):
-    hou = _hou()
-    node = hou.node("/obj/" + name) or hou.node("/obj").createNode("null", name)
-    _role_parm(node, kind)
-    node.parm("controltype").set(4 if kind == "hub" else 1)     # Null and Circles / Circles
-    node.parm("geoscale").set(size)
-    node.setColor(hou.Color(rgb))
-    return node
-
-
-def _hub_objs(name, colour):
-    hub = _null("hub_" + name, "hub", colour, 0.06)
-    _hub_parms(hub)
-    return hub
-
-
-def _look_obj(name, colour):
-    return _null("look_" + name, "look", colour, 0.12)
-
-
-def _viz_obj():
-    """/obj/show_viz: the look rays and built tool paths (data from Python,
-    tubes by PolyWire) and the operating range (Circle SOPs referencing
-    SHOW's parameters, so it follows them without Python)."""
-    hou = _hou()
-    viz = hou.node("/obj/show_viz")
-    if viz and viz.node("range_sector"):
-        return viz
-    if viz:
-        viz.destroy()                                # an older drawing network: rebuilt
-    viz = hou.node("/obj").createNode("geo", "show_viz", run_init_scripts=False)
-    lines = viz.createNode("python", "rays_and_paths")
-    lines.parm("python").set("import show_rig\nshow_rig.viz(hou.pwd())\n")
-
-    # the operating range: J1 sector on the floor, the TCP height band as two arcs.
-    # Circle SOP in ZX: angle a points along (cos a, 0, sin a); a robot-frame
-    # facing phi is Houdini (cos phi, 0, -sin phi); facing = J1 + 180.
-    lo, hi = 'ch("/obj/SHOW/j1_rangex")', 'ch("/obj/SHOW/j1_rangey")'
+    # the operating range: Circle SOPs on the tool's parameters.
+    lo, hi = 'ch("../j1_rangex")', 'ch("../j1_rangey")'
     arcs = []
-    for name, kind, height in (("range_sector", "slicedarc", "0.01"),
-                               ("range_low", "openarc", 'ch("/obj/SHOW/tcp_zx")'),
-                               ("range_high", "openarc", 'ch("/obj/SHOW/tcp_zy")')):
-        c = viz.createNode("circle", name)
+    for name, kind, height in (("range_sector", "slicedarc", "0.01"), ("range_low", "openarc", 'ch("../tcp_zx")'),
+                               ("range_high", "openarc", 'ch("../tcp_zy")')):
+        c = node.createNode("circle", name)
         c.parm("type").set("poly")
         c.parm("orient").set("zx")
         c.parm("arc").set(kind)
         c.parm("divs").set(72)
-        c.parmTuple("rad")[0].setExpression('ch("/obj/SHOW/guide_radius")')
-        c.parmTuple("rad")[1].setExpression('ch("/obj/SHOW/guide_radius")')
+        c.parmTuple("rad")[0].setExpression('ch("../guide_radius")')
+        c.parmTuple("rad")[1].setExpression('ch("../guide_radius")')
         c.parm("ty").setExpression(height)
         c.parmTuple("angle")[0].setExpression("-(%s + %g)" % (hi, J1_FACING_DEG))     # zx_arc_angle(hi)
         c.parmTuple("angle")[1].setExpression("-(%s + %g)" % (lo, J1_FACING_DEG))     # zx_arc_angle(lo)
         arcs.append(c)
-    whole = viz.createNode("divide", "sector_whole")          # the sliced arc is a fan: one outline only
+    whole = node.createNode("divide", "sector_whole")            # the sliced arc is a fan: one outline only
     whole.setInput(0, arcs[0])
     whole.parm("convex").set(0)
     whole.parm("removesh").set(1)
-    edge = viz.createNode("convertline", "sector_outline")    # the sector as lines, not a filled face
-    edge.setInput(0, whole)
-    edge.parm("computelength").set(0)                # no restlength: the other arcs have none
-    rng = viz.createNode("merge", "range")
-    rng.setInput(0, edge)
-    rng.setInput(1, arcs[1])
-    rng.setInput(2, arcs[2])
-    look = viz.createNode("attribcreate::2.0", "range_look")
+    sector = node.createNode("convertline", "sector_outline")
+    sector.setInput(0, whole)
+    sector.parm("computelength").set(0)
+    rng = node.createNode("merge", "range_arcs")
+    for i, n in enumerate((sector, arcs[1], arcs[2])):
+        rng.setInput(i, n)
+    look = node.createNode("attribcreate::2.0", "range_look")
     look.setInput(0, rng)
     look.parm("numattr").set(2)
     look.parm("name1").set("Cd")
@@ -534,74 +576,25 @@ def _viz_obj():
     look.parm("name2").set("pscale")
     look.parm("class2").set("point")
     look.parm("value2v1").set(0.003)
+    range_tubes = _tube(node, "range_tubes", look)
 
-    both = viz.createNode("merge", "all_lines")
-    both.setInput(0, lines)
-    both.setInput(1, look)
-    wire = viz.createNode("polywire", "tubes")
-    wire.setInput(0, both)
-    wire.parm("radius").set(1.0)
-    wire.parm("usescaleattrib").set(1)
-    wire.parm("scaleattrib").set("pscale")
-    wire.parm("div").set(8)
-    wire.setDisplayFlag(True)
-    wire.setRenderFlag(True)
-    viz.layoutChildren()
-    _ghost_obj()
-    return viz
-
-
-def _ghost_obj():
-    """/obj/hub_ghosts: each hub's pose as the robot itself, see-through in the
-    hub's colour. Python gives only data (hub_poses: each hub's posed
-    skeleton); the robot_arm asset's own link meshes and rest skeleton are
-    merged in, and a For-Each over the hubs poses the meshes with Transform
-    Pieces -- as the asset drives its own robot."""
-    hou = _hou()
-    g = hou.node("/obj/hub_ghosts")
-    if g and g.node("each_hub_end"):
-        return g
-    if g:
-        g.destroy()
-    g = hou.node("/obj").createNode("geo", "hub_ghosts", run_init_scripts=False)
-    poses = g.createNode("python", "hub_poses")
-    poses.parm("python").set("import show_rig\nshow_rig.hub_poses(hou.pwd())\n")
-    links = g.createNode("object_merge", "robot_links")
-    links.parm("objpath1").set("/obj/fr20/robot_arm/urdf_normals")
-    moving = g.createNode("blast", "moving_links")          # the base does not move: the arm's own base shows
-    moving.setInput(0, links)
-    moving.parm("group").set("@name=base")
-    moving.parm("grouptype").set("prims")
-    rest = g.createNode("object_merge", "rest_skeleton")
-    rest.parm("objpath1").set("/obj/fr20/robot_arm/urdf_skeleton")
-    begin = g.createNode("block_begin", "each_hub")
-    begin.setInput(0, poses)
-    begin.parm("method").set("piece")
-    begin.parm("blockpath").set("../each_hub_end")
-    pose = g.createNode("xformpieces", "pose_links")
-    pose.setInput(0, moving)
-    pose.setInput(1, begin)
-    pose.setInput(2, rest)
-    colour = g.createNode("color", "hub_colour")
-    colour.setInput(0, pose)
-    for i, c in enumerate("rgb"):
-        colour.parm("color" + c).setExpression('point("../each_hub", 0, "Cd", %d)' % i)
-    end = g.createNode("block_end", "each_hub_end")
-    end.setInput(0, colour)
-    end.parm("itermethod").set("pieces")
-    end.parm("method").set("merge")
-    end.parm("class").set("point")
-    end.parm("useattrib").set(1)
-    end.parm("attrib").set("hub")
-    end.parm("blockpath").set("../each_hub")
-    end.parm("templatepath").set("../each_hub")
-    mat = g.createNode("material", "ghost_material")
-    mat.setInput(0, end)
-    mat.parm("shop_materialpath1").set(_ghost_material().path())
-    mat.setDisplayFlag(True)
-    mat.setRenderFlag(True)
-    g.layoutChildren()
-    return g
+    arm_packed = node.createNode("pack", "robot_packed")
+    arm_packed.setInput(0, arm)
+    out = node.createNode("merge", "all")
+    shown = [arm_packed,
+             _switch(node, "zones_shown", zones, "show_zones"),
+             _switch(node, "ghosts_shown", ghosts, "show_ghosts"),
+             _switch(node, "rays_shown", rays, "show_rays"),
+             _switch(node, "paths_shown", paths, "show_paths"),
+             _switch(node, "range_shown", range_tubes, "show_range")]
+    for i, s in enumerate(shown):
+        out.setInput(i, s)
+    final = node.createNode("output", "OUT")
+    final.setInput(0, out)
+    final.setDisplayFlag(True)
+    final.setRenderFlag(True)
+    node.layoutChildren()
+    return node
 
 
 def _ghost_material():
@@ -616,65 +609,48 @@ def _ghost_material():
     return m
 
 
-def _layout():
+def install(config=DEFAULT_CONFIG, env=None, name=TOOL):
+    """Create (or rebuild) the show tool /obj/<name> and load the config.
+    Its parameters are kept when it exists already."""
+    hou = _hou()
+    with hou.undos.group("Install the show tool"):
+        node = hou.node("/obj/" + name)
+        fresh = node is None
+        if fresh:
+            node = hou.node("/obj").createNode("geo", name, run_init_scripts=False)
+        cfg = json.load(open(config))
+        _parms(node, config, env or ROOT + "/" + cfg["env"])
+        _network(node)
+        node.setColor(hou.Color((0.3, 0.6, 0.9)))
+        node.setComment("The show: robot, room, zones, hubs, range. All controls on this node's parameters.")
+        node.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        if fresh:
+            load_config(node)
+    clean_view()
+    return node
+
+
+def remove_old_objects():
+    """The scattered objects of the earlier show scene, replaced by the tool."""
     hou = _hou()
     obj = hou.node("/obj")
-    nodes = [n for n in obj.children() if n.parm("show_role") or n.name() in ("SHOW", "show_viz", "hub_ghosts")]
-    x0 = max([n.position()[0] for n in obj.children() if n not in nodes] + [0.0]) + 4.0
-    order = sorted(nodes, key=lambda n: (n.name() not in ("SHOW", "show_viz", "hub_ghosts"), n.name()))
-    for k, n in enumerate(order):
-        n.setPosition((x0 + 3.0 * (k % 3), -1.2 * (k // 3)))
-    box = obj.findNetworkBox("SHOW") or obj.createNetworkBox("SHOW")
-    box.setComment("Show: zones, hubs, range (scripts/show_rig.py)")
-    for n in nodes:
-        box.addNode(n)
-    box.fitAroundContents()
-
-
-def install(config=DEFAULT_CONFIG):
-    """Add the show's objects to the open scene and load the config. Run it
-    again to refresh (the objects are reused); /obj/fr20 is not touched."""
-    hou = _hou()
-    with hou.undos.group("Install the show objects"):
-        show = hou.node("/obj/SHOW") or hou.node("/obj").createNode("null", "SHOW")
-        show.parm("controltype").set(0)
-        show.parm("geoscale").set(0.001)
-        _show_parms(show, config)
-        show.parm("config").set(config)
-        _viz_obj()
-        fix_menus()
-        load_config(show)
-        _tidy_show_scene()
-        _layout()
-    clean_view()
-    return show
-
-
-def _tidy_show_scene():
-    """In the show scene (it has CELL_CTRL): the room is drawn once, by
-    cell_env -- the robot_arm's own Show Cell is turned off -- and the
-    collision capsules are hidden (they cover the arm)."""
-    hou = _hou()
-    if hou.node("/obj/CELL_CTRL") is None:
-        return
-    arm = hou.node("/obj/fr20/robot_arm")
-    if arm is not None and arm.parm("show_cell") is not None:
-        arm.parm("show_cell").set(0)
-    ctrl = hou.node("/obj/CELL_CTRL")
-    ctrl.setDisplayFlag(False)                                   # its null's axes sit on the base
-    for name in ("capsules", "ghosts"):                          # the ghost arms and the asset's checks cover these
-        n = hou.node("/obj/" + name)
-        if n is not None:
+    gone = []
+    for n in list(obj.children()):
+        old = n.parm("show_role") is not None or n.name() in (
+            "SHOW", "SHOW_CTRL", "show_viz", "hub_ghosts", "CELL_CTRL", "cell_env", "fr20", "capsules", "ghosts")
+        if old and n.name() != TOOL:
+            gone.append(n.name())
             n.destroy()
-    old = hou.node("/obj/SHOW_CTRL")                # the older show panel (joint-angle hubs only)
-    if old is not None:
-        old.destroy()
+    for box in obj.networkBoxes():
+        if box.name() == "SHOW":
+            obj.deleteItems([box])
+    return gone
 
 
 def clean_view(viewers=None):
     """Remove Backfaces on in the scene viewers: the room's walls face in,
     so the walls near the camera vanish (the cutaway the Isaac scene has).
-    And a low transparency cutoff, so the see-through hub ghosts draw."""
+    And a low transparency cutoff, for the see-through hub ghosts."""
     hou = _hou()
     if not hou.isUIAvailable():
         return
@@ -682,11 +658,12 @@ def clean_view(viewers=None):
         if pane.type() == hou.paneTabType.SceneViewer:
             for vp in pane.viewports():
                 vp.settings().setRemoveBackfaces(True)
-                vp.settings().setTransparencyCutoff(0.05)   # the default 0.5 drops the see-through hub ghosts
+                vp.settings().setTransparencyCutoff(0.05)
 
 
-def clean_view_on_load():
-    """For a scene's hou.session: clean_view once the UI is up."""
+def on_load():
+    """For a scene's hou.session: the viewport look and the handle state,
+    once the UI is up."""
     hou = _hou()
     if not hou.isUIAvailable():
         return
@@ -694,53 +671,49 @@ def clean_view_on_load():
     def once():
         hou.ui.removeEventLoopCallback(once)
         clean_view()
+        register_state()
     hou.ui.addEventLoopCallback(once)
 
 
-# --- config <-> scene ---------------------------------------------------------
+# --- config <-> parameters -----------------------------------------------------
 
 def load_config(node=None):
-    """The config file -> the zone and hub objects and SHOW's parameters.
-    Show objects the config no longer names are removed."""
-    hou = _hou()
-    node = node or _show()
+    """The config file -> the tool's parameters."""
+    node = tool(node)
     cfg = json.load(open(cfg_path(node)))
-    env = json.load(open(os.path.join(ROOT, cfg["env"])))
+    env = json.load(open(env_path(node)))
     zones = dict(cfg.get("zones", {}))
     stage = cfg.get("stage") or next((o for o in env["objects"] if o["name"] == "stage"), None)
     if stage:
         zones["stage"] = stage
     node.parm("stage_override").set(1 if cfg.get("stage") else 0)
-    for name, z in zones.items():
-        _set_xform(_zone_obj(name), *zone_to_xform(z))
-    for name, n in _objs("zone").items():
-        if name not in zones:
-            n.destroy()
-
-    rig = _rig()
-    for k, (name, h) in enumerate(cfg["hubs"].items()):
-        colour = HUB_RGB[k % len(HUB_RGB)]
-        hub = _hub_objs(name, colour)
-        tool = bool(h.get("tcp") and h.get("look"))
-        hub.parm("hub_mode").set("tool" if tool else "joints")
-        hub.parmTuple("hub_q").set(h.get("near") or h.get("q") or REST_Q)
-        hub.parm("hub_clips").set(h.get("clips", 8))
-        hub.parm("hub_gen").set(h.get("generator", "gestures" if tool else "choreo"))
-        hub.parm("hub_zone").set(h.get("zone", ""))
-        hub.parm("hub_families").set(" ".join(h.get("families", FAMILIES.split())))
-        if tool:
-            _unlock(hub)
-            hub.parmTuple("t").set(to_h(h["tcp"]))
-            _look_obj(name, colour).parmTuple("t").set(to_h(h["look"]))
-        else:
-            _pin_joints_hub(hub, rig)
-            if hou.node("/obj/look_" + name):
-                hou.node("/obj/look_" + name).destroy()
-    for kind in ("hub", "look"):
-        for name, n in _objs(kind).items():
-            if name not in cfg["hubs"]:
-                n.destroy()
-
+    node.parm("zones").set(len(zones))
+    for i, (name, z) in enumerate(zones.items(), start=1):
+        node.parm("zone_name%d" % i).set(name)
+        node.parmTuple("zone_center%d" % i).set(z["center"])
+        node.parmTuple("zone_size%d" % i).set(z["size"])
+        node.parm("zone_yaw%d" % i).set(z.get("yaw_deg", 0.0))
+    node.parm("hubs").set(len(cfg["hubs"]))
+    rig = None
+    for i, (name, h) in enumerate(cfg["hubs"].items(), start=1):
+        tool_mode = bool(h.get("tcp") and h.get("look"))
+        node.parm("hub_name%d" % i).set(name)
+        node.parm("hub_mode%d" % i).set("tool" if tool_mode else "joints")
+        q = h.get("near") or h.get("q") or REST_Q
+        node.parmTuple("hub_q%d" % i).set(q)
+        if tool_mode:
+            node.parmTuple("hub_tcp%d" % i).set(h["tcp"])
+            node.parmTuple("hub_look%d" % i).set(h["look"])
+        else:                                                    # where its pose has them, for switching mode
+            import gestures as G
+            rig = rig or _rig()
+            tcp, look, _ = G.home_of(rig, list(q))
+            node.parmTuple("hub_tcp%d" % i).set(_r(tcp))
+            node.parmTuple("hub_look%d" % i).set(_r(look))
+        node.parm("hub_clips%d" % i).set(h.get("clips", 8))
+        node.parm("hub_gen%d" % i).set(h.get("generator", "gestures" if tool_mode else "choreo"))
+        node.parm("hub_zone%d" % i).set(h.get("zone", ""))
+        node.parm("hub_families%d" % i).set(" ".join(h.get("families", FAMILIES.split())))
     node.parm("start_hub").set(cfg.get("start_hub", next(iter(cfg["hubs"]))))
     r = cfg.get("range", {})
     node.parmTuple("j1_range").set(r.get("j1_deg", (-150.0, 150.0)))
@@ -755,51 +728,39 @@ def load_config(node=None):
     sel = cfg.get("select", {})
     node.parmTuple("hub_stay").set(sel.get("hub_stay", (2, 4)))
     node.parm("no_repeat").set(sel.get("no_repeat", 6))
-    if cfg["hubs"]:
-        node.parm("auth_hub").set(node.evalParm("auth_hub") or next(iter(cfg["hubs"])))
-    _cook_viz()
-
-
-def _unlock(hub):
-    for p in ("tx", "ty", "tz"):
-        hub.parm(p).lock(False)
-
-
-def _pin_joints_hub(hub, rig):
-    """A joints hub's null sits at its pose's tool tip, locked."""
-    import collision as C
-    _unlock(hub)
-    _, tcp = C.capsules(_cmodel(), list(hub.parmTuple("hub_q").eval()))
-    hub.parmTuple("t").set(to_h(tcp))
-    for p in ("tx", "ty", "tz"):
-        hub.parm(p).lock(True)
+    node.parm("auth_hub").set(node.evalParm("auth_hub") or cfg.get("start_hub", ""))
+    if not node.evalParm("edit_item") and zones:
+        node.parm("edit_item").set("zone:" + next(iter(zones)))
+    _report(node, "Loaded %s: %d zones, %d hubs" % (_rel(cfg_path(node)), len(zones), len(cfg["hubs"])))
 
 
 def scene_parts(node=None):
-    """What the scene shows, as merge_config's `scene`."""
-    node = node or _show()
-    zones = {}
-    stage = None
-    for name, n in _objs("zone").items():
-        z = xform_to_zone(*_xform(n))
+    """What the tool's parameters say, as merge_config's `scene`."""
+    node = tool(node)
+    zones, stage = {}, None
+    for i in range(1, node.evalParm("zones") + 1):
+        name = node.evalParm("zone_name%d" % i).strip() or "zone%d" % i
+        z = {"center": _r(node.parmTuple("zone_center%d" % i).eval()),
+             "size": _r(node.parmTuple("zone_size%d" % i).eval()),
+             "yaw_deg": round(_wrap(node.evalParm("zone_yaw%d" % i)), 3)}
         if name == "stage":
             stage = z if node.evalParm("stage_override") else None
         else:
             zones[name] = z
     hubs = {}
-    looks = _objs("look")
-    for name, n in _objs("hub").items():
-        h = {"clips": n.evalParm("hub_clips"), "generator": n.parm("hub_gen").evalAsString()}
-        if n.evalParm("hub_zone"):
-            h["zone"] = n.evalParm("hub_zone")
-        q = _r(n.parmTuple("hub_q").eval(), 3)
-        if n.parm("hub_mode").evalAsString() == "tool" and name in looks:
-            h.update(tcp=_r(to_r(n.parmTuple("t").eval())), look=_r(to_r(looks[name].parmTuple("t").eval())),
-                     near=q)
+    for i in range(1, node.evalParm("hubs") + 1):
+        name = node.evalParm("hub_name%d" % i).strip() or "hub%d" % i
+        h = {"clips": node.evalParm("hub_clips%d" % i), "generator": node.parm("hub_gen%d" % i).evalAsString()}
+        if node.evalParm("hub_zone%d" % i):
+            h["zone"] = node.evalParm("hub_zone%d" % i)
+        q = _r(node.parmTuple("hub_q%d" % i).eval(), 3)
+        if node.parm("hub_mode%d" % i).evalAsString() == "tool":
+            h.update(tcp=_r(node.parmTuple("hub_tcp%d" % i).eval()),
+                     look=_r(node.parmTuple("hub_look%d" % i).eval()), near=q)
         else:
             h["q"] = q
         if h["generator"] == "gestures":
-            h["families"] = n.evalParm("hub_families").split()
+            h["families"] = node.evalParm("hub_families%d" % i).split()
         hubs[name] = h
     b0, b1 = node.parmTuple("bars").eval()
     return {
@@ -814,15 +775,16 @@ def scene_parts(node=None):
 
 
 def scene_config(node=None):
-    node = node or _show()
-    return merge_config(json.load(open(cfg_path(node))), scene_parts(node))
+    node = tool(node)
+    cfg = merge_config(json.load(open(cfg_path(node))), scene_parts(node))
+    cfg["env"] = _rel(env_path(node))
+    return cfg
 
 
 def write_config(node=None):
-    """The scene -> the config file. Refused (with the reasons) when the
+    """The parameters -> the config file. Refused (with the reasons) when the
     config would name something that is not there."""
-    hou = _hou()
-    node = node or _show()
+    node = tool(node)
     cfg = scene_config(node)
     bad = check_config(cfg)
     if bad:
@@ -830,91 +792,67 @@ def write_config(node=None):
         return None
     with open(cfg_path(node), "w", newline="\n") as f:
         json.dump(cfg, f, indent=1)
-    _report(node, "Wrote %s" % os.path.relpath(cfg_path(node), ROOT))
-    hou.node("/obj/show_viz/show").cook(force=True)
+    _report(node, "Wrote %s" % _rel(cfg_path(node)))
+    _cook(node)
     return cfg
 
 
 def _report(node, text, error=False):
     hou = _hou()
-    node.parm("report").set(text[-6000:])
+    tool(node).parm("report").set(text[-6000:])
     if error and hou.isUIAvailable():
         hou.ui.displayMessage(text.splitlines()[0], details=text, severity=hou.severityType.Error)
 
 
 # --- buttons ------------------------------------------------------------------
 
-def add_hub(node=None):
-    """A new Tool + Look hub, in front of the greet zone (or the robot)."""
-    hou = _hou()
-    node = node or _show()
-    name = node.evalParm("new_name").strip()
-    if not name or hou.node("/obj/hub_" + name):
-        _report(node, "Pick a new, unused name for the hub (New Name)", error=True)
-        return
-    k = len(_objs("hub"))
-    colour = HUB_RGB[k % len(HUB_RGB)]
-    with hou.undos.group("Add hub " + name):
-        hub = _hub_objs(name, colour)
-        hub.parm("hub_mode").set("tool")
-        hub.parm("hub_gen").set("gestures")
-        hub.parmTuple("hub_q").set((64.0, -100.0, 105.0, -193.0, -88.0, 4.0))
-        hub.parm("hub_zone").set("greet" if "greet" in _objs("zone") else "")
-        hub.parmTuple("t").set(to_h((0.0, -0.6, 1.2)))
-        _look_obj(name, colour).parmTuple("t").set(to_h((-0.3, -1.8, 1.5)))
-        _layout()
-    hub.setSelected(True, clear_all_selected=True)
-    _cook_viz()
+def profile_changed(node):
+    arm = node.node("robot_arm")
+    if arm is not None:
+        arm.parm("robot_profile").set(node.evalParm("robot_profile"))
+        arm.hdaModule().on_profile_changed(arm)
+    _CACHE.clear()
+    _cook(node)
 
 
-def add_zone(node=None):
-    hou = _hou()
-    node = node or _show()
-    name = node.evalParm("new_name").strip()
-    if not name or hou.node("/obj/zone_" + name):
-        _report(node, "Pick a new, unused name for the zone (New Name)", error=True)
-        return
-    with hou.undos.group("Add zone " + name):
-        z = _zone_obj(name)
-        _set_xform(z, *zone_to_xform({"center": (-0.3, 0.0, 1.0), "size": (0.6, 0.6, 0.6), "yaw_deg": -11.28}))
-        _layout()
-    z.setSelected(True, clear_all_selected=True)
-
-
-def hub_mode_changed(hub):
-    """Switching a hub to Tool + Look puts the tool tip and a look target
-    where its joints pose has them; to Joints pins it at its seed pose."""
-    hou = _hou()
-    name = hub.name()[4:]
-    rig = _rig()
-    if hub.parm("hub_mode").evalAsString() == "tool":
-        import gestures as G
-        tcp, look, _ = G.home_of(rig, list(hub.parmTuple("hub_q").eval()))
-        _unlock(hub)
-        hub.parmTuple("t").set(to_h(tcp))
-        _look_obj(name, hub.color().rgb()).parmTuple("t").set(to_h(look))
+def hub_mode_changed(kwargs):
+    """Tool Tip + Look At <-> Joint Angles keeps the pose: to joints, the
+    solved pose becomes the Seed Pose; to tool, the tool tip and look target
+    are put where the Seed Pose has them."""
+    node, i = kwargs["node"], kwargs["script_multiparm_index"]
+    name = node.evalParm("hub_name%s" % i)
+    if node.parm("hub_mode%s" % i).evalAsString() == "joints":
+        h = dict(scene_parts(node)["hubs"][name])
+        h.update(tcp=_r(node.parmTuple("hub_tcp%s" % i).eval()), look=_r(node.parmTuple("hub_look%s" % i).eval()),
+                 near=_r(node.parmTuple("hub_q%s" % i).eval(), 3))
+        q = _hub_q(h)
+        if q is not None:
+            node.parmTuple("hub_q%s" % i).set(_r(q, 3))
     else:
-        _pin_joints_hub(hub, rig)
-        if hou.node("/obj/look_" + name):
-            hou.node("/obj/look_" + name).destroy()
-    _cook_viz()
+        import gestures as G
+        tcp, look, _ = G.home_of(_rig(), list(node.parmTuple("hub_q%s" % i).eval()))
+        node.parmTuple("hub_tcp%s" % i).set(_r(tcp))
+        node.parmTuple("hub_look%s" % i).set(_r(look))
+    _cook(node)
 
 
-def keep_solve(hub):
+def keep_solve(kwargs):
     """The solved pose becomes the seed: later drags stay near it."""
-    q = _solve_hub(hub)
+    node, i = kwargs["node"], kwargs["script_multiparm_index"]
+    h = scene_parts(node)["hubs"][node.evalParm("hub_name%s" % i)]
+    q = _hub_q(h)
     if q is None:
-        _report(_show(), "hub %s: no pose to keep (not reachable)" % hub.name()[4:], error=True)
+        _report(node, "hub %s: no pose to keep (not reachable)" % node.evalParm("hub_name%s" % i), error=True)
         return
-    hub.parmTuple("hub_q").set(_r(q, 3))
+    node.parmTuple("hub_q%s" % i).set(_r(q, 3))
 
 
 def add_clip(node=None):
-    """The robot_arm's exported joint CSV -> the config's authored clips."""
-    node = node or _show()
+    """The chosen joint CSV -> the config's authored clips."""
+    node = tool(node)
     csv = node.evalParm("auth_csv")
-    if not os.path.exists(csv):
-        _report(node, "No joint CSV at %s -- export the clip from the robot_arm first" % csv, error=True)
+    if not csv or not os.path.exists(csv):
+        _report(node, "No joint CSV at %r -- pick the robot_arm's export (Output > Export CSV)" % csv, error=True)
         return
     cfg = json.load(open(cfg_path(node)))
     clip_id = node.evalParm("auth_id").strip() or os.path.splitext(os.path.basename(csv))[0]
@@ -925,38 +863,17 @@ def add_clip(node=None):
             % (clip_id, node.evalParm("auth_hub"), os.path.basename(cfg_path(node))))
 
 
-def segment_menu(node=None):
-    """(token, label) of the built segments, from the preview manifest."""
-    node = node or _show()
-    man = preview_dir(node) + "/manifest.json"
-    items = []
-    if os.path.exists(man):
-        for s in json.load(open(man))["segments"]:
-            items += [s["name"], "%s  (%s, %.1f s)" % (s["name"], s["kind"], s["duration_s"])]
-    return items or ["", "(build the show first)"]
-
-
-def _play_on_arm(path):
-    hou = _hou()
-    ctrl = hou.node("/obj/CELL_CTRL")
-    if ctrl is None:
-        _report(_show(), "Playing on the arm needs the show scene (CELL_CTRL)", error=True)
-        return
-    import cell_sop
-    ctrl.parm("clip").set(path)
-    cell_sop.fit_range()
-
-
 def preview_segment(node=None):
-    node = node or _show()
+    node = tool(node)
     name = node.evalParm("segment")
     if name:
-        _play_on_arm(preview_dir(node) + "/" + name + ".json")
+        node.parm("preview_clip").set(preview_dir(node) + "/" + name + ".json")
+        fit_range(node)
 
 
 def preview_hub(node=None):
     """The arm held at a hub's pose (a two-point still clip)."""
-    node = node or _show()
+    node = tool(node)
     name = node.evalParm("pose_hub")
     h = scene_parts(node)["hubs"].get(name)
     q = h and _hub_q(h)
@@ -965,9 +882,56 @@ def preview_hub(node=None):
         return
     os.makedirs(preview_dir(node), exist_ok=True)
     path = preview_dir(node) + "/_hub_%s.json" % name
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump({"id": "hub", "points": [{"t": 0.0, "q": list(q)}, {"t": 1.0, "q": list(q)}]}, f)
-    _play_on_arm(path)
+    node.parm("preview_clip").set(path)
+    fit_range(node)
+
+
+def _clip(path):
+    """(times, joints) of a clip JSON or joint CSV, cached by file time."""
+    key = ("clip", path, os.path.getmtime(path) if os.path.exists(path) else 0)
+    if key not in _CACHE:
+        if not os.path.exists(path):
+            _CACHE[key] = ([], [])
+        elif path.lower().endswith(".json"):
+            c = json.load(open(path))
+            _CACHE[key] = ([p["t"] for p in c["points"]], [p["q"] for p in c["points"]])
+        else:
+            import fairino_player
+            _CACHE[key] = fairino_player.load_csv(path)
+    return _CACHE[key]
+
+
+def joint(arm, j):
+    """The arm's FK expression: joint j (1-6, degrees) of the preview clip at
+    the current frame (24 fps from frame 1); the start hub's pose without one."""
+    hou = _hou()
+    node = tool(arm.parent())
+    t, q = _clip(node.evalParm("preview_clip"))
+    if not t:
+        h = scene_parts(node)["hubs"].get(node.evalParm("start_hub"))
+        pose = (h and _hub_q(h)) or REST_Q
+        return pose[j - 1]
+    s = (hou.frame() - 1.0) / 24.0
+    if s <= t[0]:
+        return q[0][j - 1]
+    if s >= t[-1]:
+        return q[-1][j - 1]
+    import bisect
+    i = bisect.bisect_right(t, s) - 1
+    f = (s - t[i]) / (t[i + 1] - t[i])
+    return q[i][j - 1] + f * (q[i + 1][j - 1] - q[i][j - 1])
+
+
+def fit_range(node=None):
+    hou = _hou()
+    t, _ = _clip(tool(node).evalParm("preview_clip"))
+    if t:
+        end = 1 + int(math.ceil(t[-1] * 24.0))
+        hou.playbar.setFrameRange(1, end)
+        hou.playbar.setPlaybackRange(1, end)
+        hou.setFrame(1)
 
 
 def _run(args, title):
@@ -979,17 +943,17 @@ def _run(args, title):
 
 def build_show(node=None):
     """Write the config, build the show (every clip made and checked), redraw."""
-    node = node or _show()
+    node = tool(node)
     if write_config(node) is None:
         return 1, ""
     code, out = _run(["build", cfg_path(node)], "Building the show (clips made and checked)")
     _report(node, out, error=bool(code))
-    _cook_viz()
+    _cook(node)
     return code, out
 
 
 def dry_run(node=None):
-    node = node or _show()
+    node = tool(node)
     seqs = list(json.load(open(cfg_path(node))).get("sequences", {}))
     code, out = _run(["dry-run", cfg_path(node), "--minutes", str(node.evalParm("dry_minutes")),
                       "--trigger-every", "40", "--triggers", ",".join(["scan"] + seqs)], "Dry run of the show")
@@ -999,16 +963,18 @@ def dry_run(node=None):
 
 def check(node=None):
     """The hubs solved and checked, and the config's names: into the report."""
-    node = node or _show()
+    node = tool(node)
     cfg = scene_config(node)
     lines = ["config: " + ("; ".join(check_config(cfg)) or "names consistent")]
+    if node.evalParm("robot_profile") != "fr20":
+        lines.append("note: the show generator and its checks are made for the FR20")
     for name, h in cfg["hubs"].items():
         q, why = hub_status(cfg, h)
         lines.append("hub %-8s %s" % (name, why or "clear, reachable, in range: " + " ".join("%.1f" % x for x in q)))
     _report(node, "\n".join(lines))
 
 
-# --- solving and drawing ------------------------------------------------------
+# --- solving and drawing (the Python SOPs: data only) ---------------------------
 
 _CACHE = {}
 
@@ -1039,18 +1005,15 @@ def _hub_q(h):
     return _CACHE[key]
 
 
-def _solve_hub(hub):
-    h = scene_parts()["hubs"][hub.name()[4:]]
-    return _hub_q(h)
-
-
 def _move_env(cfg):
     import collision as C
     import safe_move
     import show as S
-    key = ("env", json.dumps([cfg["env"], cfg.get("stage"), cfg.get("canvas"), cfg["margins"]["idle_canvas_m"]]))
+    path = os.path.join(ROOT, cfg["env"])
+    key = ("env", json.dumps([cfg["env"], os.path.getmtime(path), cfg.get("stage"), cfg.get("canvas"),
+                              cfg["margins"]["idle_canvas_m"]]))
     if key not in _CACHE:
-        env = C.load_env(os.path.join(ROOT, cfg["env"]))
+        env = C.load_env(path)
         _CACHE[key] = safe_move.move_env(S.show_env(env, cfg, cfg["margins"]["idle_canvas_m"]))
     return _CACHE[key]
 
@@ -1072,22 +1035,46 @@ def hub_status(cfg, h):
     return q, out and "out of range: " + out
 
 
-def hub_poses(node):
-    """Python SOP of hub_ghosts: data only -- each hub's posed skeleton
-    (urdf_rig.posed_skeleton: points name, P, transform, as the robot_arm
-    asset poses its meshes), tagged with the hub's name and colour (red when
-    it cannot be used). Warns for such a hub."""
+def _hub_colour(k):
+    return HUB_RGB[k % len(HUB_RGB)]
+
+
+def zone_points(sop):
+    """Python SOP: one point per zone -- P (centre), orient, scale (size), Cd,
+    name. The zones are a Box copied onto them."""
+    hou = _hou()
+    geo = sop.geometry()
+    for name, size, default in (("orient", 4, (0.0, 0.0, 0.0, 1.0)), ("scale", 3, (1.0, 1.0, 1.0)),
+                                ("Cd", 3, (1.0, 1.0, 1.0))):
+        geo.addAttrib(hou.attribType.Point, name, default)
+    geo.addAttrib(hou.attribType.Point, "name", "")
+    node = tool(sop)
+    for i in range(1, node.evalParm("zones") + 1):
+        name = node.evalParm("zone_name%d" % i)
+        z = {"center": node.parmTuple("zone_center%d" % i).eval(), "size": node.parmTuple("zone_size%d" % i).eval(),
+             "yaw_deg": node.evalParm("zone_yaw%d" % i)}
+        P, orient, scale = zone_instance(z)
+        pt = geo.createPoint()
+        pt.setPosition(P)
+        pt.setAttribValue("orient", orient)
+        pt.setAttribValue("scale", scale)
+        pt.setAttribValue("Cd", ZONE_RGB.get(name, (0.8, 0.8, 0.8)))
+        pt.setAttribValue("name", name)
+
+
+def hub_poses(sop):
+    """Python SOP: each hub's posed skeleton (urdf_rig.posed_skeleton: points
+    name, P, transform, as the robot_arm asset poses its meshes), tagged with
+    the hub's name and colour (red when it cannot be used). Warns for such a
+    hub."""
     hou = _hou()
     import urdf_rig as UR
-    geo = node.geometry()
+    geo = sop.geometry()
     geo.addAttrib(hou.attribType.Point, "name", "")
     geo.addAttrib(hou.attribType.Point, "transform", (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))
     geo.addAttrib(hou.attribType.Point, "hub", "")
     geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
-    show = _show()
-    if show is None:
-        return
-    cfg = scene_config(show)
+    cfg = scene_config(sop)
     m = _cmodel()
     bad = []
     for k, (name, h) in enumerate(cfg["hubs"].items()):
@@ -1096,7 +1083,7 @@ def hub_poses(node):
             bad.append("hub %s: %s" % (name, why))
         if q is None:
             continue
-        cd = BAD_RGB if why else _hub_colour(name, k)
+        cd = BAD_RGB if why else _hub_colour(k)
         for j in UR.posed_skeleton(m["chain"], m["flange_offset"], q):
             pt = geo.createPoint()
             pt.setPosition(j["P"])
@@ -1108,25 +1095,11 @@ def hub_poses(node):
         raise hou.NodeWarning("\n".join(bad))
 
 
-def _hub_colour(name, k):
-    n = _hou().node("/obj/hub_" + name)
-    return n.color().rgb() if n else HUB_RGB[k % len(HUB_RGB)]
-
-
-def viz(node):
-    """Python SOP of show_viz: data lines only -- each hub's look ray (tool
-    tip to look target; red when the hub cannot be used) and the built
-    clips' tool paths (idle in the hub's colour, moves white), with point
-    Cd and pscale (the tube radius). PolyWire makes the tubes."""
+def _lines_geo(sop):
     hou = _hou()
-    import collision as C
-    geo = node.geometry()
+    geo = sop.geometry()
     geo.addAttrib(hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
     geo.addAttrib(hou.attribType.Point, "pscale", 0.004)
-    show = _show()
-    if show is None:
-        return
-    cfg = scene_config(show)
 
     def line(pts, cd, width):
         poly = geo.createPolygon(is_closed=False)
@@ -1136,39 +1109,162 @@ def viz(node):
             pt.setAttribValue("Cd", cd)
             pt.setAttribValue("pscale", width)
             poly.addVertex(pt)
+    return line
 
-    colour = {}
+
+def rays(sop):
+    """Python SOP: each Tool Tip + Look At hub's look ray, tool tip to look
+    target (red when the hub cannot be used)."""
+    line = _lines_geo(sop)
+    cfg = scene_config(sop)
     for k, (name, h) in enumerate(cfg["hubs"].items()):
-        colour[name] = _hub_colour(name, k)
-        if not h.get("look"):
+        if h.get("look"):
+            q, why = hub_status(cfg, h)
+            line([h["tcp"], h["look"]], BAD_RGB if why else _hub_colour(k), 0.004)
+
+
+def paths(sop):
+    """Python SOP: the built clips' tool paths (idle in their hub's colour,
+    moves white, the scan yellow)."""
+    line = _lines_geo(sop)
+    node = tool(sop)
+    names = hub_names(node)
+    man = preview_dir(node) + "/manifest.json"
+    if not os.path.exists(man):
+        return
+    for s in json.load(open(man))["segments"]:
+        f = preview_dir(node) + "/" + s["name"] + ".json"
+        if not os.path.exists(f):
             continue
-        q, why = hub_status(cfg, h)
-        tcp = C.capsules(_cmodel(), q)[1] if q is not None else h["tcp"]
-        line([tcp, h["look"]], BAD_RGB if why else colour[name], 0.004)
-
-    man = preview_dir(show) + "/manifest.json"
-    if show.evalParm("show_paths") and os.path.exists(man):
-        for s in json.load(open(man))["segments"]:
-            f = preview_dir(show) + "/" + s["name"] + ".json"
-            if not os.path.exists(f):
-                continue
-            tcp = json.load(open(f)).get("tcp") or []
-            cd = colour.get(s["start"], (0.8, 0.8, 0.8)) if s["kind"] == "idle" else \
-                (0.9, 0.9, 0.9) if s["kind"] == "move" else (1.0, 0.85, 0.2)
-            if len(tcp) > 1:
-                line(tcp[::2] + tcp[-1:], cd, 0.003)
+        tcp = json.load(open(f)).get("tcp") or []
+        if s["kind"] == "idle":
+            cd = _hub_colour(names.index(s["start"])) if s["start"] in names else (0.8, 0.8, 0.8)
+        else:
+            cd = (0.9, 0.9, 0.9) if s["kind"] == "move" else (1.0, 0.85, 0.2)
+        if len(tcp) > 1:
+            line(tcp[::2] + tcp[-1:], cd, 0.003)
 
 
-def _cook_viz():
+def _cook(node):
     hou = _hou()
-    for path in ("/obj/show_viz/rays_and_paths", "/obj/hub_ghosts/hub_poses"):
-        sop = hou.node(path)
+    node = tool(node)
+    for name in ("zone_points", "hub_poses", "rays", "paths"):
+        sop = node.node(name)
         if sop:
             try:
                 sop.cook(force=True)
             except hou.OperationFailed:
-                pass                               # its warning / error shows on the node
+                pass                                   # its warning / error shows on the node
 
+
+# --- viewport handles (a Python viewer state) -----------------------------------
+
+STATE = "robot_show_edit"
+
+
+def edit_in_viewport(node=None):
+    """Handles in the viewport for the tool's Edit in Viewport item."""
+    hou = _hou()
+    node = tool(node)
+    register_state()
+    sv = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+    if sv is None:
+        return
+    sv.setPwd(node.parent())
+    node.setCurrent(True, clear_all_selected=True)
+    sv.setCurrentState(STATE)
+
+
+def _item(node):
+    kind, _, name = node.evalParm("edit_item").partition(":")
+    names = zone_names(node) if kind == "zone" else hub_names(node) if kind == "hub" else []
+    return (kind, names.index(name) + 1) if name in names else (None, None)
+
+
+class EditState(object):
+    """Handles for one zone (an xform: move, turn about the vertical, scale)
+    or one hub (translate: the tool tip; a second one: the look target). The
+    tool's parameters are in the robot frame; handles work in Houdini's."""
+
+    def __init__(self, state_name, scene_viewer):
+        hou = _hou()
+        self.sv = scene_viewer
+        self.zone = hou.Handle(scene_viewer, "zone")
+        self.tip = hou.Handle(scene_viewer, "tip")
+        self.look = hou.Handle(scene_viewer, "look")
+
+    def _node(self):
+        return tool()
+
+    def _refresh(self):
+        node = self._node()
+        kind, i = _item(node) if node else (None, None)
+        tool_hub = kind == "hub" and node.parm("hub_mode%d" % i).evalAsString() == "tool"
+        self.zone.show(kind == "zone")
+        self.tip.show(tool_hub)
+        self.look.show(tool_hub)
+        for h in (self.zone, self.tip, self.look):
+            h.update()
+
+    def onEnter(self, kwargs):
+        self._refresh()
+
+    def onResume(self, kwargs):
+        self._refresh()
+
+    def onParmChangeEvent(self, kwargs):
+        if kwargs.get("parm_name") == "edit_item":
+            self._refresh()
+
+    def onStateToHandle(self, kwargs):
+        node = self._node()
+        kind, i = _item(node)
+        p = kwargs["parms"]
+        name = kwargs["handle"]
+        if kind == "zone" and name == "zone":
+            t, r, s = zone_to_xform({"center": node.parmTuple("zone_center%d" % i).eval(),
+                                     "size": node.parmTuple("zone_size%d" % i).eval(),
+                                     "yaw_deg": node.evalParm("zone_yaw%d" % i)})
+            p["tx"], p["ty"], p["tz"] = t
+            p["rx"], p["ry"], p["rz"] = r
+            p["sx"], p["sy"], p["sz"] = s
+        elif kind == "hub" and name in ("tip", "look"):
+            v = to_h(node.parmTuple(("hub_tcp%d" if name == "tip" else "hub_look%d") % i).eval())
+            p["tx"], p["ty"], p["tz"] = v
+
+    def onHandleToState(self, kwargs):
+        hou = _hou()
+        node = self._node()
+        kind, i = _item(node)
+        p = kwargs["parms"]
+        name = kwargs["handle"]
+        with hou.undos.group("Move %s" % node.evalParm("edit_item")):
+            if kind == "zone" and name == "zone":
+                z = xform_to_zone((p["tx"], p["ty"], p["tz"]), (p["rx"], p["ry"], p["rz"]), (p["sx"], p["sy"], p["sz"]))
+                node.parmTuple("zone_center%d" % i).set(z["center"])
+                node.parmTuple("zone_size%d" % i).set(z["size"])
+                node.parm("zone_yaw%d" % i).set(z["yaw_deg"])
+            elif kind == "hub" and name in ("tip", "look"):
+                v = _r(to_r((p["tx"], p["ty"], p["tz"])))
+                node.parmTuple(("hub_tcp%d" if name == "tip" else "hub_look%d") % i).set(v)
+
+
+def register_state():
+    """The viewer state behind Edit in Viewport (registered once per session)."""
+    hou = _hou()
+    if not hou.isUIAvailable():
+        return
+    try:
+        if hou.ui.isRegisteredViewerState(STATE):
+            hou.ui.unregisterViewerState(STATE)
+    except hou.OperationFailed:
+        pass
+    t = hou.ViewerStateTemplate(STATE, "Robot Show: Edit", hou.objNodeTypeCategory())
+    t.bindFactory(EditState)
+    t.bindHandle("xform", "zone", settings="translate(1) rotate(1) scale(1)")
+    t.bindHandle("translate", "tip")
+    t.bindHandle("translate", "look")
+    hou.ui.registerViewerState(t)
 
 
 # --------------------------------------------------------------------------
@@ -1197,6 +1293,16 @@ def self_test():
     H = to_h(v)
     hou_rot = (H[0] * math.cos(th) + H[2] * math.sin(th), H[1], -H[0] * math.sin(th) + H[2] * math.cos(th))
     check_("yaw is the same angle in both frames", all(abs(a - b) < 1e-12 for a, b in zip(to_h(rob), hou_rot)))
+
+    P, o, sc = zone_instance(z)
+    # rotate the unit X axis by the quaternion o and compare with the yaw in Houdini
+    qx, qy, qz, qw = o
+    v = (1.0, 0.0, 0.0)
+    rot_x = (1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qw * qz), 2 * (qx * qz - qw * qy))
+    th = math.radians(z["yaw_deg"])
+    check_("a zone copies a Box turned by its yaw, sized Y up",
+           all(abs(a - b) < 1e-9 for a, b in zip(rot_x, (math.cos(th), 0.0, -math.sin(th))))
+           and sc == (1.3, 0.7, 0.5) and P == to_h(z["center"]), (rot_x, sc))
 
     for j1 in (-150.0, -60.0, 0.0, 90.0):
         a = math.radians(zx_arc_angle(j1))

@@ -2,22 +2,17 @@
 
     hython scripts/build_show_scene.py [shows/party.json]
 
-The cell scene (scripts/build_cell_scene.py: the FR20 in the measured room,
-its joints from CELL_CTRL's clip) plus the show objects of show_rig.py:
+One node: /obj/robot_show (scripts/show_rig.py). Its parameter page holds
+the robot profile, the environment, the show config, zones, hubs, the
+operating range, the library, the authored clip, build / dry run / preview
+and the display toggles; inside it are the robot_arm asset (drawing the
+room), the zones, the hub ghosts, the look rays, the built paths and the
+range. On load the scene turns the viewport's Remove Backfaces on (the
+room's walls face in: a cutaway, as in Isaac) and registers the Edit in
+Viewport handles.
 
-    /obj/SHOW          the show config (shows/*.json) as parameters: start
-                       hub, operating range, library, add hub / zone, the
-                       authored clip, Check / Build / Dry Run, play a built
-                       segment or hold a hub's pose on the arm
-    /obj/zone_<name>   the zones, as boxes you move, turn and scale
-    /obj/hub_<name>    the hubs (tool tip), look_<name> what each looks at
-    /obj/show_viz      hubs solved live as ghost arms, look rays, the range,
-                       the built tool paths
-
-The room is drawn once, like the Isaac scene (cell_sop / room_geom): solid
-floor and objects, walls facing in (Remove Backfaces makes the near ones
-vanish), zones as outlines. The scene is generated -- rebuild it rather
-than hand-edit it; the rig scene (FR20_rig.hiplc) stays the hand tool.
+The scene is generated -- rebuild it rather than hand-edit it; the rig
+scene (FR20_rig.hiplc) stays the hand tool.
 """
 
 import os
@@ -27,25 +22,28 @@ import hou
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")
 sys.path.insert(0, ROOT + "/scripts")
-import build_cell_scene  # noqa: E402
 import show_rig  # noqa: E402
 
 SCENE = ROOT + "/scenes/FR20_show.hiplc"
-SESSION_EXTRA = '''
+SESSION = '''import sys, hou
+_p = hou.text.expandString("$HIP/../scripts")
+if _p not in sys.path:
+    sys.path.insert(0, _p)
 import show_rig
-show_rig.clean_view_on_load()
+show_rig.on_load()
 '''
 
 
 def build(config):
-    build_cell_scene.build()
+    for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
+        hou.hda.installFile(ROOT + "/otls/" + f, force_use_assets=True)
+    hou.hipFile.clear(suppress_save_prompt=True)
     hou.hipFile.setName(SCENE)
-    hou.setSessionModuleSource(hou.sessionModuleSource() + SESSION_EXTRA)
-    show = show_rig.install(config)
-    hou.node("/obj").layoutChildren()
-    show_rig._layout()
+    hou.setSessionModuleSource(SESSION)
+    node = show_rig.install(config)
+    node.setDisplayFlag(True)
     hou.hipFile.save(SCENE)
-    return show
+    return node
 
 
 if __name__ == "__main__":

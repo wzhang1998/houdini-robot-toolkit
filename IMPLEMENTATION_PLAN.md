@@ -306,6 +306,41 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
 - **Success**: a 10 min headless run with a report (tracking, contacts,
   waits), and a GUI session driven from TD.
 
+### 6.8 The show as one Houdini tool (2026-09-27, user's direction)
+**Goal**: `/obj/robot_show` is one Geometry. Everything is on its parameter
+page: robot profile, environment JSON, show config, zones and hubs
+(multiparms), operating range, library, authored clip, build / dry run /
+preview, and display toggles. Inside it:
+- the robot_arm asset, which draws the room from the environment;
+- the zones, as Box SOPs copied to data points;
+- the hub ghosts, the robot's own meshes posed by Transform Pieces;
+- the range, as Circle SOPs;
+- the rays and paths, through PolyWire.
+
+It replaces the scattered SHOW / zone / hub / look / CELL_CTRL /
+cell_env / show_viz / hub_ghosts objects. Not an HDA (the user's choice):
+a scripted Geometry node with spare parameters.
+- **Stage A**: the node, its parameters, Load / Write / Check / Build on
+  the multiparms, the arm previewing clips and hubs. Test: hython
+  round-trip, config written unchanged.
+- **Stage B**: the native display chain inside it, each branch switchable.
+  Test: no errors or warnings in the network.
+- **Stage C**: viewport handles in a Python viewer state ("Edit in
+  Viewport"). Pick a zone or hub; an xform handle moves, turns and
+  scales a zone; translate handles move a hub's tool tip and look target.
+  Test: dragging changes the parameters, and Write gives the moved values.
+**Status**: A and B done (2026-09-27).
+- A fresh hython build has one node, and no node inside it has an error
+  or a warning.
+- The config round-trips unchanged.
+- Both hubs check clear.
+- Hold at Hub poses the arm.
+
+C: the handle <-> parameter mapping is tested live. A zone moves 0.1 m,
+turns 10 deg and scales 1.5x; a look target moves 0.2 m.
+Seeing and dragging the handles needs a person at the viewport: the
+state's onEnter runs only once the viewer is used.
+
 ### 6.7 After (as decided)
 - LED strip as a tool (URDF link, controller tool load, collision
   capsule) and the real constant-speed scan with `/robot/scan`.
