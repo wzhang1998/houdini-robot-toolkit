@@ -1,0 +1,55 @@
+{
+ "schema": "motionlab.show/1",
+ "name": "party",
+ "note": "Volvox party piece: the arm idles through the generated library and, on a trigger (TouchDesigner, OSC), sweeps an LED strip across UV paper. Paper size, place and the LED strip are not decided yet: the canvas and the scan below are PLACEHOLDERS (the canvas is the plane of the user's cat curve, which the real arm has reached).",
+ "env": "envs/volvox_lab.json",
+ "idle_manifest": "geo/stage",
+ "hubs": {
+  "home": [
+   -60.0,
+   -90.0,
+   90.0,
+   -90.0,
+   -90.0,
+   0.0
+  ]
+ },
+ "canvas": {
+  "placeholder": true,
+  "center": [
+   0.07,
+   1.41,
+   0.88
+  ],
+  "normal": [
+   0.193,
+   0.981,
+   0.0
+  ],
+  "size": [
+   1.0,
+   0.6
+  ],
+  "thickness": 0.02
+ },
+ "scan": {
+  "placeholder": true,
+  "length_m": 0.8,
+  "standoff_m": 0.25,
+  "safety": 0.5
+ },
+ "margins": {
+  "idle_canvas_m": 0.15,
+  "scan_canvas_m": 0.03
+ },
+ "transition_safety": 0.5,
+ "select": {
+  "no_repeat": 8,
+  "max_idle_s": 18.0
+ },
+ "osc": {
+  "listen_port": 9000,
+  "send_host": "127.0.0.1",
+  "send_port": 9001
+ }
+}
