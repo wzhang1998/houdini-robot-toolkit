@@ -2,12 +2,14 @@
 
     hython scripts/build_show_scene.py [shows/party.json]
 
-One node: /obj/robot_show (scripts/show_rig.py). Its parameter page holds
-the robot profile, the environment, the show config, zones, hubs, the
-operating range, the library, the authored clip, build / dry run / preview
-and the display toggles; inside it are the robot_arm asset (drawing the
-room), the zones, the hub ghosts, the look rays, the built paths and the
-range. On load the scene turns the viewport's Remove Backfaces on (the
+One node: /obj/robot_show, the digital asset wenyi::robot_show
+(otls/obj_wenyi.robot_show.1.0.hdalc; rebuild it with
+`hython scripts/show_rig.py --build-hda` after changing show_rig.py).
+Its parameter page holds the robot profile, the environment, the show
+config, zones, hubs, the operating range, the library, the authored clip,
+build / dry run / preview and the display toggles; inside it are the
+robot_arm asset (drawing the room), the zones, the hub ghosts, the look
+rays, the built paths and the range. On load the scene turns the viewport's Remove Backfaces on (the
 room's walls face in: a cutaway, as in Isaac) and registers the Edit in
 Viewport handles.
 

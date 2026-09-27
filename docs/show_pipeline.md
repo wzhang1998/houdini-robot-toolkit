@@ -112,8 +112,12 @@ Two scenes, two jobs:
 - `scenes/FR20_rig.hiplc` is the **hand tool**. Draw a curve, solve it,
   and export a joint CSV.
 - `scenes/FR20_show.hiplc` is the **show**. It holds one node,
-  `/obj/robot_show` (`scripts/show_rig.py`), and every control is on that
-  node's parameter page.
+  `/obj/robot_show`, and every control is on that node's parameter page.
+  The node is the digital asset `wenyi::robot_show`
+  (`otls/obj_wenyi.robot_show.1.0.hdalc`), built from `scripts/show_rig.py`
+  with `hython scripts/show_rig.py --build-hda`. It is an asset, not a plain
+  Geometry, because viewport handles need a node state, the asset's
+  default state.
 
 Rebuild the show scene with `hython scripts/build_show_scene.py`, or put
 the tool into any open scene with `import show_rig; show_rig.install()`.
@@ -144,7 +148,10 @@ own nodes:
 - **zones**: a Box, drawn with Convert Line, copied onto one point per
   zone;
 - **hub ghosts**: the arm's own link meshes, posed per hub by For-Each
-  and Transform Pieces;
+  and Transform Pieces, reduced (PolyReduce) and drawn as edges (Convert
+  Line). They are see-through without viewport transparency: on this
+  machine the Vulkan viewport drew no transparent pass in any mode (driver
+  610.47; SideFX recommends 580 or 595 for Houdini 22);
 - **the range**: Circle SOPs that read the node's parameters;
 - **rays and paths**: PolyWire.
 

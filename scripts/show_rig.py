@@ -3,8 +3,13 @@ page holds everything -- robot profile, environment, show config, zones,
 hubs, operating range, library, authored clip, build / dry run / preview,
 display -- written back to the show config (shows/*.json).
 
-    import show_rig; show_rig.install()                    # shows/party.json
+    hython scripts/show_rig.py --build-hda                 # otls/obj_wenyi.robot_show.1.0.hdalc
     hython scripts/build_show_scene.py                     # scenes/FR20_show.hiplc
+    import show_rig; show_rig.install()                    # the asset into an open scene
+
+The tool is the digital asset wenyi::robot_show, built from this module:
+a node viewer state is its default state, so Edit in Viewport has real
+handles (they cannot be bound to a nodeless state).
 
 Inside the node (Python gives data only; the shapes are Houdini's nodes):
 
@@ -13,7 +18,9 @@ Inside the node (Python gives data only; the shapes are Houdini's nodes):
     zones          a Box drawn by Convert Line, copied onto one data point
                    per zone (centre, yaw, size)
     hub ghosts     the arm's own link meshes posed per hub (For-Each,
-                   Transform Pieces), in the hub's colour; red when the hub
+                   Transform Pieces), reduced and drawn as edges in the hub's
+                   colour (see-through without viewport transparency, which
+                   drew nothing on this machine's driver); red when the hub
                    cannot be reached, is not clear, or is out of range
     rays, paths    look rays and the built clips' tool paths, by PolyWire
     range          the J1 sector and TCP height band, Circle SOPs on the
@@ -49,7 +56,7 @@ HUB_RGB = [(0.95, 0.45, 0.2), (0.3, 0.7, 1.0), (0.55, 0.9, 0.35), (0.85, 0.4, 0.
 ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.6, 0.85, 0.4),
             "stage": (0.2, 0.9, 0.35)}
 BAD_RGB = (1.0, 0.1, 0.1)
-GHOST_ALPHA = 0.3                  # a hub's ghost: the robot's own meshes, see-through, in the hub's colour
+GHOST_KEEP_PCT = 1.2               # a hub's ghost: the robot's own meshes reduced to this %, drawn as edges
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 FAMILIES = "look wave nod reach tilt trace"
 
@@ -531,9 +538,15 @@ def _network(node):
     end.parm("attrib").set("hub")
     end.parm("blockpath").set("../each_hub")
     end.parm("templatepath").set("../each_hub")
-    ghosts = node.createNode("material", "ghost_material")
-    ghosts.setInput(0, end)
-    ghosts.parm("shop_materialpath1").set(_ghost_material().path())
+    # drawn as the edges of a reduced mesh: see-through without viewport
+    # transparency (the Vulkan viewport drew no transparent pass on this
+    # machine's driver, 2026-09-27)
+    reduce_ = node.createNode("polyreduce::2.0", "ghost_reduce")
+    reduce_.setInput(0, end)
+    reduce_.parm("percentage").set(GHOST_KEEP_PCT)
+    ghosts = node.createNode("convertline", "ghost_edges")
+    ghosts.setInput(0, reduce_)
+    ghosts.parm("computelength").set(0)
 
     # look rays and hub markers, built paths: data lines, tubes by PolyWire
     rays = _tube(node, "ray_tubes", _py(node, "rays", "rays"))
@@ -597,35 +610,69 @@ def _network(node):
     return node
 
 
-def _ghost_material():
-    """/mat/hub_ghost: a Principled Shader in each point's colour, opacity
-    GHOST_ALPHA with blending. (A point or detail Alpha drew nothing in this
-    viewport, 2026-09-27; the material at least draws in the hub's colour.)"""
-    hou = _hou()
-    m = hou.node("/mat/hub_ghost") or hou.node("/mat").createNode("principledshader::2.0", "hub_ghost")
-    m.parm("basecolor_usePointColor").set(1)
-    m.parm("opac").set(GHOST_ALPHA)
-    m.parm("alphablendmode").set("blend")
-    return m
+HDA_NAME = "wenyi::robot_show::1.0"
+HDA_FILE = ROOT + "/otls/obj_wenyi.robot_show.1.0.hdalc"
 
 
-def install(config=DEFAULT_CONFIG, env=None, name=TOOL):
-    """Create (or rebuild) the show tool /obj/<name> and load the config.
-    Its parameters are kept when it exists already."""
+def build_hda(config=DEFAULT_CONFIG):
+    """(hython) Build the digital asset wenyi::robot_show into HDA_FILE: the
+    parameters and the network of this module, the Edit in Viewport state
+    as its default state (handles need a node state: they cannot be bound
+    to a nodeless one), and scripts that load the config into a new node
+    and register the state when the asset loads."""
     hou = _hou()
+    hou.hda.installFile(ROOT + "/otls/sop_wenyi.robot_arm.1.0.hdalc", force_use_assets=True)
+    hou.hipFile.setName(ROOT + "/scenes/_robot_show_build.hiplc")   # robot_arm finds the repo as $HIP/.. (not saved)
+    cfg = json.load(open(config))
+    node = hou.node("/obj").createNode("geo", "robot_show_build", run_init_scripts=False)
+    _parms(node, config, ROOT + "/" + cfg["env"])
+    _network(node)
+    group = node.parmTemplateGroup()
+    for label in ("Transform", "Render", "Misc"):     # the object's own tabs: the tool stays at the origin
+        group.hideFolder(label, True)
+    asset = node.createDigitalAsset(name=HDA_NAME, hda_file_name=HDA_FILE, description="Robot Show",
+                                    min_num_inputs=0, max_num_inputs=0, ignore_external_references=True)
+    d = asset.type().definition()
+    d.setParmTemplateGroup(group)
+    d.addSection("OnCreated", "import show_rig\nshow_rig.on_created(kwargs['node'])\n")
+    d.setExtraFileOption("OnCreated/IsPython", True)
+    d.addSection("OnLoaded", "import show_rig\nshow_rig.register_state()\n")
+    d.setExtraFileOption("OnLoaded/IsPython", True)
+    d.addSection("DefaultState", STATE)
+    d.setComment("The show: robot, room, zones, hubs, operating range; every control on the parameters. "
+                 "Built by scripts/show_rig.py build_hda().")
+    d.save(HDA_FILE, template_node=asset)
+    asset.destroy()
+    return HDA_FILE
+
+
+def on_created(node):
+    """The asset's OnCreated: a new node loads its config, gets its look."""
+    hou = _hou()
+    node.setColor(hou.Color((0.3, 0.6, 0.9)))
+    if os.path.exists(cfg_path(node)):
+        load_config(node)
+    register_state()
+    clean_view()
+
+
+def install(config=DEFAULT_CONFIG, name=TOOL):
+    """Put the show tool (the wenyi::robot_show asset) at /obj/<name>, with
+    this config. An earlier plain-Geometry version of the tool is replaced."""
+    hou = _hou()
+    for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
+        hou.hda.installFile(ROOT + "/otls/" + f, force_use_assets=True)
+    hou.hda.installFile(HDA_FILE, force_use_assets=True)
     with hou.undos.group("Install the show tool"):
         node = hou.node("/obj/" + name)
-        fresh = node is None
-        if fresh:
-            node = hou.node("/obj").createNode("geo", name, run_init_scripts=False)
-        cfg = json.load(open(config))
-        _parms(node, config, env or ROOT + "/" + cfg["env"])
-        _network(node)
-        node.setColor(hou.Color((0.3, 0.6, 0.9)))
-        node.setComment("The show: robot, room, zones, hubs, range. All controls on this node's parameters.")
-        node.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-        if fresh:
-            load_config(node)
+        if node is not None and node.type().name() != HDA_NAME:
+            node.destroy()
+            node = None
+        if node is None:
+            node = hou.node("/obj").createNode(HDA_NAME, name)
+        node.parm("config").set(config)
+        load_config(node)
+    register_state()
     clean_view()
     return node
 
@@ -649,8 +696,7 @@ def remove_old_objects():
 
 def clean_view(viewers=None):
     """Remove Backfaces on in the scene viewers: the room's walls face in,
-    so the walls near the camera vanish (the cutaway the Isaac scene has).
-    And a low transparency cutoff, for the see-through hub ghosts."""
+    so the walls near the camera vanish (the cutaway the Isaac scene has)."""
     hou = _hou()
     if not hou.isUIAvailable():
         return
@@ -658,7 +704,6 @@ def clean_view(viewers=None):
         if pane.type() == hou.paneTabType.SceneViewer:
             for vp in pane.viewports():
                 vp.settings().setRemoveBackfaces(True)
-                vp.settings().setTransparencyCutoff(0.05)
 
 
 def on_load():
@@ -1163,7 +1208,8 @@ STATE = "robot_show_edit"
 
 
 def edit_in_viewport(node=None):
-    """Handles in the viewport for the tool's Edit in Viewport item."""
+    """The node's own viewer state (the asset's default state): handles for
+    its Edit in Viewport item."""
     hou = _hou()
     node = tool(node)
     register_state()
@@ -1172,7 +1218,7 @@ def edit_in_viewport(node=None):
         return
     sv.setPwd(node.parent())
     node.setCurrent(True, clear_all_selected=True)
-    sv.setCurrentState(STATE)
+    sv.enterCurrentNodeState()
 
 
 def _item(node):
@@ -1184,40 +1230,36 @@ def _item(node):
 class EditState(object):
     """Handles for one zone (an xform: move, turn about the vertical, scale)
     or one hub (translate: the tool tip; a second one: the look target). The
-    tool's parameters are in the robot frame; handles work in Houdini's."""
+    node's parameters are in the robot frame; handles work in Houdini's."""
 
     def __init__(self, state_name, scene_viewer):
-        hou = _hou()
         self.sv = scene_viewer
-        self.zone = hou.Handle(scene_viewer, "zone")
-        self.tip = hou.Handle(scene_viewer, "tip")
-        self.look = hou.Handle(scene_viewer, "look")
-
-    def _node(self):
-        return tool()
-
-    def _refresh(self):
-        node = self._node()
-        kind, i = _item(node) if node else (None, None)
-        tool_hub = kind == "hub" and node.parm("hub_mode%d" % i).evalAsString() == "tool"
-        self.zone.show(kind == "zone")
-        self.tip.show(tool_hub)
-        self.look.show(tool_hub)
-        for h in (self.zone, self.tip, self.look):
-            h.update()
+        self.handles = {}
 
     def onEnter(self, kwargs):
+        hou = _hou()
+        self.node = kwargs["node"]
+        self.handles = {n: hou.Handle(self.sv, n) for n in ("zone", "tip", "look")}
         self._refresh()
 
     def onResume(self, kwargs):
         self._refresh()
+
+    def _refresh(self):
+        kind, i = _item(self.node)
+        tool_hub = kind == "hub" and self.node.parm("hub_mode%d" % i).evalAsString() == "tool"
+        self.handles["zone"].show(kind == "zone")
+        self.handles["tip"].show(tool_hub)
+        self.handles["look"].show(tool_hub)
+        for h in self.handles.values():
+            h.update()
 
     def onParmChangeEvent(self, kwargs):
         if kwargs.get("parm_name") == "edit_item":
             self._refresh()
 
     def onStateToHandle(self, kwargs):
-        node = self._node()
+        node = kwargs.get("node") or self.node
         kind, i = _item(node)
         p = kwargs["parms"]
         name = kwargs["handle"]
@@ -1229,12 +1271,11 @@ class EditState(object):
             p["rx"], p["ry"], p["rz"] = r
             p["sx"], p["sy"], p["sz"] = s
         elif kind == "hub" and name in ("tip", "look"):
-            v = to_h(node.parmTuple(("hub_tcp%d" if name == "tip" else "hub_look%d") % i).eval())
-            p["tx"], p["ty"], p["tz"] = v
+            p["tx"], p["ty"], p["tz"] = to_h(node.parmTuple(("hub_tcp%d" if name == "tip" else "hub_look%d") % i).eval())
 
     def onHandleToState(self, kwargs):
         hou = _hou()
-        node = self._node()
+        node = kwargs.get("node") or self.node
         kind, i = _item(node)
         p = kwargs["parms"]
         name = kwargs["handle"]
@@ -1250,7 +1291,8 @@ class EditState(object):
 
 
 def register_state():
-    """The viewer state behind Edit in Viewport (registered once per session)."""
+    """The viewer state behind Edit in Viewport, the robot_show asset's
+    default state (a node state: handles cannot be bound to nodeless ones)."""
     hou = _hou()
     if not hou.isUIAvailable():
         return
@@ -1259,7 +1301,7 @@ def register_state():
             hou.ui.unregisterViewerState(STATE)
     except hou.OperationFailed:
         pass
-    t = hou.ViewerStateTemplate(STATE, "Robot Show: Edit", hou.objNodeTypeCategory())
+    t = hou.ViewerStateTemplate(STATE, "Robot Show: Edit", hou.objNodeTypeCategory())    # the asset's default state
     t.bindFactory(EditState)
     t.bindHandle("xform", "zone", settings="translate(1) rotate(1) scale(1)")
     t.bindHandle("translate", "tip")
@@ -1352,4 +1394,7 @@ def self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    if "--build-hda" in sys.argv:                  # hython scripts/show_rig.py --build-hda
+        print("built", build_hda())
+        sys.exit(0)
     print(__doc__)

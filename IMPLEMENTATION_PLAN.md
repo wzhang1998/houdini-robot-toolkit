@@ -336,7 +336,10 @@ a scripted Geometry node with spare parameters.
 - Both hubs check clear.
 - Hold at Hub poses the arm.
 
-C: the handle <-> parameter mapping is tested live. A zone moves 0.1 m,
+C: handles need a node state (SideFX: "Handles cannot be bound to
+nodeless states"), so the tool became the asset `wenyi::robot_show` with
+the state as its default state. In a fresh scene it has no node errors
+and the config round-trips unchanged. The handle <-> parameter mapping is tested live. A zone moves 0.1 m,
 turns 10 deg and scales 1.5x; a look target moves 0.2 m.
 Seeing and dragging the handles needs a person at the viewport: the
 state's onEnter runs only once the viewer is used.
