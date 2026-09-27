@@ -44,7 +44,8 @@ OUT = ROOT + "/geo/review"
 HYTHON = "C:/Program Files/Side Effects Software/Houdini 22.0.368/bin/hython.exe"
 FFMPEG = "ffmpeg"
 FONT = "C\\:/Windows/Fonts/consola.ttf"
-SETS = {"dance": ROOT + "/geo/dance", "clips": ROOT + "/geo/clips", "stage": ROOT + "/geo/stage"}
+SETS = {"dance": ROOT + "/geo/dance", "clips": ROOT + "/geo/clips", "stage": ROOT + "/geo/stage",
+        "show": ROOT + "/geo/show/party"}
 FPS = 24.0
 TILE = (480, 480)
 # the user's viewport in FR20_rig, 2026-09-25 (the robot's right-front, above, a
@@ -136,6 +137,13 @@ def header_lines(clip):
         extra.append("x%.2f" % s["playback_scale"])
     if extra:
         lines.append(("   ".join(extra), "white"))
+    if (clip.get("style") or {}).get("generator") == "gestures.py":
+        qs = [p["q"] for p in clip.get("points") or []]
+        if qs:
+            travel = [sum(abs(b[j] - a[j]) for a, b in zip(qs, qs[1:])) for j in range(6)]
+            j5 = max(q[4] for q in qs) - min(q[4] for q in qs)
+            lines.append(("wrist %d%% of travel   J5 %d deg   bpm %s" % (
+                round(100 * sum(travel[3:]) / max(1e-9, sum(travel))), round(j5), clip["style"].get("bpm")), "0x80d0ff"))
     if not ok and s.get("reasons"):
         lines.append((("; ".join(s["reasons"]))[:52], "0xff5050"))
     return lines
@@ -222,10 +230,12 @@ def review_path(node):
         poly.addVertex(p)
 
 
-def setup_scene(w=TILE[0], h=TILE[1], room=ROOM):
+def setup_scene(w=TILE[0], h=TILE[1], room=ROOM, view=None):
     """Turn the loaded scenes/FR20_cell.hiplc into the review scene; returns
     the camera. The clip comes from CELL_CTRL's Clip, as always. room: a
-    ROOMS key -- how much of the room is drawn."""
+    ROOMS key -- how much of the room is drawn. view: None -- the user's
+    viewport camera on the stage; (eye, target) in the robot frame -- e.g.
+    an audience member's eyes on the greet hub (audience_view)."""
     import hou
     obj = hou.node("/obj")
     # the TCP path as a tube (a line is a hair at 480 px)
@@ -268,8 +278,16 @@ def setup_scene(w=TILE[0], h=TILE[1], room=ROOM):
     for n in ("capsules", "ghosts"):
         if hou.node("/obj/" + n) is not None:
             hou.node("/obj/" + n).setDisplayFlag(False)
-    # the user's viewport camera, cropped square onto the stage
     cam = obj.createNode("cam", "review_cam")
+    if view:                                                  # a view from a point, e.g. the audience's
+        import render_real_compare
+        cam.setWorldTransform(render_real_compare.look_at(view[0], view[1]))
+        cam.parm("focal").set(AUDIENCE_FOCAL)
+        cam.parm("resx").set(w)
+        cam.parm("resy").set(h)
+        viewport_look(cam)
+        return cam
+    # the user's viewport camera, cropped square onto the stage
     cam.setWorldTransform(hou.Matrix4(CAM_XFORM))
     cam.parm("focal").set(CAM_FOCAL)
     cam.parm("aperture").set(CAM_APERTURE)
@@ -319,6 +337,27 @@ def viewport_look(cam):
     grad.setRenderFlag(True)
 
 
+AUDIENCE_FOCAL = 22.0
+
+
+def audience_view(show_cfg, hub="greet"):
+    """(eye, target): from the audience zone's side nearest the robot, at eye
+    height, looking at the hub's tool tip -- what a guest sees of a gesture."""
+    import json
+    import gestures as G
+    import show
+    cfg = json.load(open(show_cfg))
+    a = cfg["zones"]["audience"]
+    rig = G.Rig()
+    q = show.resolve_hubs(cfg, rig)[hub]
+    tcp = rig.tool(q)[1]
+    c = a["center"]
+    toward = [tcp[0] - c[0], tcp[1] - c[1]]
+    L = math.hypot(*toward)
+    eye = [c[0] + toward[0] / L * a["size"][1] * 0.45, c[1] + toward[1] / L * a["size"][1] * 0.45, 1.6]
+    return eye, [tcp[0], tcp[1], tcp[2] - 0.25]
+
+
 def opengl_settings(rop):
     """The viewport's look on an OpenGL ROP (or a ROP OpenGL TOP)."""
     for n, v in (("aamode", 3), ("hqlighting", 1), ("shadows", 0), ("ambocclusion", 0), ("usehdr", 1)):
@@ -334,7 +373,8 @@ def render_frames(clip_path, frames_dir, w=TILE[0], h=TILE[1], room=ROOM):
     hou.hipFile.load(ROOT + "/scenes/FR20_cell.hiplc", suppress_save_prompt=True, ignore_load_warnings=True)
     for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
         hou.hda.installFile(ROOT + "/otls/" + f, force_use_assets=True)
-    cam = setup_scene(w, h, room)
+    view = audience_view(ROOT + "/shows/party.json") if os.environ.get("REVIEW_VIEW") == "audience" else None
+    cam = setup_scene(w, h, room, view)
     hou.node("/obj/CELL_CTRL").parm("clip").set(clip_path)
     n = nframes(json.load(open(clip_path)))
     rop = hou.node("/out").createNode("opengl")

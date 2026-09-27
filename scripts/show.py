@@ -233,9 +233,76 @@ def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print):
                   "intent": [b["action"] for b in spec["bars"]], "bpm": spec["bpm"],
                   "clearance_m": rep["min_env_clearance_m"]}
         seg_name = "%s_%02d_%s" % (name, len(got), "-".join(labels["intent"]))
-        got.append(Segment(seg_name, "idle", t, q, name, name, labels))
+        seg = Segment(seg_name, "idle", t, q, name, name, labels)
+        seg.clip = dict(c, id=seg_name)
+        got.append(seg)
     log("  %s: %d clips from %d tries" % (name, len(got), tries))
     return got, dropped
+
+
+def gesture_clips(name, hub, h, cfg, env, rig, rng, log=print):
+    """Gesture clips for a hub (gestures.py): the families in turn, towards
+    the show's zones; kept when they fit the length and clear the room."""
+    import gestures as G
+    lib = cfg["library"]
+    lo, hi = lib["duration_s"]
+    fams = h.get("families") or list(G.FAMILIES)
+    n = h.get("clips", 0)
+    got, dropped, tries = [], [], 0
+    per = lib.get("tries", 6)
+    for slot in range(n * 2):                                  # the families in turn, a slot each
+        if len(got) >= n:
+            break
+        fam = fams[slot % len(fams)]
+        for _ in range(per):
+            tries += 1
+            seg = _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, len(got), dropped)
+            if seg:
+                got.append(seg)
+                break
+    log("  %s: %d gestures from %d tries" % (name, len(got), tries))
+    return got, dropped
+
+
+def _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, index, dropped):
+    import gestures as G
+    if True:
+        bpm = rng.randint(*lib["bpm"])
+        k = rng.uniform(*lib.get("intensity", (0.4, 0.9)))
+        clip = G.make(rig, hub, fam, cfg["zones"], rng, bpm=bpm, intensity=k, env=env)
+        if clip is None:
+            dropped.append("%s: no clean draw" % fam)
+            return None
+        d = clip["points"][-1]["t"]
+        if not lo <= d <= hi:
+            dropped.append("%s %.1f s, outside %g-%g s" % (fam, d, lo, hi))
+            return None
+        m = (clip.get("labels") or {}).get("measured") or {}
+        t, q = [p["t"] for p in clip["points"]], [p["q"] for p in clip["points"]]
+        labels = {"action": m.get("action"), "effort": {x: m.get(x) for x in ("weight", "time", "space", "flow")},
+                  "intent": [fam], "family": fam, "bpm": bpm, "intensity": round(k, 2),
+                  "clearance_m": clip["safety"].get("min_clearance_m"), "wrist_share": round(G.wrist_share(q), 2)}
+        seg_name = "%s_%02d_%s" % (name, index, fam)
+        seg = Segment(seg_name, "idle", t, q, name, name, labels)
+        seg.clip = dict(clip, id=seg_name)
+        return seg
+
+
+def resolve_hubs(cfg, rig):
+    """{name: joints}: a hub's q as given, or solved from where the tool tip
+    is ("tcp") and the point it looks at ("look"), nearest "near" (or q)."""
+    import gestures as G
+    out = {}
+    for k, h in cfg["hubs"].items():
+        if h.get("tcp") and h.get("look"):
+            near = h.get("near") or h.get("q") or [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+            q = G.hub_pose(rig, h["tcp"], h["look"], near)
+            if q is None:
+                raise SystemExit("hub %s: no pose puts the tool at %s looking at %s" % (k, h["tcp"], h["look"]))
+            out[k] = [round(x, 4) for x in q]
+        else:
+            out[k] = list(h["q"])
+    return out
 
 
 def build(cfg_path, log=print):
@@ -250,7 +317,9 @@ def build(cfg_path, log=print):
     env = C.load_env(os.path.join(ROOT, cfg["env"]))
     idle_env = show_env(env, cfg, cfg["margins"]["idle_canvas_m"])
     scan_env = show_env(env, cfg, cfg["margins"]["scan_canvas_m"])
-    hubs = {k: list(v["q"]) for k, v in cfg["hubs"].items()}
+    import gestures as G
+    rig = G.Rig()
+    hubs = resolve_hubs(cfg, rig)
     menv = safe_move.move_env(idle_env)
     for k, q in hubs.items():
         hit = safe_move.blocked(model, menv, q)
@@ -262,7 +331,10 @@ def build(cfg_path, log=print):
     segs, dropped = [], {}
     log("idle clips (%g-%g s, bars %s):" % (lib["duration_s"][0], lib["duration_s"][1], lib["bars"]))
     for k, h in cfg["hubs"].items():
-        got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log)
+        if h.get("generator", "choreo") == "gestures":
+            got, why = gesture_clips(k, hubs[k], h, cfg, idle_env, rig, rng, log)
+        else:
+            got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log)
         segs += got
         dropped[k] = why
         if h.get("clips", 0) and not got:
@@ -342,6 +414,11 @@ def write_preview(graph, out_dir):
             os.remove(os.path.join(out_dir, f))
     rows = []
     for s in graph.segments:
+        if getattr(s, "clip", None):                          # the generator's own clip: style, labels, safety
+            M.save(s.clip, os.path.join(out_dir, s.name + ".json"))
+            rows.append({"name": s.name, "kind": s.kind, "start": s.start, "end": s.end,
+                         "duration_s": round(s.duration, 2), "labels": s.labels})
+            continue
         clip = {"schema": M.SCHEMA, "id": s.name, "robot": "fr20", "joint_names": ["j%d" % i for i in range(1, 7)],
                 "units": {"angle": "deg", "time": "s", "length": "m"},
                 "points": [{"t": t, "q": q} for t, q in zip(s.t, s.q)], "tcp": M._tcp_path("fr20", s.q),
@@ -351,7 +428,8 @@ def write_preview(graph, out_dir):
         rows.append({"name": s.name, "kind": s.kind, "start": s.start, "end": s.end,
                      "duration_s": round(s.duration, 2), "labels": s.labels})
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
-        json.dump({"hubs": graph.hubs, "segments": rows}, f, indent=1)
+        json.dump({"hubs": graph.hubs, "segments": rows,
+                   "clips": [{"file": r["name"] + ".json", "id": r["name"], "ok": True} for r in rows]}, f, indent=1)
 
 
 # --------------------------------------------------------------------------

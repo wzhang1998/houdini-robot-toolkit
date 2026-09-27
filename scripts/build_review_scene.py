@@ -104,7 +104,10 @@ def build():
     for f in ("sop_wenyi.robot_anim_csv_io.1.0.hdalc", "sop_wenyi.robot_arm.1.0.hdalc"):
         hou.hda.installFile(ROOT + "/otls/" + f, force_use_assets=True)
     hou.hipFile.setName(SCENE)
-    cam = R.setup_scene()
+    view = None
+    if "--view" in sys.argv and _values(sys.argv, "--view")[0] == "audience":
+        view = R.audience_view(ROOT + "/shows/party.json")      # gestures: what a guest sees
+    cam = R.setup_scene(view=view)
     hou.node("/obj/CELL_CTRL").parm("clip").set("`@clip`")      # backticks: expanded per work item in the render job
     sub = {"scripts": ROOT + "/scripts"}
 

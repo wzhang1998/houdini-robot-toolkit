@@ -285,7 +285,9 @@ def hub_pose(rig, tcp, look, near, rolls=range(-180, 180, 10)):
         q = rig.solve(tcp, d, r, near)
         if q is None or abs(math.sin(math.radians(q[4]))) < 0.3:
             continue
-        cost = max(abs(a - b) for a, b in zip(q, near))
+        # a hub the wrist can move from: far from its singularity first
+        # (near it the wrist spins for small changes of aim), then nearest
+        cost = (abs(math.sin(math.radians(q[4]))) < 0.7, max(abs(a - b) for a, b in zip(q, near)))
         if best is None or cost < best[0]:
             best = (cost, q)
     return best and best[1]
