@@ -198,7 +198,121 @@ the user's OK):
 5. Dances: motif / variation operators, Laban Shape, BPM grid; the label
    recalibration at 300/600.
 6. Retargeting: AIST++ tests, a PCA mode; later OAK-D + motion matching.
-**Status**: Not Started (survey done)
+**Status**: Not Started (survey done). Ruckig and pyribs approved by the
+user (2026-09-27).
+
+## Stage 6: Interactive show on the real FR20 (2026-09-27, PROPOSED -- to discuss)
+**Goal**: A demo for the studio: on the real FR20, the arm plays through
+the clip library by itself; TouchDesigner can trigger named sequences and
+a timetable schedules them; every motion is checked in advance and joins
+the next without a jump. LED strip and paper are decided later (Mon/Tue):
+the scan stays a placeholder until then.
+**Already there** (commit 804c2dc): `scripts/show.py` -- hub motion graph,
+Runner state machine (IDLE / TO_SCAN / SCAN / FROM_SCAN / PAUSED / FAULT),
+Selector (no repeat, mood, energy), OSC bridge, dry run (20 min: 178 clips,
+no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
+(written, not run: the installed Isaac 5.0 RC does not start on driver
+610.47).
+
+### 6.1 Library v2: hubs and short clips (~1 day)
+- 2-3 hub poses inside the controller's work area, facing the audience. A
+  proposal to discuss: `rest` (low, centred, calm), `show` (high, towards
+  the audience), `scan_ready` (next to the paper, once it is placed).
+- Short idle clips (6-10 s) generated for this stage, hub to hub (choreo.py
+  phrases that start and end at a given hub instead of HOME). Enough for
+  variety: ~15 per hub, a few moves between hubs.
+- Label recalibration at the 300/600 limits (motion_labels CAL), so mood
+  selection means what it says.
+- **Success**: every clip passes the room + work-area + canvas checks.
+  Longest idle clip <= 10 s, so a trigger waits <= 10 s. A 30 min dry run
+  uses every hub, has no joint jump, and repeats no clip within 8.
+- **Tests**: `choreo.py` (start/end at a hub, at rest), `show.py
+  --self-test` (multi-hub graph, route to a sequence's first hub), dry run.
+
+### 6.2 Show control: sequences, timetable, status (~0.5 day)
+- **Named sequences** in the show config, e.g. `greet` (show hub, 2 lively
+  clips), `showcase` (a fixed playlist), later `scan`. The Runner routes to
+  the sequence's hub at the end of the running clip, plays it, and returns
+  to idling.
+- **Timetable** (local time): e.g. `showcase` every hour on the hour; mood /
+  energy by time of night. A trigger queued during a sequence waits
+  (queue length 1 per name).
+- **Status out** (OSC): state, clip, next clip, sequence, seconds to the
+  next scheduled item, scan progress, a heartbeat.
+- **Success**: in a dry run with a scripted timetable and triggers, every
+  sequence starts within one clip of its trigger / its time; the event log
+  matches the script.
+- **Tests**: self-tests for queueing, the timetable, routing between hubs.
+
+### 6.3 Streaming backend: the Runner on SimMachine and the FR20 (~1 day)
+- One continuous ServoJ stream at 125 Hz driven by `Runner.step()`, instead
+  of one CSV per run. It reuses fairino_player: absolute deadlines, a
+  separate feedback connection, and conditioning. Every segment is checked
+  at build time and meets the next at rest.
+- Start: MoveJ to the first hub through `safe_move`, confirmed on hardware.
+- Guards:
+  - poll controller errors, and on an error stop the stream and FAULT;
+  - check the joint step before sending;
+  - a software STOP (StopMotion + ServoMoveEnd);
+  - a speed scale (0.3 first) applied to the whole show;
+  - an operator key or OSC `/robot/stop`.
+- Log: commanded vs actual per tick, events, into the results format.
+- **Success**: 30 min on SimMachine with triggers from TD, 0 controller
+  errors, 0 skips, tracking like the single-clip runs. Then on the FR20:
+  10 min at 0.3, then 0.6, stop / resume / fault drill.
+- **Tests**: player self-tests extended (segment joins in the stream, stop
+  mid-clip, fault handling); SimMachine run.
+
+### 6.4 TouchDesigner control surface (~0.5 day)
+- The OSC spec (docs/show_pipeline.md) as the contract.
+- A TD network built by a script run in TD's textport (TD files are binary):
+  - OSC Out: trigger buttons per sequence, pause / resume / stop, mood menu,
+    energy slider;
+  - OSC In: state, clip, next, countdown, scan progress on a panel.
+  - Step-by-step instructions as a fallback.
+- **Success**: every button changes the Runner as expected in the dry run
+  and on SimMachine; the TD panel shows state within 0.1 s.
+
+### 6.5 Real-robot demo (studio day)
+- Checklist (docs/hardware_test_plan.md, new section):
+  - work area clear, E-stop in hand;
+  - pull; wiggle; the first hub through a checked move;
+  - show at 0.3, then 0.6; TD triggers; a timetable item;
+  - stop / resume / fault drill.
+- Film it: landscape, fixed camera, TD panel in shot if possible. Log it to
+  docs/results.md.
+- **Success**: 15+ min show on the real arm, triggered and scheduled from
+  TD, no controller error.
+
+### 6.6 In parallel: Isaac Sim 6.0 twin (~0.5 day after the user installs it)
+- Run `scripts/isaac/run_show.py` (headless test, then the window). Add the
+  multi-hub graph and the TD OSC link, so the same TD panel drives the twin.
+- **Success**: a 10 min headless run with a report (tracking, contacts,
+  waits), and a GUI session driven from TD.
+
+### 6.7 After (as decided)
+- LED strip as a tool (URDF link, controller tool load, collision
+  capsule) and the real constant-speed scan with `/robot/scan`.
+- OAK-D people presence in TD -> trigger `greet` / set energy / pause when
+  someone is near (an experience feature; safety stays with the controller
+  and the barrier).
+- Houdini-native library browser; Lua / JointTrajectory / USD exports;
+  Ruckig early exit from a clip.
+- **Done 2026-09-27: hub and zone editor in the rig scene**
+  (`scripts/show_rig.py`, installed live into FR20_rig.hiplc through the
+  Houdini Agent bridge):
+  - zones are draggable boxes; hubs are tool + look nulls, solved live and
+    drawn as ghost arms (red when unusable);
+  - operating range and library parameters on the panel; the config is
+    written back with a check;
+  - authored clips go from the robot_arm export to the library;
+  - `python scripts/show_rig.py --self-test` passes (19 checks), and
+    hython install, write and drag tests pass.
+
+**Order**: 6.1 -> 6.2 -> 6.3 -> 6.4 -> 6.5; 6.6 whenever Isaac 6.0 is in.
+**Open decisions**: hub places (6.1); which sequences the demo shows (6.2);
+the demo's speed cap; the studio day.
+**Status**: Proposed, waiting for the user's go.
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard

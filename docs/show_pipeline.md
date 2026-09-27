@@ -59,6 +59,55 @@ Dry run, 20 minutes (2026-09-27):
 - Largest joint step per 8 ms tick: 0.96 deg (the limit is 1.44).
 - Trigger to scan: 7.5 s mean, 16.3 s max.
 
+## Hubs, zones, stage and range
+
+Four spatial ideas, each with one job:
+
+| Term | What it is | What it does |
+|---|---|---|
+| **Stage** | The work zone box (the env's `stage`, or the show's override) | A hard limit. Every clip and move keeps the TCP inside it (inset 3 cm). |
+| **Zone** | A named box: `audience`, `greet`, `idle`, ... | Soft design space. A gesture hub's clips perform inside its zone, and look targets are picked in `audience`. A zone does not reject motion. |
+| **Hub** | A rest pose that clips start and end at | The graph's node. It is either **joints** (`q`), or **tool + look**: where the tool tip is and what it looks at, with the pose solved near a seed. |
+| **Range** | J1 sector, TCP height band, speed fraction | A show-wide limit. A clip outside the J1 sector or the height band is dropped. Clips are made at `speed` times the robot's limits. |
+
+So a hub lives **inside** the stage (checked), usually **inside** its zone
+(designed), and the range narrows both for the whole show.
+
+## Editing the show in the rig scene
+
+`scripts/show_rig.py` puts the show next to the robot_arm asset in
+`scenes/FR20_rig.hiplc`, as objects you drag in the viewport. Install it
+into the open scene from the Python Shell or the Houdini Agent bridge:
+
+```python
+import show_rig; show_rig.install()          # shows/party.json
+```
+
+- **`zone_<name>`** is a box. Its Translate is the centre, Rotate Y the yaw,
+  and Scale the size. `zone_stage` is used when SHOW's "Override the Env's
+  Stage" is on.
+- **`hub_<name>`** is a null at the tool tip, with **`look_<name>`** as its
+  look target. Drag either one and `show_viz` re-solves the pose. It draws
+  the pose as a ghost arm in the hub's colour. The arm turns red when the
+  pose cannot be reached, is not clear of the room, or is outside the range.
+  "Keep the Solved Pose as Seed" keeps later drags in the same elbow / wrist
+  configuration. A joints hub's null is locked at its pose.
+- **`SHOW`** holds the controls:
+  - Load and Write the config.
+  - Start hub.
+  - Add Hub and Add Zone.
+  - The operating range and the library (clip length, bars, BPM,
+    intensity, seed, clips per hub visit).
+  - **Add Clip to the Library**: the robot_arm's exported joint CSV
+    becomes an authored clip at a hub.
+  - Check, Build Show and Dry Run, with a report.
+- **Write refuses** a config that names something missing, such as a
+  sequence at a deleted hub, and says why. Keys the scene does not show
+  are kept, for example OSC, sequences, canvas and scan.
+
+The older `scenes/FR20_show.hiplc` (`show_sop.py`) edits hubs as joint
+angles only. The rig scene supersedes it for zones and tool + look hubs.
+
 ## Python or Houdini
 
 The rule: **what must run without Houdini, or be unit-tested, is Python.
