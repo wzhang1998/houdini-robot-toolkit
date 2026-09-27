@@ -1,24 +1,24 @@
-# 真机测试清单（FR20）— 2026-09-25 版
+# Real-robot test checklist (FR20) — 2026-09-25 version
 
-目标：
-1. 确认整条链路在真机上可靠：Houdini → Pre-Flight → CSV → 播放器 → FR20。
-2. 用实测数据替换软件里的三个假设：房间、加速度上限、URDF 和控制器运动学是否一致。
-3. 记录控制器现有的安全设置，为下一步“控制器安全设置当运行时防线”做准备（见 `docs/standard_tools_eval.md` 第 3 节）。
+Goals:
+1. Confirm the whole chain is reliable on the real robot: Houdini → Pre-Flight → CSV → player → FR20.
+2. Replace three assumptions in the software with measured data: the room, the acceleration limit, and whether the URDF and controller kinematics match.
+3. Record the controller's current safety settings, to prepare for the next step, "controller safety settings as the runtime line of defense" (see `docs/standard_tools_eval.md` section 3).
 
-**每一步会动的，先确认三件事：工作区清空、手在急停上、知道 WebUI 的全局速度。**
-表里标 🟢 的不动，🟡 小幅动，🔴 大幅动。
-所有命令都在仓库根目录运行，`<IP>` 换成真机 IP。
+**Before every step that moves, confirm three things: the workspace is clear, hand on the E-stop, and you know the WebUI global speed.**
+In the table, 🟢 does not move, 🟡 small moves, 🔴 large moves.
+All commands run from the repo root; replace `<IP>` with the real robot's IP.
 
-**拍视频（作品集素材）**：每次在真机上**第一次**跑一个新东西（第一个舞蹈片段、HOME、wiggle、被碰撞检查拒绝的片段），开跑前先架好手机：
-- 横拍 10–30 s，固定机位，整条手臂和底座都在画面里，最好能看到屏幕或 Houdini；
-- 再从同一视角录一段 Houdini 视口，方便以后并排剪；
-- 文件名写日期、片段、速度，如 `20260925_d17_speed0.6.mp4`，记到 `docs/results.md` 的 Media index。
+**Film video (portfolio material)**: every time you run something new on the real robot **for the first time** (the first dance clip, HOME, wiggle, a clip refused by the collision check), set up the phone before you start:
+- Landscape, 10-30 s, fixed camera position, the whole arm and base in frame, ideally with the screen or Houdini visible too;
+- Then record a clip of the Houdini viewport from the same angle, so it can be edited side by side later;
+- Name the file with date, clip, and speed, e.g. `20260925_d17_speed0.6.mp4`, and log it in the Media index of `docs/results.md`.
 
 ---
 
-## 0. 准备（不动）
+## 0. Preparation (does not move)
 
-1. 跑自测，每条最后都应输出 OK：
+1. Run the self-tests; each one should print OK at the end:
 
 ```bash
 python scripts/fairino_player.py --self-test
@@ -28,164 +28,164 @@ python scripts/fairino_player.py --self-test
 python scripts/collision.py
 ```
 
-2. **改播放设置。** 你本地的 `playback.toml` 现在是 `speed = 1.0`、`acc_limit = 300`，这是给 SimMachine 用的，真机不要用。打开 `python scripts/play_ui.py`，在界面里改成：
+2. **Change the playback settings.** Your local `playback.toml` currently has `speed = 1.0` and `acc_limit = 300` — that's for SimMachine; do not use it on the real robot. Open `python scripts/play_ui.py` and change it in the UI to:
 
-| 项 | 真机值 | 原因 |
+| Item | Hardware value | Reason |
 |---|---|---|
-| Target | Hardware | 界面会显示红字警告 |
-| Controller IP | 真机 IP | |
-| Speed (0-1) | **0.3** | 先慢速；真机上每一步动作前界面都会先问你 |
-| Acc cap | **0** | 0 = 用 profile 的实测值（J1–J3 300、J4–J6 600），和 Houdini 的 Retime、Pre-Flight 一致 |
-| MoveJ % | **10** | 去起点、回 HOME 用 |
-| Wiggle | J1, 3°, 4 s, 1 次 | J6 转 5° 看不出来 |
+| Target | Hardware | the UI shows a red warning |
+| Controller IP | real robot IP | |
+| Speed (0-1) | **0.3** | slow first; on hardware the UI asks you before every move |
+| Acc cap | **0** | 0 = use the profile's measured values (J1–J3 300, J4–J6 600), matching Houdini's Retime and Pre-Flight |
+| MoveJ % | **10** | for going to start and returning to HOME |
+| Wiggle | J1, 3°, 4 s, 1 time | J6 turning 5° isn't visible |
 
-3. **WebUI 安全设置拍照记录**（不要改，只记）：
-   - 软限位
-   - 碰撞检测等级和碰撞策略
-   - 速度限制
-   - 安全墙、干涉区
-   - 奇异点保护
-   - 如果有“安全参数校验和”，也记下来
+3. **Photograph the WebUI safety settings for the record** (do not change them, just record):
+   - Soft limits
+   - Collision detection level and collision strategy
+   - Speed limits
+   - Safety walls, interference zones
+   - Singularity protection
+   - If there is a "safety parameter checksum," record that too
 
-   以后播放器会读回这些设置核对，对不上就拒绝播放。
+   Later the player will read these settings back to check them; if they don't match, it refuses to play.
 
-## 1. 连接检查 🟢
+## 1. Connection check 🟢
 
-play_ui 按 **1 Check**，或者：
+In play_ui press **1 Check**, or:
 
 ```bash
 python scripts/fairino_player.py --check --hardware --ip <IP>
 ```
 
-看四项：型号、错误码为 0、当前关节角、**FK 与 URDF 的差**（控制器 TCP 和我们 URDF 算出的 TCP 之差）。
-SimMachine 上这个差是 0.004 mm，但 SimMachine 实际是 FR5 的模型。**真机的数才是第一次验证 FR20 的 URDF。** 差超过 1 mm 先停，把输出发给我。
+Check four things: model, error code is 0, current joint angles, **the FK vs URDF difference** (the difference between the controller's TCP and the TCP computed from our URDF).
+On SimMachine this difference is 0.004 mm, but SimMachine is actually modeled on an FR5. **The real-robot number is the first real validation of the FR20 URDF.** If the difference is over 1 mm, stop and send me the output.
 
-## 2. 回 HOME 🔴（MoveJ）
+## 2. Return to HOME 🔴 (MoveJ)
 
-HOME = `[0, -90, 90, -90, -90, 0]`：大臂朝上、小臂朝前、工具朝下，TCP 在底座前约 0.85 m、高约 1.1 m。
-**不要回全零**：全零时 FR20 平躺，TCP 离底板只有约 8 cm。
-播放器这边的路径检查已暂停，所以 MoveJ % 用 10，眼睛盯着。
+HOME = `[0, -90, 90, -90, -90, 0]`: upper arm up, forearm forward, tool down, TCP about 0.85 m in front of the base and about 1.1 m high.
+**Do not return to all-zero**: at all-zero the FR20 lies flat, with the TCP only about 8 cm from the base plate.
+The player's path check is paused for this, so use MoveJ % 10 and watch closely.
 
-play_ui 按 **6 Go HOME**。到位后再按一次 **1 Check**，记下 HOME 位置的 FK 差。
+In play_ui press **6 Go HOME**. Once it's in position, press **1 Check** again and record the FK difference at the HOME position.
 
-**FK 交叉验证（建议做）**：用拖动示教把手臂摆到 3 个明显不同的姿态，每个姿态按一次 Check，记下 FK 差。
-- 3 个姿态：伸远、贴近底座、手腕转大角度。
-- 如果差随姿态变化，说明 URDF 连杆长度和控制器不一致。
+**FK cross-check (recommended)**: use drag-teach to put the arm into 3 clearly different poses, press Check once per pose, and record the FK difference.
+- 3 poses: reaching far out, close to the base, wrist rotated to a large angle.
+- If the difference changes with pose, it means the URDF link lengths don't match the controller.
 
 ## 3. Wiggle 🟡
 
-play_ui 按 **4 Wiggle**（J1 3°），或者：
+In play_ui press **4 Wiggle** (J1 3°), or:
 
 ```bash
 python scripts/fairino_player.py --hardware --ip <IP> --wiggle 1 3 4 1
 ```
 
-整条手臂会左右轻摆。日志会写 `wiggle: J1 moved 3.00 deg`。这一步验证 ServoJ 流式链路通不通：之前 J6 5° 在真机上看不出动。
+The whole arm will sway gently side to side. The log will show `wiggle: J1 moved 3.00 deg`. This step checks whether the ServoJ streaming path works: earlier, J6 at 5° wasn't visible moving on the real robot.
 
-## 4. 测量房间 🟡（拖动示教）
+## 4. Measure the room 🟡 (drag-teach)
 
-`envs/volvox_lab.json` 现在是照片估计的，朝向也是假设的：假设机械臂正前方（J1=0 时手臂伸出的方向）朝电视墙。Houdini 里 Pre-Flight 的 Cell 检查、Show Cell 显示的房间，都基于这个估计。
+`envs/volvox_lab.json` is currently estimated from photos, and the orientation is also assumed: it assumes the arm's straight-ahead direction (the direction the arm extends when J1=0) faces the TV wall. The Cell check in Houdini's Pre-Flight and the room shown by Show Cell are both based on this estimate.
 
-1. WebUI 打开拖动示教。
-2. 打开探点窗口（只读，不会让机械臂动）：
+1. Open drag-teach in the WebUI.
+2. Open the point-probing window (read-only, will not move the arm):
 
 ```bash
 python scripts/probe_ui.py
 ```
 
-   选物体（下拉里有常用的），把工具尖端贴到点上，按 **Record point** 或回车。
-   - 表格会列出每个点，以及“URDF vs controller mm”：我们 URDF 算的 TCP 和控制器 TCP 差多少。这就是 FK 交叉验证，每个点都顺带做了。
-   - 下面一行显示每个物体已有几个点、还需要几个。
-   - 命令行版本也还在：`python scripts/probe_env.py --ip <IP> --tool-len 0.0`，输入名字回车，`u` 撤销，`q` 退出。
+   Select the object (common ones are in the dropdown), touch the tool tip to the point, and press **Record point** or Enter.
+   - The table lists each point along with "URDF vs controller mm": how much the TCP computed from our URDF differs from the controller's TCP. This is the FK cross-check, done incidentally at every point.
+   - The line below shows how many points each object already has and how many more are needed.
+   - The command-line version is still there too: `python scripts/probe_env.py --ip <IP> --tool-len 0.0`; type the name and press Enter, `u` to undo, `q` to quit.
 
-| 名字 | 点 |
+| Name | Points |
 |---|---|
-| `floor:level` | 地面 3 个点，散开；法兰面尽量放平（倾斜时边缘先着地，读数偏高） |
-| `wall_tv:wall` | 电视墙，沿墙水平方向散开 2–3 个点（按竖直墙拟合） |
-| `partition_left:wall` | 左侧隔断，同上 |
-| `control_cart:box` | 红色小车台面 4 个角 |
-| `operator:cylinder` | 操作员站位的地面，绕一圈 4–5 个点 |
-| `stage:point` | 表演区域的几个角，仅作参考 |
+| `floor:level` | 3 floor points, spread out; keep the flange face as level as possible (if tilted, the edge touches first and the reading is high) |
+| `wall_tv:wall` | TV wall, 2–3 points spread out horizontally along the wall (fit as a vertical wall) |
+| `partition_left:wall` | Left-side partition, same as above |
+| `control_cart:box` | 4 corners of the red cart's tabletop |
+| `operator:cylinder` | Floor at the operator's standing spot, 4–5 points around a circle |
+| `stage:point` | A few corners of the performance area, reference only |
 
-装了工具就用 `--tool-len` 填工具长度（米）。更准的做法是先用控制器的工具标定（4 点或 6 点）量出 TCP，再把长度填进来。
+If a tool is attached, fill in the tool length (in meters) with `--tool-len`. For a more accurate result, first measure the TCP using the controller's tool calibration (4-point or 6-point), then fill in that length.
 
-3. 在窗口里先按 **Preview fit** 看会改什么，再按 **Write env** 写入（旧文件存成 `.bak`，会列出每个物体移动了多少）。命令行版本：
+3. In the window, press **Preview fit** first to see what will change, then press **Write env** to write it (the old file is saved as `.bak`, and it lists how much each object moved). Command-line version:
 
 ```bash
 python scripts/env_from_points.py envs/volvox_lab_points.json
 ```
 
-4. 在 Houdini 的 robot_arm 上打开 **Display > Cell**，看房间和实际是否对得上。
-   - 区域和高墙现在有实线轮廓，不用选中节点也能看到。
-   - 如果朝向反了（电视墙跑到机械臂背后），告诉我，我来改坐标系。
+4. In Houdini, open **Display > Cell** on robot_arm and check whether the room matches reality.
+   - Zones and tall walls now have solid outlines, visible without selecting the node.
+   - If the orientation is flipped (the TV wall ends up behind the arm), tell me and I'll fix the coordinate frame.
 
-## 5. 测加速度上限 🟡
+## 5. Measure the acceleration limit 🟡
 
-现在所有规划都用 150 deg/s²，这是手册里 20–25 kg 扩展负载的值。空载时大概率能更高。这个数决定动作能有多“快”：
-- 在 150 下，大幅动作不可能快，“突然”的动作只能是 7–10° 的小刺；
-- 在 450 下，同样的 punch 段落，TCP 速度从 0.6 m/s 提到 1.3 m/s。
+All planning currently uses 150 deg/s², which is the manual's value for a 20–25 kg extended payload. Unloaded, it can very likely go higher. This number determines how "fast" a move can be:
+- At 150, a large move cannot be fast; a "sudden" motion can only be a small 7–10° jab;
+- At 450, the same punch segment raises TCP speed from 0.6 m/s to 1.3 m/s.
 
-**先确认底座固定**（法奥手册：6 颗 M10、强度 ≥ 8.8 级螺栓，扭矩 ≥ 45 N·m，装在刚性、无共振的底座上，FR20 建议直接固定在地面）。大关节测试会把反作用力传到底板上。
+**First confirm the base is fixed** (Fairino manual: 6x M10 bolts, grade ≥ 8.8, torque ≥ 45 N·m, mounted on a rigid, resonance-free base; for the FR20, fixing it directly to the floor is recommended). Testing the large joints transmits reaction force into the base plate.
 
-用窗口测（只动一个关节，出发前会检查关节限位和房间；真机上每一级都会先问你）：
+Test with the window (moves only one joint; it checks joint limits and the room before starting; on hardware it asks you before every level):
 
 ```bash
 python scripts/accel_ui.py
 ```
 
-先测 J6、J5、J4（3°，手腕和姿态基本无关），再在 HOME 测 J3、J2、J1（2°，结果只适用于和测试姿态相近的姿态）。先按 **1 Check** 看预检，再按 **2 Run levels**。结果存在 `tests/accel/`。命令行版本：
+First test J6, J5, J4 (3°, the wrist is mostly pose-independent), then test J3, J2, J1 at HOME (2°, results only apply to poses close to the test pose). Press **1 Check** first to see the pre-check, then press **2 Run levels**. Results are stored in `tests/accel/`. Command-line version:
 
 ```bash
 python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report accel_j6.json
 ```
 
-记下每个关节 “clean up to” 的值。有抖动、异响或报错就停，那一级不算。**这些数先别改进 profile，发给我。**
+Record each joint's "clean up to" value. If there's shaking, unusual noise, or an error, stop — that level doesn't count. **Don't put these numbers into the profile yet — send them to me.**
 
-## 6. 播放片段 🔴
+## 6. Play clips 🔴
 
-每个片段按 0.3 → 0.6 → 1.0 的速度播放，都勾上 Record 和 Report。
+Play each clip at 0.3 → 0.6 → 1.0 speed, with Record and Report both checked.
 
-**每个片段的流程**：
-1. 在 play_ui 里选好 CSV。
-2. **2 Dry run**：`time_scale` 应该是 1.0，大于 1 表示播放器会放慢。
-3. **3 Go to start**。
-4. **5 Play**。
-5. 播完按 **6 Go HOME**。
+**Procedure for each clip**:
+1. Select the CSV in play_ui.
+2. **2 Dry run**: `time_scale` should be 1.0; greater than 1 means the player will slow down.
+3. **3 Go to start**.
+4. **5 Play**.
+5. After playback, press **6 Go HOME**.
 
-| 顺序 | 片段 | 内容 |
+| Order | Clip | Content |
 |---|---|---|
-| a | `tests/csv/fr20_test.csv` | 你的曲线，18 s，之前在 0.3 真机跑过 |
-| b | `tests/csv/dance_d01_punch-punch.csv` | 单一动作：punch，14 s |
-| c | `tests/csv/dance_d17_punch-float-punch.csv` | 对比段落 ABA，16 s |
-| d | `tests/csv/dance_d32_float-slash-press-float.csv` | 四小节混合，38 s |
-| e | 当前 Houdini 场景的曲线，新导出 | 验证今天修的 Retime |
+| a | `tests/csv/fr20_test.csv` | Your curve, 18 s, previously run on the real robot at 0.3 |
+| b | `tests/csv/dance_d01_punch-punch.csv` | Single move: punch, 14 s |
+| c | `tests/csv/dance_d17_punch-float-punch.csv` | Contrast passage ABA, 16 s |
+| d | `tests/csv/dance_d32_float-slash-press-float.csv` | Four-bar mix, 38 s |
+| e | Curve from the current Houdini scene, newly exported | Verify today's Retime fix |
 
-四个 CSV 我今天都 dry-run 过，在 1.0 下 `time_scale` 都是 1.0。
+I dry-ran all four CSVs today; at 1.0, `time_scale` is 1.0 for all of them.
 
-**e 的做法**：在 Houdini 里依次按 Retime → Pre-Flight（Robot playback 应该是 OK）→ Export。然后在 play_ui 里选这个新 CSV，照上面的流程播。
+**How to do e**: In Houdini, press Retime → Pre-Flight (Robot playback should be OK) → Export, in that order. Then select this new CSV in play_ui and play it following the procedure above.
 
-**报告里看三项**：
-- `tracking_after_lag_max_deg`：跟踪误差，越小越好；
-- `controller_error_after`：应该是 0；
-- 有没有出现 `skipped`。
+**Check three things in the report**:
+- `tracking_after_lag_max_deg`: tracking error, smaller is better;
+- `controller_error_after`: should be 0;
+- whether `skipped` shows up.
 
-## 6b. 快速测试舞蹈片段（stage set）🔴
+## 6b. Quick-test dance clips (stage set) 🔴
 
-`tests/csv/stage/` 里有 44 个舞蹈片段（`scripts/stage_set.py` 生成）：
-- 整体绕底座转了 −60°，面向工作区中心，都在这个方向 ±90° 以内；
-- 每个都重新检查过房间，都在工作区里；
-- **起点和终点都是同一个 stage home** `[−60, −90, 90, −90, −90, 0]`，所以片段之间切换不用移动。
+`tests/csv/stage/` has 44 dance clips (generated by `scripts/stage_set.py`):
+- All rotated −60° around the base as a whole, facing the center of the work area, all within ±90° of that direction;
+- Each one has been rechecked against the room, all within the work area;
+- **The start and end point for all of them is the same stage home** `[−60, −90, 90, −90, −90, 0]`, so switching between clips needs no movement.
 
-预览：`geo/review/overview_stage_*.mp4`、`contact_sheet_stage.png`。
+Preview: `geo/review/overview_stage_*.mp4`, `contact_sheet_stage.png`.
 
-**第一次（只做一次）**：
-1. play_ui 选 `tests/csv/stage/_stage_home.csv`，**3 Go to start**，MoveJ 10%。
-2. 如果从别的姿态过来（比如 inside_wall 片段的姿态），直接走会把手肘在竖直状态下翻过去、离天花板只剩 6 cm。播放器现在会自动绕开：先放低上臂再翻手肘，再转过去。窗口里会列出途经点，确认后再执行。第一次看清它怎么走，手放在急停上。
-3. 如果显示 `REFUSED`：说明找不到安全路线，先在 WebApp 里手动点动到接近 stage home 的位置。
+**First time (only once)**:
+1. In play_ui select `tests/csv/stage/_stage_home.csv`, **3 Go to start**, MoveJ 10%.
+2. If coming from another pose (e.g. the inside_wall clip's pose), going straight there would flip the elbow over while vertical, leaving only 6 cm to the ceiling. The player now routes around this automatically: lower the upper arm first, then flip the elbow, then rotate over. The window will list the waypoints; confirm before it executes. The first time, watch closely how it moves, with your hand on the E-stop.
+3. If it shows `REFUSED`: it means no safe route was found; jog it manually in the WebApp to a position close to stage home first.
 
-**之后每个片段**：选 CSV → **2 Dry run** → **5 Play**（起点就是当前位置，不会大幅移动）。速度 0.3 → 0.6 → 1.0。开始前按 `docs/results.md` 的要求拍视频。
+**For every clip after that**: select CSV → **2 Dry run** → **5 Play** (the start point is the current position, no large move). Speed 0.3 → 0.6 → 1.0. Film video before starting, per the requirements in `docs/results.md`.
 
-**所有移动都会检查房间**：Go to start / Go HOME 前，播放器会按 `playback.toml` 的 `robot.env`（默认 `envs/volvox_lab.json`）检查整条 MoveJ 路径，离天花板留 0.30 m，离其他障碍留 0.10 m；不够就绕开，绕不开就拒绝。
+**All moves check the room**: before Go to start / Go HOME, the player checks the whole MoveJ path against `playback.toml`'s `robot.env` (default `envs/volvox_lab.json`), keeping 0.30 m clearance from the ceiling and 0.10 m from other obstacles; if that's not enough it routes around, and if it can't route around it refuses.
 
 ## 6c. The show as one stream (show_stream.py) 🔴
 
@@ -222,36 +222,36 @@ commanded and actual joints as CSV):
 
 Send me the JSON of each run; they go into `docs/results.md`.
 
-## 7. 回看真机轨迹（不动，Houdini）
+## 7. Review the real-robot trajectory (does not move, Houdini)
 
-Record 生成的 `*_actual_*.csv` 可以直接回放：在 robot_arm 的 **Output > Import CSV** 里选它，按 Import。现在锁定的实例也能导入，文件是实时读的。
+The `*_actual_*.csv` produced by Record can be played back directly: select it in robot_arm's **Output > Import CSV** and press Import. Even a locked instance can import now; the file is read live.
 
-看点：
-- 真机轨迹和设计的曲线差在哪里；
-- 哪一段落后最多。
+What to look at:
+- Where the real-robot trajectory differs from the designed curve;
+- Which section lags the most.
 
-## 8. OAK-D（如果带了）🟢
+## 8. OAK-D (if you brought it) 🟢
 
-1. 先告诉我相机型号，以及能否 `pip install depthai`。
-2. 采集脚本我会用 depthai 加 MediaPipe 写，不自己造姿态估计。
-3. 相机到机械臂底座的标定用 OpenCV ChArUco 手眼标定。
-4. 数据格式参考 `tests/keypoints/synthetic_float_punch_float.json`：每帧肩、肘、腕的三维点，单位米。
+1. First tell me the camera model, and whether `pip install depthai` works.
+2. I'll write the capture script with depthai plus MediaPipe; we won't build our own pose estimation.
+3. Camera-to-arm-base calibration uses OpenCV ChArUco hand-eye calibration.
+4. Data format follows `tests/keypoints/synthetic_float_punch_float.json`: 3D points for shoulder, elbow, wrist per frame, in meters.
 
 ---
 
-## 今天不要做
+## Do not do today
 
-- **不要在真机上测“软限位或干涉区能不能在 ServoJ 播放时触发”。** 先在 SimMachine 上测。
-- 不要修改 WebUI 的安全设置，只拍照记录。
-- 不要用 `acc_limit = 300` 或 `speed = 1.0` 作为第一遍。
+- **Do not test on the real robot whether "soft limits or interference zones can trigger during ServoJ playback."** Test that on SimMachine first.
+- Do not change the WebUI safety settings — only photograph them for the record.
+- Do not use `acc_limit = 300` or `speed = 1.0` for the first pass.
 
-## 需要发给我的
+## Send me
 
-| 文件或记录 | 用途 |
+| File or record | Purpose |
 |---|---|
-| 第 0 步的 WebUI 安全设置照片 | 控制器安全设置当运行时防线 |
-| 第 1、2 步 Check 的 FK 差（HOME + 3 个姿态） | URDF 和控制器运动学对照 |
-| `envs/volvox_lab_points.json` | 房间实测点 |
-| `accel_*.json` | 新的加速度上限 |
-| `*_actual_*.csv` 和报告 JSON | 跟踪误差、播放表现 |
-| 任何报错码和当时的操作 | 排查 |
+| Step 0's WebUI safety settings photos | Controller safety settings as the runtime line of defense |
+| Steps 1–2 Check's FK difference (HOME + 3 poses) | URDF vs controller kinematics comparison |
+| `envs/volvox_lab_points.json` | Measured room points |
+| `accel_*.json` | New acceleration limits |
+| `*_actual_*.csv` and report JSON | Tracking error, playback performance |
+| Any error codes and what you were doing at the time | Troubleshooting |
