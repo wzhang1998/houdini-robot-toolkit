@@ -230,6 +230,33 @@ def _cb(code):
             "script_callback_language": hou.scriptLanguage.Python}
 
 
+def _menu_script(fn):
+    """A menu's item generator. Houdini runs a one-line menu script as an
+    expression (no statements, no return): it must be more than one line."""
+    return "import show_rig\nreturn show_rig.%s()" % fn
+
+
+def fix_menus():
+    """Scenes installed before the menu scripts were two lines: rewrite the
+    item generators of SHOW's and the hubs' menus in place (values kept)."""
+    hou = _hou()
+    for node in [_show()] + list(_objs("hub").values()):
+        if node is None:
+            continue
+        g = node.parmTemplateGroup()
+        changed = False
+        for t in g.entriesWithoutFolders():
+            src = getattr(t, "itemGeneratorScript", lambda: "")()
+            if src.startswith("import show_rig; return show_rig."):
+                fn = src.split("show_rig.")[-1].split("(")[0]
+                t.setItemGeneratorScript(_menu_script(fn))
+                t.setItemGeneratorScriptLanguage(hou.scriptLanguage.Python)
+                g.replace(t.name(), t)
+                changed = True
+        if changed:
+            node.setParmTemplateGroup(g)
+
+
 def _objs(kind):
     """{name: node} of the show's objects of a kind ("zone" / "hub" / "look")."""
     out = {}
@@ -279,7 +306,7 @@ def _show_parms(node, config):
     hubs = T.FolderParmTemplate("hubs_f", "Hubs and Zones", folder_type=T.folderType.Simple)
     hubs.addParmTemplate(T.StringParmTemplate(
         "start_hub", "Start Hub", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script="import show_rig; return show_rig.hub_menu()",
+        item_generator_script=_menu_script("hub_menu"),
         item_generator_script_language=T.scriptLanguage.Python))
     hubs.addParmTemplate(T.StringParmTemplate("new_name", "New Name", 1, default_value=("hub2",)))
     hubs.addParmTemplate(T.ButtonParmTemplate("add_hub_b", "Add Hub (Tool + Look)", **_cb("add_hub()")))
@@ -326,7 +353,7 @@ def _show_parms(node, config):
         default_value=('`chs("/obj/fr20/robot_arm/export_csv")`',)))
     auth.addParmTemplate(T.StringParmTemplate(
         "auth_hub", "Play at Hub", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script="import show_rig; return show_rig.hub_menu()",
+        item_generator_script=_menu_script("hub_menu"),
         item_generator_script_language=T.scriptLanguage.Python))
     auth.addParmTemplate(T.StringParmTemplate("auth_id", "Clip Id", 1, default_value=("cat",)))
     auth.addParmTemplate(T.ButtonParmTemplate("auth_b", "Add Clip to the Library", **_cb("add_clip()")))
@@ -343,13 +370,13 @@ def _show_parms(node, config):
     run.addParmTemplate(T.ToggleParmTemplate("show_paths", "Show Built Paths", default_value=True))
     run.addParmTemplate(T.StringParmTemplate(
         "segment", "Play Segment on the Arm", 1, menu_type=T.menuType.Normal,
-        item_generator_script="import show_rig; return show_rig.segment_menu()",
+        item_generator_script=_menu_script("segment_menu"),
         item_generator_script_language=T.scriptLanguage.Python,
         help="A built segment played on the arm (the show scene: CELL_CTRL's clip)",
         **_cb("preview_segment()")))
     run.addParmTemplate(T.StringParmTemplate(
         "pose_hub", "Pose the Arm at Hub", 1, menu_type=T.menuType.Normal,
-        item_generator_script="import show_rig; return show_rig.hub_menu()",
+        item_generator_script=_menu_script("hub_menu"),
         item_generator_script_language=T.scriptLanguage.Python, **_cb("preview_hub()")))
     run.addParmTemplate(T.StringParmTemplate("report", "Report", 1, tags={"editor": "1", "editorlines": "10-30"}))
     g.append(run)
@@ -378,7 +405,7 @@ def _hub_parms(node):
                                          ("Dance phrases (choreo)", "Gestures (tool + look)")))
     f.addParmTemplate(T.StringParmTemplate(
         "hub_zone", "Zone", 1, menu_type=T.menuType.StringReplace,
-        item_generator_script="import show_rig; return show_rig.zone_menu()",
+        item_generator_script=_menu_script("zone_menu"),
         item_generator_script_language=T.scriptLanguage.Python))
     f.addParmTemplate(T.StringParmTemplate("hub_families", "Gesture Families", 1, default_value=(FAMILIES,),
                                            help="Space separated: " + FAMILIES))
@@ -398,7 +425,7 @@ def hub_menu():
 
 
 def zone_menu():
-    return _menu([""] + sorted(_objs("zone")))
+    return ["", "(none)"] + _menu(sorted(_objs("zone")))       # an empty label drops the whole menu
 
 
 def _box(node, rgb):
@@ -513,6 +540,7 @@ def install(config=DEFAULT_CONFIG):
         _show_parms(show, config)
         show.parm("config").set(config)
         _viz_obj()
+        fix_menus()
         load_config(show)
         _tidy_show_scene()
         _layout()
