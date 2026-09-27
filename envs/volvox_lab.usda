@@ -26,59 +26,171 @@ def Xform "Room" (
         }
 
         def Mesh "wall_tv" (
-            prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
             doc = "carved panel wall with the TV; vertical fit, probed 2026-09-25 (rms 6.4 mm)"
         )
         {
             int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
             int[] faceVertexIndices = [0, 1, 2, 3, 7, 6, 5, 4, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
-            rel material:binding = </Room/Looks/tv>
             custom float motionlab:margin_m = 0.05
             custom string motionlab:role = "obstacle"
             point3f[] points = [(-1.2865797, 2.5652566, -0.0048), (-1.9511636, -0.7663398, -0.0048), (-1.9511636, -0.7663398, 2.1552), (-1.2865797, 2.5652566, 2.1552), (-1.365034, 2.5809066, -0.0048), (-2.029618, -0.75068974, -0.0048), (-2.029618, -0.75068974, 2.1552), (-1.365034, 2.5809066, 2.1552)]
             uniform token subdivisionScheme = "none"
+            token visibility = "invisible"
+        }
+
+        def Mesh "wall_tv_face" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 0
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </Room/Looks/wall>
+            custom float motionlab:margin_m = 0.05
+            custom string motionlab:role = "obstacle"
+            point3f[] points = [(-1.2865797, 2.5652566, 2.1552), (-1.9511636, -0.7663398, 2.1552), (-1.9511636, -0.7663398, -0.0048), (-1.2865797, 2.5652566, -0.0048)]
+            custom bool singleSided = 1
+            uniform token subdivisionScheme = "none"
+        }
+
+        def BasisCurves "wall_tv_outline"
+        {
+            int[] curveVertexCounts = [5]
+            point3f[] points = [(-1.2865797, 2.5652566, -0.0048), (-1.9511636, -0.7663398, -0.0048), (-1.9511636, -0.7663398, 2.1552), (-1.2865797, 2.5652566, 2.1552), (-1.2865797, 2.5652566, -0.0048)]
+            color3f[] primvars:displayColor = [(0.7, 0.72, 0.75)] (
+                interpolation = "constant"
+            )
+            uniform token type = "linear"
+            float[] widths = [0.01] (
+                interpolation = "constant"
+            )
         }
 
         def Mesh "partition_left" (
-            prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
             doc = "the wall on the robot's left (the 'glass partition' note was a photo guess); vertical fit, probed 2026-09-25 (rms 2.9 mm)"
         )
         {
             int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
             int[] faceVertexIndices = [0, 1, 2, 3, 7, 6, 5, 4, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
-            rel material:binding = </Room/Looks/wall>
             custom float motionlab:margin_m = 0.05
             custom string motionlab:role = "obstacle"
             point3f[] points = [(-1.9511636, -0.7663398, -0.0048), (1.6057653, -1.4454073, -0.0048), (1.6057653, -1.4454073, 2.1552), (-1.9511636, -0.7663398, 2.1552), (-1.9661658, -0.8449205, -0.0048), (1.5907632, -1.5239881, -0.0048), (1.5907632, -1.5239881, 2.1552), (-1.9661658, -0.8449205, 2.1552)]
             uniform token subdivisionScheme = "none"
+            token visibility = "invisible"
+        }
+
+        def Mesh "partition_left_face" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 0
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </Room/Looks/glass_face>
+            custom float motionlab:margin_m = 0.05
+            custom string motionlab:role = "obstacle"
+            point3f[] points = [(-1.9511636, -0.7663398, 2.1552), (1.6057653, -1.4454073, 2.1552), (1.6057653, -1.4454073, -0.0048), (-1.9511636, -0.7663398, -0.0048)]
+            custom bool singleSided = 1
+            uniform token subdivisionScheme = "none"
+        }
+
+        def BasisCurves "partition_left_outline"
+        {
+            int[] curveVertexCounts = [5]
+            point3f[] points = [(-1.9511636, -0.7663398, -0.0048), (1.6057653, -1.4454073, -0.0048), (1.6057653, -1.4454073, 2.1552), (-1.9511636, -0.7663398, 2.1552), (-1.9511636, -0.7663398, -0.0048)]
+            color3f[] primvars:displayColor = [(0.7, 0.72, 0.75)] (
+                interpolation = "constant"
+            )
+            uniform token type = "linear"
+            float[] widths = [0.01] (
+                interpolation = "constant"
+            )
         }
 
         def Mesh "wall_back" (
-            prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
             doc = "RoomPlan Wall0+Wall4 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); behind the robot, with the door (Door1) the control cart stands by"
         )
         {
             int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
             int[] faceVertexIndices = [0, 1, 2, 3, 7, 6, 5, 4, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
-            rel material:binding = </Room/Looks/wall>
             custom float motionlab:margin_m = 0.05
             custom string motionlab:role = "obstacle"
             point3f[] points = [(1.6057653, -1.4454073, -0.0048), (2.2537334, 1.8742102, -0.0048), (2.2537334, 1.8742102, 2.1552), (1.6057653, -1.4454073, 2.1552), (1.6842835, -1.4607335, -0.0048), (2.3322515, 1.858884, -0.0048), (2.3322515, 1.858884, 2.1552), (1.6842835, -1.4607335, 2.1552)]
             uniform token subdivisionScheme = "none"
+            token visibility = "invisible"
+        }
+
+        def Mesh "wall_back_face" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 0
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </Room/Looks/glass_face>
+            custom float motionlab:margin_m = 0.05
+            custom string motionlab:role = "obstacle"
+            point3f[] points = [(1.6057653, -1.4454073, 2.1552), (2.2537334, 1.8742102, 2.1552), (2.2537334, 1.8742102, -0.0048), (1.6057653, -1.4454073, -0.0048)]
+            custom bool singleSided = 1
+            uniform token subdivisionScheme = "none"
+        }
+
+        def BasisCurves "wall_back_outline"
+        {
+            int[] curveVertexCounts = [5]
+            point3f[] points = [(1.6057653, -1.4454073, -0.0048), (2.2537334, 1.8742102, -0.0048), (2.2537334, 1.8742102, 2.1552), (1.6057653, -1.4454073, 2.1552), (1.6057653, -1.4454073, -0.0048)]
+            color3f[] primvars:displayColor = [(0.7, 0.72, 0.75)] (
+                interpolation = "constant"
+            )
+            uniform token type = "linear"
+            float[] widths = [0.01] (
+                interpolation = "constant"
+            )
         }
 
         def Mesh "wall_right_glass" (
-            prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
             doc = "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); a glass wall: RoomPlan read the glass as a 3.55 m opening (Door0), it is solid (user) -- kept as a solid plane"
         )
         {
             int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
             int[] faceVertexIndices = [0, 1, 2, 3, 7, 6, 5, 4, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
-            rel material:binding = </Room/Looks/glass>
             custom float motionlab:margin_m = 0.05
             custom string motionlab:role = "obstacle"
             point3f[] points = [(-1.2865797, 2.5652566, -0.0048), (2.2537334, 1.8742102, -0.0048), (2.2537334, 1.8742102, 2.1552), (-1.2865797, 2.5652566, 2.1552), (-1.2712535, 2.6437747, -0.0048), (2.2690597, 1.9527285, -0.0048), (2.2690597, 1.9527285, 2.1552), (-1.2712535, 2.6437747, 2.1552)]
             uniform token subdivisionScheme = "none"
+            token visibility = "invisible"
+        }
+
+        def Mesh "wall_right_glass_face" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 0
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </Room/Looks/glass_face>
+            custom float motionlab:margin_m = 0.05
+            custom string motionlab:role = "obstacle"
+            point3f[] points = [(-1.2865797, 2.5652566, -0.0048), (2.2537334, 1.8742102, -0.0048), (2.2537334, 1.8742102, 2.1552), (-1.2865797, 2.5652566, 2.1552)]
+            custom bool singleSided = 1
+            uniform token subdivisionScheme = "none"
+        }
+
+        def BasisCurves "wall_right_glass_outline"
+        {
+            int[] curveVertexCounts = [5]
+            point3f[] points = [(-1.2865797, 2.5652566, -0.0048), (2.2537334, 1.8742102, -0.0048), (2.2537334, 1.8742102, 2.1552), (-1.2865797, 2.5652566, 2.1552), (-1.2865797, 2.5652566, -0.0048)]
+            color3f[] primvars:displayColor = [(0.7, 0.72, 0.75)] (
+                interpolation = "constant"
+            )
+            uniform token type = "linear"
+            float[] widths = [0.01] (
+                interpolation = "constant"
+            )
         }
 
         def BasisCurves "ceiling_grid" (
@@ -289,21 +401,6 @@ def Xform "Room" (
             }
         }
 
-        def Material "tv"
-        {
-            token outputs:surface.connect = </Room/Looks/tv/Surface.outputs:surface>
-
-            def Shader "Surface"
-            {
-                uniform token info:id = "UsdPreviewSurface"
-                color3f inputs:diffuseColor = (0.02, 0.02, 0.025)
-                float inputs:metallic = 0
-                float inputs:opacity = 1
-                float inputs:roughness = 0.2
-                token outputs:surface
-            }
-        }
-
         def Material "wall"
         {
             token outputs:surface.connect = </Room/Looks/wall/Surface.outputs:surface>
@@ -319,18 +416,17 @@ def Xform "Room" (
             }
         }
 
-        def Material "glass"
+        def Material "glass_face"
         {
-            token outputs:surface.connect = </Room/Looks/glass/Surface.outputs:surface>
+            token outputs:surface.connect = </Room/Looks/glass_face/Surface.outputs:surface>
 
             def Shader "Surface"
             {
                 uniform token info:id = "UsdPreviewSurface"
-                color3f inputs:diffuseColor = (0.8, 0.9, 0.95)
-                float inputs:ior = 1.5
+                color3f inputs:diffuseColor = (0.78, 0.86, 0.9)
                 float inputs:metallic = 0
-                float inputs:opacity = 0.08
-                float inputs:roughness = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.15
                 token outputs:surface
             }
         }
@@ -346,6 +442,21 @@ def Xform "Room" (
                 float inputs:metallic = 0
                 float inputs:opacity = 1
                 float inputs:roughness = 0.7
+                token outputs:surface
+            }
+        }
+
+        def Material "tv"
+        {
+            token outputs:surface.connect = </Room/Looks/tv/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.02, 0.02, 0.025)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.2
                 token outputs:surface
             }
         }

@@ -169,5 +169,17 @@
    "yaw_deg": -11.28,
    "note": "around the rest hub"
   }
+ },
+ "range": {
+  "j1_deg": [
+   -150.0,
+   150.0
+  ],
+  "tcp_z": [
+   0.35,
+   1.9
+  ],
+  "speed": 0.85,
+  "_note": "the show's operating range: the directions the arm may face (J1), the TCP's height band, the fraction of the measured limits clips are made at"
  }
 }

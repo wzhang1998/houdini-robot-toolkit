@@ -299,7 +299,7 @@ def home_of(rig, hub_q):
     return tcp, U._add(tcp, U._scale(d, 1.5)), roll_of(R, d)
 
 
-def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None):
+def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None, safety=PLAN_SAFETY):
     """A gesture clip from hub_q, or None when this draw does not work
     (unreachable key, branch flip, too violent, hits the room)."""
     import collision as CL
@@ -315,7 +315,7 @@ def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, en
         if got is None:
             return None
         ts, qs = got
-        s = P.limiting(ts, qs, 125.0, [v * PLAN_SAFETY for v in rig.vel], [a * PLAN_SAFETY for a in rig.acc])["scale_needed"]
+        s = P.limiting(ts, qs, 125.0, [v * safety for v in rig.vel], [a * safety for a in rig.acc])["scale_needed"]
         if s <= 1.0:
             break
         scale *= s * 1.03

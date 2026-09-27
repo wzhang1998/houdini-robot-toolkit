@@ -194,7 +194,25 @@ def timed_move(waypoints, safety, vel, acc):
     return t, q
 
 
-def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print):
+def out_of_range(cfg, qs, tcps):
+    """Why a motion leaves the show's operating range (cfg["range"]), or
+    None: J1 within j1_deg (the directions the arm may face), the TCP's
+    height within tcp_z."""
+    r = cfg.get("range") or {}
+    if r.get("j1_deg"):
+        lo, hi = r["j1_deg"]
+        j1 = [q[0] for q in qs]
+        if min(j1) < lo or max(j1) > hi:
+            return "J1 %.0f..%.0f outside the range %g..%g" % (min(j1), max(j1), lo, hi)
+    if r.get("tcp_z") and tcps:
+        lo, hi = r["tcp_z"]
+        z = [p[2] for p in tcps]
+        if min(z) < lo or max(z) > hi:
+            return "TCP height %.2f..%.2f outside %g..%g m" % (min(z), max(z), lo, hi)
+    return None
+
+
+def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print, cfg=None):
     """n idle clips for one hub: choreo phrases made facing the robot's front
     from the hub's pose with J1 = 0, then turned by the hub's J1 (as
     stage_set.py turns clips), then checked in the room. [Segment], [why dropped]."""
@@ -223,6 +241,10 @@ def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print):
         t, q = [p["t"] for p in c["points"]], [p["q"] for p in c["points"]]
         if not all(-172.0 < x[0] < 172.0 for x in q):
             dropped.append("J1 past its limit")
+            continue
+        why = out_of_range(cfg or {}, q, c.get("tcp"))
+        if why:
+            dropped.append(why)
             continue
         rep = C.check(model, env, t, q)
         if not rep["ok"]:
@@ -269,13 +291,18 @@ def _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, index, dropped
     if True:
         bpm = rng.randint(*lib["bpm"])
         k = rng.uniform(*lib.get("intensity", (0.4, 0.9)))
-        clip = G.make(rig, hub, fam, cfg["zones"], rng, bpm=bpm, intensity=k, env=env)
+        clip = G.make(rig, hub, fam, cfg["zones"], rng, bpm=bpm, intensity=k, env=env,
+                      safety=(cfg.get("range") or {}).get("speed", G.PLAN_SAFETY))
         if clip is None:
             dropped.append("%s: no clean draw" % fam)
             return None
         d = clip["points"][-1]["t"]
         if not lo <= d <= hi:
             dropped.append("%s %.1f s, outside %g-%g s" % (fam, d, lo, hi))
+            return None
+        why = out_of_range(cfg, [p["q"] for p in clip["points"]], clip.get("tcp"))
+        if why:
+            dropped.append("%s: %s" % (fam, why))
             return None
         m = (clip.get("labels") or {}).get("measured") or {}
         t, q = [p["t"] for p in clip["points"]], [p["q"] for p in clip["points"]]
@@ -286,6 +313,41 @@ def _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, index, dropped
         seg = Segment(seg_name, "idle", t, q, name, name, labels)
         seg.clip = dict(clip, id=seg_name)
         return seg
+
+
+def authored_clip(a, hubs, env, model, vel, acc, cfg, log=print):
+    """An authored clip (a["csv"]: the asset's joint export) played from hub
+    a["hub"] and back: move in (safe_move.route, timed), the clip, move out --
+    one idle segment from the hub to the hub, checked in the room."""
+    import collision as C
+    import fairino_player as P
+    import motion_labels
+    import motion_clip as M
+    import safe_move
+    hub = hubs[a["hub"]]
+    t, q = P.load_csv(os.path.join(ROOT, a["csv"]))
+    path_in, why_in = safe_move.route(hub, q[0], env, model)
+    path_out, why_out = safe_move.route(q[-1], hub, env, model)
+    if path_in is None or path_out is None:
+        log("  authored %s: no clear move %s" % (a.get("id", a["csv"]), why_in if path_in is None else why_out))
+        return None
+    ti, qi = timed_move([hub] + path_in, cfg["transition_safety"], vel, acc)
+    to, qo = timed_move([q[-1]] + path_out, cfg["transition_safety"], vel, acc)
+    hold = 0.3                                                # a beat of rest between the parts
+    t_all = list(ti) + [ti[-1] + hold + x for x in t]
+    t_all += [t_all[-1] + hold + x for x in to]
+    q_all = list(qi) + [list(x) for x in q] + list(qo)
+    rep = C.check(model, env, t_all, q_all)
+    if not rep["ok"]:
+        log("  authored %s refused: %s" % (a.get("id", a["csv"]), C.describe(rep)))
+        return None
+    name = "%s_%s" % (a["hub"], a.get("id") or os.path.splitext(os.path.basename(a["csv"]))[0])
+    clip = {"points": [{"t": x, "q": y} for x, y in zip(t_all, q_all)], "tcp": M._tcp_path("fr20", q_all)}
+    m = (motion_labels.label(clip).get("measured") or {})
+    labels = {"action": m.get("action"), "effort": {x: m.get(x) for x in ("weight", "time", "space", "flow")},
+              "intent": ["authored"], "source": a["csv"], "clearance_m": rep["min_env_clearance_m"]}
+    log("  authored %s: %.1f s with its moves" % (name, t_all[-1]))
+    return Segment(name, "idle", t_all, q_all, a["hub"], a["hub"], labels)
 
 
 def resolve_hubs(cfg, rig):
@@ -334,11 +396,18 @@ def build(cfg_path, log=print):
         if h.get("generator", "choreo") == "gestures":
             got, why = gesture_clips(k, hubs[k], h, cfg, idle_env, rig, rng, log)
         else:
-            got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log)
+            got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log, cfg)
         segs += got
         dropped[k] = why
         if h.get("clips", 0) and not got:
             raise SystemExit("hub %s: no clip could be made (%s)" % (k, "; ".join(why[:3])))
+
+    # authored clips (a curve drawn in Houdini, exported as a joint CSV):
+    # a checked move from the hub to its start, the clip, and back
+    for a in cfg.get("authored", []):
+        seg = authored_clip(a, hubs, idle_env, model, vel, acc, cfg, log)
+        if seg:
+            segs.append(seg)
 
     # moves between the hubs, both ways
     for a in hubs:
@@ -750,6 +819,11 @@ def self_test():
     sel.energy = 1.0
     picks = [sel.pick("a").name for _ in range(400)]
     check("energy 1 prefers sudden clips", picks.count("a1") > 2 * picks.count("a2"), (picks.count("a1"), picks.count("a2")))
+    rng_cfg = {"range": {"j1_deg": [-30, 30], "tcp_z": [0.5, 1.5]}}
+    check("the operating range refuses J1 past its sector",
+          out_of_range(rng_cfg, [[0, 0, 0, 0, 0, 0], [40, 0, 0, 0, 0, 0]], None) is not None)
+    check("... and a TCP too high", out_of_range(rng_cfg, [[0] * 6], [(0, 0, 1.7)]) is not None)
+    check("... and lets a motion inside it through", out_of_range(rng_cfg, [[10] * 6], [(0, 0, 1.0)]) is None)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

@@ -37,12 +37,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import room_geom as RG  # noqa: E402
 
 WALL_T = 0.08
+SOLID_WALLS = ("wall_tv",)          # every other measured wall is glass
 FLOOR_T = 0.05
 # name keyword -> (diffuse rgb, roughness, metallic, opacity)
 LOOKS = {
     "floor": ((0.36, 0.24, 0.15), 0.55, 0.0, 1.0),
     "wall": ((0.86, 0.85, 0.82), 0.9, 0.0, 1.0),
     "glass": ((0.8, 0.9, 0.95), 0.0, 0.0, 0.08),
+    "glass_face": ((0.78, 0.86, 0.9), 0.15, 0.0, 1.0),   # a glass wall seen from inside: pale blue-grey, opaque
     "tv": ((0.02, 0.02, 0.025), 0.2, 0.0, 1.0),
     "cart": ((0.62, 0.08, 0.06), 0.45, 0.2, 1.0),
     "shelves": ((0.28, 0.28, 0.3), 0.4, 0.7, 1.0),
@@ -123,6 +125,22 @@ def _panel(stage, path, corners, outward, t):
     return _mesh(stage, path, pts, faces)
 
 
+def _inward_face(stage, path, corners, outward):
+    """One single-sided quad on the wall's room side, its normal into the room
+    (right-handed winding, reversed when needed); culled from outside."""
+    a, b, c = corners[0], corners[1], corners[2]
+    e1 = [b[i] - a[i] for i in range(3)]
+    e2 = [c[i] - a[i] for i in range(3)]
+    n = (e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0])
+    order = [0, 1, 2, 3] if sum(n[i] * -outward[i] for i in range(3)) > 0 else [3, 2, 1, 0]
+    m = _mesh(stage, path, [corners[i] for i in order], [[0, 1, 2, 3]])
+    m.CreateDoubleSidedAttr(False)
+    # Omniverse RTX culls a face by its own "singleSided" attribute (the
+    # "Single Sided" toggle in Isaac's property panel), not by doubleSided
+    m.GetPrim().CreateAttribute("singleSided", Sdf.ValueTypeNames.Bool).Set(True)
+    return m
+
+
 def _curves(stage, path, polylines, rgb, width=0.005):
     c = UsdGeom.BasisCurves.Define(stage, path)
     c.CreateTypeAttr(UsdGeom.Tokens.linear)
@@ -158,8 +176,17 @@ def export(env, out, extra=()):
     _tag(floor, "obstacle", fl.get("margin_m", margin), fl.get("note"), "floor", True)
     for name, corners, outward in RG.walls(env):
         o = by_name[name]
+        # a cutaway, as level editors and cell viewers show a room: the wall is
+        # drawn as one single-sided face turned into the room, so it hides
+        # itself when the camera is outside and reads as a wall from inside.
+        # Collision is a separate slab behind it, never drawn.
         w = _panel(stage, "/Room/Structure/" + _safe(name), corners, outward, WALL_T)
-        _tag(w, "obstacle", o.get("margin_m", margin), o.get("note"), _look_key(name), True)
+        _tag(w, "obstacle", o.get("margin_m", margin), o.get("note"), None, True)
+        UsdGeom.Imageable(w).MakeInvisible()
+        face = _inward_face(stage, "/Room/Structure/" + _safe(name) + "_face", corners, outward)
+        _tag(face, "obstacle", o.get("margin_m", margin), None, "wall" if name in SOLID_WALLS else "glass_face")
+        ring = list(corners) + [corners[0]]
+        _curves(stage, "/Room/Structure/" + _safe(name) + "_outline", [ring], ZONE_RGB["ceiling"], 0.01)
     ring = [(x, y, z1) for x, y in fp]
     ce = _curves(stage, "/Room/Structure/ceiling_grid", [ring + ring[:1]], ZONE_RGB["ceiling"], 0.015)
     _tag(ce, "obstacle", by_name.get("ceiling", {}).get("margin_m", margin),

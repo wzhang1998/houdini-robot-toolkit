@@ -38,6 +38,7 @@ ap.add_argument("--no-osc", action="store_true")
 ap.add_argument("--seed", type=int, default=None)
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
 ap.add_argument("--snapshot", default="", help="render ~3 s, save the viewport to this PNG, stop")
+ap.add_argument("--camera", default="", help="'ex ey ez tx ty tz': the view (robot frame); default: inside the room")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -181,12 +182,17 @@ def main():
     import carb.settings
     from isaacsim.core.utils.viewports import set_camera_view
     from omni.kit.viewport.utility import get_active_viewport
-    carb.settings.get_settings().set("/rtx/rendermode", "RaytracedLighting")   # real time, no path-traced grain
+    st = carb.settings.get_settings()
+    st.set("/rtx/rendermode", "RaytracedLighting")             # real time, no path-traced grain
+    st.set("/rtx/hydra/faceCulling/enabled", True)             # honour the walls' "singleSided": culled from outside
     cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/ShowCam"))
     cam.CreateFocalLengthAttr(13.0)
     cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
     import collision as CL
     eye, target = show_camera(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg)
+    if args.camera:
+        v = [float(x) for x in args.camera.split()]
+        eye, target = v[:3], v[3:6]
     set_camera_view(eye=eye, target=target, camera_prim_path="/World/ShowCam")
     vp = get_active_viewport()
     if vp is not None:
