@@ -228,6 +228,13 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   uses every hub, has no joint jump, and repeats no clip within 8.
 - **Tests**: `choreo.py` (start/end at a hub, at rest), `show.py
   --self-test` (multi-hub graph, route to a sequence's first hub), dry run.
+- **Status (2026-09-27)**: Mostly done. Hubs `rest` (joints, dance
+  phrases) and `greet` (tool + look, gestures that look at the audience).
+  Zones, the operating range and authored clips are in the config. A
+  10 min dry run has no jump and uses both hubs.
+  - Open: label recalibration; a `scan_ready` hub (waits for the paper);
+    the cat clip needs a hub in its elbow configuration; the motion
+    dynamics refinement (to discuss).
 
 ### 6.2 Show control: sequences, timetable, status (~0.5 day)
 - **Named sequences** in the show config, e.g. `greet` (show hub, 2 lively
@@ -243,6 +250,11 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   sequence starts within one clip of its trigger / its time; the event log
   matches the script.
 - **Tests**: self-tests for queueing, the timetable, routing between hubs.
+- **Status (2026-09-27)**: Partly done.
+  - Done: named sequences (`greet`, `calm`), the trigger queue, routing
+    between hubs, OSC status (state, clip, hub, progress, scan, joints).
+  - Not started: the timetable, "next clip" / countdown in the status,
+    the heartbeat.
 
 ### 6.3 Streaming backend: the Runner on SimMachine and the FR20 (~1 day)
 - One continuous ServoJ stream at 125 Hz driven by `Runner.step()`, instead
@@ -288,6 +300,8 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   - Step-by-step instructions as a fallback.
 - **Success**: every button changes the Runner as expected in the dry run
   and on SimMachine; the TD panel shows state within 0.1 s.
+- **Status**: Not started. The OSC contract is tested from a Python stand-in
+  for TD (triggers, stop).
 
 ### 6.5 Real-robot demo (studio day)
 - Checklist (docs/hardware_test_plan.md, new section):
@@ -305,6 +319,9 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   multi-hub graph and the TD OSC link, so the same TD panel drives the twin.
 - **Success**: a 10 min headless run with a report (tracking, contacts,
   waits), and a GUI session driven from TD.
+- **Status**: Headless 2 min run clean (tracking <= 0.96 deg, 0 contacts). The
+  room is a cutaway. The panel and the OSC link are written, not yet driven
+  from TD.
 
 ### 6.8 The show as one Houdini tool (2026-09-27, user's direction)
 **Goal**: `/obj/robot_show` is one Geometry. Everything is on its parameter
@@ -366,6 +383,56 @@ state's onEnter runs only once the viewer is used.
 **Order**: 6.1 -> 6.2 -> 6.3 -> 6.4 -> 6.5; 6.6 whenever Isaac 6.0 is in.
 **Open decisions**: hub places (6.1); which sequences the demo shows (6.2);
 the demo's speed cap; the studio day.
+**Status**: Proposed, waiting for the user's go.
+
+## Stage 7: The environment in OpenUSD (2026-09-27, PROPOSED -- to discuss)
+**Goal**: The room is one OpenUSD file, envs/<room>.usda, with UsdPhysics
+collision. It is edited in Houdini (Solaris), by hand in text, or by an
+AI. Isaac Sim uses it as is; MuJoCo and Newton read USD. The toolkit's
+own JSON room format (motionlab.env) is retired. No new format: the
+only project-specific part is the safety meaning (work / keep-out / slow,
+margins), stored as namespaced attributes on the prims (`motionlab:role`,
+`motionlab:margin_m`), the extension mechanism USD provides.
+
+**Why not the others**: URDF describes one robot, not a room. SDF
+(Gazebo) is not edited natively in Houdini or Isaac. PyBullet does not
+read USD (URDF / SDF / MJCF only) and is not a target.
+
+**The file** (what each object becomes):
+- a solid obstacle (cart, shelves, TV, base plate, walls, floor, ceiling):
+  a UsdGeom Cube / Cylinder / Sphere, scaled and placed, with
+  UsdPhysics CollisionAPI and a UsdPreviewSurface look;
+- walls, floor and ceiling: finite slabs (Cubes) instead of infinite
+  planes, so every tool can read them, each with the inward-facing
+  single-sided face that makes the cutaway;
+- a zone (work / keep-out / slow): a Cube or Cylinder with purpose
+  "guide" (drawn as a helper, never rendered, no collision) and the
+  `motionlab:*` attributes;
+- metres, Z up, the robot base at the origin (as now).
+
+**Stages**
+- **7.1 Read and write USD** (~0.5 day): `room_usd.py` with `read(path)`,
+  which returns the same in-memory room collision.py uses today, and
+  `write(room, path)` (from env_to_usd.py). `collision.load_env` reads
+  .usda. None of the ~30 scripts that take a room change. Test:
+  JSON -> USD -> read gives the same objects (1e-6 m) and the same
+  clearances on the stage clips and the show.
+- **7.2 Switch over** (~0.5 day): envs/volvox_lab.usda becomes the source
+  and the JSON is dropped. The defaults are changed in play.py,
+  playback.toml, the show config and the robot_arm Environment. The
+  measuring tools (probe, scan_to_env, env_from_points) write USD. Test:
+  every self-test; the show build gives the same graph; the player's
+  checked moves give the same routes.
+- **7.3 Edit in Houdini** (~0.5 day): a documented Solaris workflow.
+  Sublayer the room, then edit it (Transform / Edit / Cube, and
+  Configure Primitive for the collision and the role) and save the
+  layer. The robot_show tool and the robot_arm Environment take the
+  .usda. Test: a box added in Solaris is drawn in Houdini, refused by
+  safe_move and shown in Isaac.
+- **7.4 Versions**: git on the text .usda. Per-show changes (the paper, a
+  stage override) are a layer over the measured room, not a copy.
+
+**Order**: after the studio day (the test there uses the current JSON).
 **Status**: Proposed, waiting for the user's go.
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
