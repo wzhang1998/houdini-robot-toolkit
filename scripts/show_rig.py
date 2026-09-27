@@ -12,8 +12,9 @@ bridge); it adds objects and leaves the arm alone:
 
 In the show scene it also plays a built segment, or holds a hub's pose, on
 the arm (CELL_CTRL's clip), draws the room once (cell_env; the robot_arm's
-own Show Cell off), hides the collision capsules, and turns the viewport's
-Remove Backfaces on (the room's walls face in: a cutaway, as in Isaac).
+own Show Cell off), removes the cell scene's capsules and onion skin,
+and turns the viewport's Remove Backfaces on (the room's walls face in:
+a cutaway, as in Isaac).
 
 What it adds (/obj, in a network box "SHOW"):
 
@@ -529,10 +530,12 @@ def _tidy_show_scene():
     arm = hou.node("/obj/fr20/robot_arm")
     if arm is not None and arm.parm("show_cell") is not None:
         arm.parm("show_cell").set(0)
-    for name in ("capsules", "ghosts", "CELL_CTRL"):           # CELL_CTRL: its null's axes sit on the base
+    ctrl = hou.node("/obj/CELL_CTRL")
+    ctrl.setDisplayFlag(False)                                   # its null's axes sit on the base
+    for name in ("capsules", "ghosts"):                          # the ghost arms and the asset's checks cover these
         n = hou.node("/obj/" + name)
         if n is not None:
-            n.setDisplayFlag(False)
+            n.destroy()
     old = hou.node("/obj/SHOW_CTRL")                # the older show panel (joint-angle hubs only)
     if old is not None:
         old.destroy()
