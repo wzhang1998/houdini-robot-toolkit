@@ -10,6 +10,16 @@ process and talks to it over the show's OSC ports (the config's "osc":
 commands to listen_port, status back on send_port) -- the same contract TD
 uses, so this is also a stand-in for the TD panel.
 
+TouchDesigner can join while it runs: TD sends to the same listen_port
+(/robot/trigger, /robot/speed, ...), and the status is also sent to TD's
+port ("Status also to", default 127.0.0.1:9002). The window shows what TD
+changes, since it reads the show's own status.
+
+Speed is the global show speed, set before Start and fixed for the run
+(it is not changed while the arm moves). The window shows the state, the
+clip and its time left, what is next, the queue, waiting triggers, and the
+ticks skipped so far (a stall shows at once).
+
 SimMachine only. The IP is shown and must be SimMachine's: --sim does not
 check what is at that address. Hardware runs stay on the command line
 (`show_stream.py --hardware`, which asks before moving). STOP sends
@@ -46,12 +56,16 @@ def default_sim_ip():
     return ip if target == "sim" else ""
 
 
-def stream_argv(config, ip, minutes, speed, python=sys.executable):
-    """The show_stream.py command: SimMachine, OSC on, the IP given."""
+def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable):
+    """The show_stream.py command: SimMachine, OSC on, the IP given; status
+    also to each HOST:PORT in `also` (TouchDesigner)."""
     if not ip:
         raise ValueError("no SimMachine IP")
-    return [python, STREAM, config, "--sim", "--ip", ip, "--osc", "--minutes", "%g" % minutes,
+    argv = [python, STREAM, config, "--sim", "--ip", ip, "--osc", "--minutes", "%g" % minutes,
             "--speed", "%g" % speed]
+    for target in also:
+        argv += ["--osc-out", target]
+    return argv
 
 
 class ShowLink:
@@ -61,11 +75,14 @@ class ShowLink:
         from pythonosc import dispatcher, osc_server, udp_client
         self.config = config
         osc = json.load(open(config))["osc"]
-        self.status = {"state": "-", "clip": "-", "hub": "-", "progress": 0.0, "scan": -1.0}
+        self.status = {"state": "-", "clip": "-", "hub": "-", "progress": 0.0, "scan": -1.0, "speed_now": 0.0,
+                       "sequence": "", "next": "", "queue": "", "pending": "", "time_left": 0.0, "fault": "",
+                       "skipped": 0}
         self.log = queue.Queue()
         self.proc = None
         d = dispatcher.Dispatcher()
-        for key in ("state", "clip", "hub", "progress", "scan"):
+        for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
+                    "time_left", "fault", "skipped"):
             d.map("/robot/" + key, self._status_setter(key))
         self.server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", send_port or osc["send_port"]), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -83,10 +100,10 @@ class ShowLink:
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, ip, minutes, speed):
+    def start(self, ip, minutes, speed, also=()):
         if self.running:
             return
-        argv = stream_argv(self.config, ip, minutes, speed)
+        argv = stream_argv(self.config, ip, minutes, speed, also)
         self.log.put("$ " + " ".join(os.path.basename(a) if a == STREAM else a for a in argv[1:]))
         self.proc = subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      stdin=subprocess.DEVNULL, text=True, bufsize=1)
@@ -134,6 +151,13 @@ class ShowLink:
         self.server.shutdown()
 
 
+STATE_COLOUR = {"IDLE": "#2e8b57", "MOVE": "#2f6db5", "TO_SCAN": "#b8860b", "SCAN": "#b8860b",
+                "FROM_SCAN": "#b8860b", "PAUSED": "#d2691e", "FAULT": "#c0392b", "HOLD": "#c0392b"}
+STATE_WORDS = {"IDLE": "idling at a hub", "MOVE": "moving between hubs", "TO_SCAN": "going to the scan",
+               "SCAN": "scanning", "FROM_SCAN": "back from the scan", "PAUSED": "paused at a hub",
+               "FAULT": "stopped: fault", "HOLD": "held after a fault"}
+
+
 def run_window(config):
     import tkinter as tk
     from tkinter import messagebox, ttk
@@ -141,75 +165,133 @@ def run_window(config):
     cfg = json.load(open(config))
     root = tk.Tk()
     root.title("Show on SimMachine -- %s" % cfg.get("name", os.path.basename(config)))
-    pad = {"padx": 6, "pady": 3}
+    pad = {"padx": 8, "pady": 4}
 
-    top = ttk.LabelFrame(root, text="Run (SimMachine only)")
+    # --- run: set before Start, locked while it runs -------------------------
+    top = ttk.LabelFrame(root, text="Run  (SimMachine only; set before Start)")
     top.pack(fill="x", **pad)
     ip = tk.StringVar(value=default_sim_ip())
     minutes = tk.DoubleVar(value=10.0)
-    speed = tk.DoubleVar(value=1.0)
-    ttk.Label(top, text="SimMachine IP").grid(row=0, column=0, sticky="w")
-    ttk.Entry(top, textvariable=ip, width=16).grid(row=0, column=1, sticky="w")
-    ttk.Label(top, text="Minutes").grid(row=0, column=2, sticky="e")
-    ttk.Spinbox(top, from_=0.5, to=240, increment=0.5, textvariable=minutes, width=6).grid(row=0, column=3)
-    ttk.Label(top, text="Speed").grid(row=0, column=4, sticky="e")
-    ttk.Spinbox(top, from_=0.1, to=1.0, increment=0.1, textvariable=speed, width=5).grid(row=0, column=5)
+    speed = tk.DoubleVar(value=0.5)
+    td_on = tk.BooleanVar(value=True)
+    td_target = tk.StringVar(value="127.0.0.1:9002")
+    before_start = []
+
+    def field(label, widget, col):
+        ttk.Label(top, text=label).grid(row=0, column=col, sticky="e", padx=(8, 2))
+        widget.grid(row=0, column=col + 1, sticky="w")
+        before_start.append(widget)
+    field("SimMachine IP", ttk.Entry(top, textvariable=ip, width=16), 0)
+    field("Minutes", ttk.Spinbox(top, from_=0.5, to=240, increment=0.5, textvariable=minutes, width=6), 2)
+    field("Speed", ttk.Spinbox(top, from_=0.05, to=1.0, increment=0.05, textvariable=speed, width=5), 4)
+    td_check = ttk.Checkbutton(top, text="Status also to TD at", variable=td_on)
+    td_check.grid(row=1, column=0, columnspan=2, sticky="w", padx=8)
+    td_entry = ttk.Entry(top, textvariable=td_target, width=16)
+    td_entry.grid(row=1, column=2, columnspan=2, sticky="w")
+    before_start += [td_check, td_entry]
 
     def start():
         if not ip.get().strip():
             messagebox.showerror("No IP", "Type SimMachine's IP (this window never drives the real arm).")
             return
-        link.start(ip.get().strip(), minutes.get(), speed.get())
+        if not 0.05 <= speed.get() <= 1.0:
+            messagebox.showerror("Speed", "Speed is 0.05 .. 1.0.")
+            return
+        link.start(ip.get().strip(), minutes.get(), speed.get(),
+                   [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [])
 
-    ttk.Button(top, text="Start", command=start).grid(row=0, column=6, padx=6)
-    tk.Button(top, text="STOP", bg="#c0392b", fg="white", width=8, command=lambda: threading.Thread(
-        target=link.stop, daemon=True).start()).grid(row=0, column=7, padx=6)
+    start_b = ttk.Button(top, text="Start", command=start)
+    start_b.grid(row=0, column=6, padx=10)
+    tk.Button(top, text="STOP", bg="#c0392b", fg="white", width=8, font=("Segoe UI", 10, "bold"),
+              command=lambda: threading.Thread(target=link.stop, daemon=True).start()).grid(row=0, column=7, rowspan=2)
 
-    st = ttk.LabelFrame(root, text="Status (from the show, over OSC)")
-    st.pack(fill="x", **pad)
-    labels = {}
-    for i, key in enumerate(("state", "clip", "hub")):
-        ttk.Label(st, text=key.capitalize()).grid(row=0, column=2 * i, sticky="w")
-        labels[key] = ttk.Label(st, text="-", width=22, font=("Consolas", 10, "bold"))
-        labels[key].grid(row=0, column=2 * i + 1, sticky="w")
-    prog = ttk.Progressbar(st, length=420, maximum=1.0)
-    prog.grid(row=1, column=0, columnspan=6, sticky="we", pady=4)
-    alive = ttk.Label(st, text="")
-    alive.grid(row=2, column=0, columnspan=6, sticky="w")
+    # --- now --------------------------------------------------------------------
+    now = ttk.LabelFrame(root, text="Now")
+    now.pack(fill="x", **pad)
+    state_l = tk.Label(now, text="NOT RUNNING", fg="white", bg="#777777", font=("Segoe UI", 16, "bold"), width=14)
+    state_l.grid(row=0, column=0, rowspan=2, padx=6, pady=4, sticky="ns")
+    state_w = ttk.Label(now, text="", font=("Segoe UI", 10))
+    state_w.grid(row=2, column=0, padx=6)
+    clip_l = ttk.Label(now, text="-", font=("Consolas", 14, "bold"))
+    clip_l.grid(row=0, column=1, columnspan=3, sticky="w")
+    prog = ttk.Progressbar(now, length=380, maximum=1.0)
+    prog.grid(row=1, column=1, columnspan=2, sticky="w")
+    left_l = ttk.Label(now, text="", font=("Consolas", 11))
+    left_l.grid(row=1, column=3, sticky="w", padx=6)
+    where_l = ttk.Label(now, text="", font=("Segoe UI", 10))
+    where_l.grid(row=2, column=1, columnspan=3, sticky="w")
 
-    tr = ttk.LabelFrame(root, text="Triggers (taken at the end of the running clip)")
+    # --- next ---------------------------------------------------------------------
+    nxt = ttk.LabelFrame(root, text="Next")
+    nxt.pack(fill="x", **pad)
+    next_l = ttk.Label(nxt, text="-", font=("Consolas", 12, "bold"))
+    next_l.grid(row=0, column=0, sticky="w", padx=6)
+    queue_l = ttk.Label(nxt, text="", font=("Consolas", 10))
+    queue_l.grid(row=1, column=0, sticky="w", padx=6)
+    pend_l = ttk.Label(nxt, text="", font=("Segoe UI", 10), foreground="#b8860b")
+    pend_l.grid(row=2, column=0, sticky="w", padx=6)
+
+    # --- triggers -------------------------------------------------------------------
+    tr = ttk.LabelFrame(root, text="Trigger  (taken when the running clip ends)")
     tr.pack(fill="x", **pad)
     for i, name in enumerate(list(cfg.get("sequences", {})) + (["scan"] if cfg.get("scan") else [])):
-        ttk.Button(tr, text=name, command=lambda n=name: link.trigger(n)).grid(row=0, column=i, padx=3)
+        ttk.Button(tr, text=name, width=10, command=lambda n=name: link.trigger(n)).grid(row=0, column=i, padx=3, pady=3)
     ctl = ttk.Frame(tr)
     ctl.grid(row=1, column=0, columnspan=8, sticky="w", pady=4)
-    ttk.Button(ctl, text="Pause (at a hub)", command=link.pause).pack(side="left", padx=3)
+    ttk.Button(ctl, text="Pause at the next hub", command=link.pause).pack(side="left", padx=3)
     ttk.Button(ctl, text="Resume", command=link.resume).pack(side="left", padx=3)
     ttk.Button(ctl, text="Reset fault", command=link.reset).pack(side="left", padx=3)
     mood = tk.StringVar(value="")
-    ttk.Label(ctl, text="  Mood").pack(side="left")
+    ttk.Label(ctl, text="   Mood").pack(side="left")
     box = ttk.Combobox(ctl, values=MOODS, textvariable=mood, width=8, state="readonly")
     box.pack(side="left")
     box.bind("<<ComboboxSelected>>", lambda e: link.mood(mood.get()))
     energy = tk.DoubleVar(value=0.5)
-    ttk.Label(ctl, text="  Energy").pack(side="left")
+    ttk.Label(ctl, text="   Energy").pack(side="left")
     sc = ttk.Scale(ctl, from_=0.0, to=1.0, variable=energy, length=140)
     sc.pack(side="left")
     sc.bind("<ButtonRelease-1>", lambda e: link.energy(energy.get()))
 
+    # --- health and log ----------------------------------------------------------------
+    health = ttk.Label(root, text="", font=("Segoe UI", 9))
+    health.pack(fill="x", padx=10)
     logf = ttk.LabelFrame(root, text="Show process")
     logf.pack(fill="both", expand=True, **pad)
-    text = tk.Text(logf, height=16, width=100, font=("Consolas", 9))
+    text = tk.Text(logf, height=12, width=100, font=("Consolas", 9))
     text.pack(fill="both", expand=True)
 
     def tick():
         s = link.status
-        for key in ("state", "clip", "hub"):
-            labels[key].config(text=str(s[key]))
-        prog["value"] = float(s.get("progress") or 0.0)
+        running = link.running
+        for w in before_start:
+            w.configure(state="disabled" if running else "normal")
+        start_b.configure(state="disabled" if running else "normal")
         age = time.time() - link.last_status if link.last_status else None
-        alive.config(text=("running" if link.running else "not running") +
-                     ("" if age is None else ", last status %.1f s ago" % age))
+        live = running and age is not None and age < 1.0
+        state = str(s["state"]) if live else ("STARTING" if running else "NOT RUNNING")
+        state_l.config(text=state, bg=STATE_COLOUR.get(state, "#777777"))
+        state_w.config(text=STATE_WORDS.get(state, "moving to the start hub, loading" if running else ""))
+        if live:
+            clip_l.config(text=str(s["clip"]))
+            prog["value"] = float(s.get("progress") or 0.0)
+            left_l.config(text="%.1f s left" % float(s.get("time_left") or 0.0))
+            seq = s.get("sequence") or ""
+            where_l.config(text="hub %s%s%s" % (s["hub"], ("   |   sequence: %s" % seq) if seq else "",
+                                                   ("   |   FAULT: %s" % s["fault"]) if s.get("fault") else ""))
+            next_l.config(text="next:  " + str(s.get("next") or "-"))
+            q = [x for x in str(s.get("queue") or "").split(" | ") if x]
+            queue_l.config(text=("then:  " + "  >  ".join(q[1:])) if len(q) > 1 else "")
+            pend = [x for x in str(s.get("pending") or "").split(",") if x]
+            pend_l.config(text=("waiting triggers:  " + ", ".join(pend)) if pend else "")
+        else:
+            for w in (clip_l, left_l, where_l, queue_l, pend_l):
+                w.config(text="")
+            next_l.config(text="-")
+            prog["value"] = 0.0
+        skipped = int(s.get("skipped") or 0)
+        health.config(text=("speed %.2f   |   skipped ticks %d%s   |   last status %.1f s ago"
+                            % (float(s.get("speed_now") or 0.0), skipped, "  (a stall!)" if skipped else "", age))
+                      if live else "", foreground="#c0392b" if skipped else "#333333")
         while True:
             try:
                 line = link.log.get_nowait()
@@ -260,12 +342,18 @@ def self_test():
     out.send_message("/robot/state", "IDLE")
     out.send_message("/robot/clip", "rest_02_punch")
     out.send_message("/robot/progress", 0.25)
+    out.send_message("/robot/next", "greet: a clip at greet")
+    out.send_message("/robot/skipped", 3)
     time.sleep(0.3)
-    check("status from the show is shown", link.status["state"] == "IDLE" and link.status["clip"] == "rest_02_punch"
-          and abs(link.status["progress"] - 0.25) < 1e-6, link.status)
-    argv = stream_argv(DEFAULT_CONFIG, "192.168.116.128", 5, 0.5)
-    check("the command is SimMachine, OSC, the IP given", "--sim" in argv and "--osc" in argv and "--hardware" not in argv
-          and argv[argv.index("--ip") + 1] == "192.168.116.128", argv)
+    check("status from the show is shown (state, clip, progress, next, skipped)",
+          link.status["state"] == "IDLE" and link.status["clip"] == "rest_02_punch"
+          and abs(link.status["progress"] - 0.25) < 1e-6 and link.status["next"] == "greet: a clip at greet"
+          and link.status["skipped"] == 3, link.status)
+    argv = stream_argv(DEFAULT_CONFIG, "192.168.116.128", 5, 0.3, ["127.0.0.1:9002"])
+    check("the command is SimMachine, OSC, the IP given, the speed set at start, status also to TD",
+          "--sim" in argv and "--osc" in argv and "--hardware" not in argv
+          and argv[argv.index("--ip") + 1] == "192.168.116.128" and argv[argv.index("--speed") + 1] == "0.3"
+          and argv[argv.index("--osc-out") + 1] == "127.0.0.1:9002", argv)
     try:
         stream_argv(DEFAULT_CONFIG, "", 5, 0.5)
         check("no IP is refused", False)

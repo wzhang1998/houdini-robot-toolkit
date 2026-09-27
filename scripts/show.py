@@ -632,11 +632,35 @@ class Runner:
             self.seg_t = left
         return self.seg.at(self.seg_t)
 
+    def _label(self, item):
+        """A queue item as shown: a segment's name, or a sequence clip still
+        to be picked ("greet: a clip at greet")."""
+        if isinstance(item, tuple):
+            _, name, hub, mood = item
+            return "%s: a %sclip at %s" % (name, (mood + " ") if mood else "", hub)
+        return item.name
+
+    def next_up(self):
+        """What plays after the running clip, in words."""
+        if self.state in ("FAULT", "HOLD"):
+            return "nothing: held (reset to go on)"
+        if self.state == "PAUSED":
+            return "nothing: paused at %s (resume to go on)" % self.hub
+        if self.queue:
+            return self._label(self.queue[0])
+        if self.pending:
+            return "the route to %s, when this clip ends" % self.pending[0]
+        if self.paused:
+            return "pause at %s, when this clip ends" % self.seg.end
+        return "an idle clip at %s, picked when this clip ends" % self.seg.end
+
     def status(self):
         prog = self.seg_t / self.seg.duration if self.seg.duration > 0 else 1.0
         return {"state": self.state, "clip": self.seg.name, "hub": self.hub, "sequence": self.sequence,
                 "progress": round(min(1.0, prog), 4),
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
+                "time_left": round(max(0.0, self.seg.duration - self.seg_t), 2),
+                "next": self.next_up(), "queue": [self._label(x) for x in self.queue[:6]],
                 "pending": list(self.pending), "fault": self.fault_reason}
 
 
@@ -653,7 +677,9 @@ def runner_for(graph, seed=None, log=None):
 class OscBridge:
     """/robot/* in and out; python-osc (the usual TouchDesigner link)."""
 
-    def __init__(self, runner, listen_port, send_host, send_port):
+    def __init__(self, runner, listen_port, send_host, send_port, also=()):
+        """Status goes to send_host:send_port and to each (host, port) in
+        `also` -- a control window and TouchDesigner can both listen."""
         from pythonosc import dispatcher, osc_server, udp_client
         import threading
         self.runner = runner
@@ -669,16 +695,22 @@ class OscBridge:
         self.server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", listen_port), d)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.client = udp_client.SimpleUDPClient(send_host, send_port)
+        self.clients = [udp_client.SimpleUDPClient(h, p) for h, p in [(send_host, send_port)] + list(also)]
 
     def send(self, q):
         s = self.runner.status()
-        self.client.send_message("/robot/state", s["state"])
-        self.client.send_message("/robot/clip", s["clip"])
-        self.client.send_message("/robot/hub", s["hub"])
-        self.client.send_message("/robot/progress", float(s["progress"]))
-        self.client.send_message("/robot/scan", float(s["scan"]))
-        self.client.send_message("/robot/joints", [float(x) for x in q])
+        msgs = [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
+                ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
+                ("/robot/joints", [float(x) for x in q]),
+                ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
+                ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
+                ("/robot/time_left", float(s.get("time_left", 0.0))), ("/robot/fault", s.get("fault") or "")]
+        if hasattr(self.runner, "speed_now"):                  # the streaming backend
+            msgs.append(("/robot/speed_now", float(self.runner.speed_now)))
+            msgs.append(("/robot/skipped", int(self.runner.skipped)))
+        for c in self.clients:
+            for addr, value in msgs:
+                c.send_message(addr, value)
 
     def close(self):
         self.server.shutdown()
@@ -798,6 +830,14 @@ def self_test():
           all(x.startswith("b") for x in seen[2:4]), seen[:5])
     r.trigger("nonsense")
     check("an unknown trigger is ignored", "nonsense" not in r.pending)
+    r2 = Runner(g, Selector(g.idle(), 0, seed=4), hub_stay=(99, 99), seed=0)
+    r2.step(0.5)
+    before = r2.status()["next"]
+    r2.trigger("greet")
+    after = r2.status()
+    check("status says what is next: a pick at the hub, then the route to a triggered sequence",
+          "picked when this clip ends" in before and "route to greet" in after["next"]
+          and after["pending"] == ["greet"] and after["time_left"] > 0, (before, after["next"]))
     r.pause()
     for _ in range(400):
         r.step(0.05)

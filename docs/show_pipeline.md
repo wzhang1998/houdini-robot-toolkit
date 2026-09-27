@@ -49,10 +49,23 @@ IDLE --(pause)--> PAUSED at home;  any --(fault)--> FAULT, holds until reset
   smooth exit to the nearest hub possible.
 - **TouchDesigner link (OSC).**
   - In: `/robot/trigger`, `/pause`, `/resume`, `/reset`, `/mood`, `/energy`.
-  - Out: `/robot/state`, `/clip`, `/progress`, `/joints`, and `/robot/scan`
-    (0..1 while scanning). The last one is the LED strip's column clock: TD
-    lights the column for the arm's position, so the image does not depend
-    on the arm's timing.
+  - Out: `/robot/state`, `/clip`, `/hub`, `/progress`, `/joints`, and
+    `/robot/scan` (0..1 while scanning). `/robot/scan` is the LED strip's
+    column clock: TD lights the column for the arm's position, so the
+    image does not depend on the arm's timing.
+  - Also out, for a panel:
+    - `/robot/sequence`;
+    - `/robot/next`: what plays after this clip, in words;
+    - `/robot/queue`: the items already queued;
+    - `/robot/pending`: triggers still waiting;
+    - `/robot/time_left`: seconds left in the clip;
+    - `/robot/fault`.
+  - From the streaming backend only: `/robot/speed_now` and
+    `/robot/skipped` (ticks skipped so far, so a stall shows at once).
+  - The status can go to several listeners (`--osc-out HOST:PORT`), for
+    example a control window and TouchDesigner at the same time.
+  - The speed is set before the stream starts. It is never changed while
+    the arm moves.
 
 Dry run, 20 minutes (2026-09-27):
 - 178 clips played, including 31 scans; all 24 idle clips used.
@@ -88,7 +101,13 @@ tick by tick. There is no CSV per run and no stop between clips.
 on SimMachine and talks to it over the same OSC contract TD will use.
 - It has Start / STOP, a button per sequence (and the scan), pause /
   resume / reset, mood and energy.
-- It shows the live state, clip, hub and progress.
+- The speed is set before Start and is locked while the show runs.
+- It shows:
+  - now: the state, the clip, its time left, the hub, the sequence;
+  - next: what comes next, the queue, waiting triggers;
+  - health: ticks skipped so far.
+- TouchDesigner can join the same run: it sends to the same port and gets
+  the status on its own port.
 - It is a stand-in for the TD panel. It never drives the real arm: the
   IP is shown and filled in only when playback.toml's target is sim.
   Hardware runs stay on the command line.

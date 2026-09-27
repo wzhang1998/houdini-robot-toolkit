@@ -58,6 +58,7 @@ SLOW_READ_S = 0.02                 # a joint read slower than this has no trustw
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
+MIN_SPEED = 0.05                   # the speed is set before the stream starts; it is not changed while it runs
 HARDWARE_SPEED = 0.3
 
 
@@ -70,10 +71,12 @@ class Commands:
     loop between ticks -- the Runner is not thread-safe. Looks like a Runner
     to show.OscBridge."""
 
-    def __init__(self, runner):
+    def __init__(self, runner, speed=1.0):
         self.runner, self.q = runner, queue.Queue()
         self.sel = runner.sel                      # mood / energy: plain attribute sets
         self.stop_requested = threading.Event()
+        self.speed_now = speed                     # what the stream plays at (fixed; reported over OSC)
+        self.skipped = 0                           # ticks skipped so far (reported over OSC: a stall shows at once)
 
     def trigger(self, name="scan"):
         self.q.put(("trigger", name))
@@ -91,7 +94,10 @@ class Commands:
         self.stop_requested.set()
 
     def status(self):
-        return self.runner.status()
+        """The Runner's status, time left in wall seconds (at this speed)."""
+        s = self.runner.status()
+        s["time_left"] = round(s["time_left"] / max(self.speed_now, 1e-6), 2)
+        return s
 
     def apply(self):
         while True:
@@ -203,6 +209,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     events = []
     runner.log = lambda text: events.append(text)
     prev = runner.step(0.0)
+
     end_at = minutes * 60.0
     ending, fault = False, None
     link.start()
@@ -220,6 +227,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             k = max(last + 1, due)
             adv = k - last if last >= 0 else 1
             skipped += adv - 1
+            commands.skipped = skipped
             late_ms.append((now - (start + k * dt)) * 1000.0)
             if commands.stop_requested.is_set():
                 fault = "stop requested"
@@ -482,6 +490,10 @@ def self_test():
           rep["skipped"] > 0 and rep["worst_step_of_limit"] <= 1.0 and rep["ended"] == "at a hub",
           (rep["skipped"], rep["worst_step_of_limit"]))
 
+    r = S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
+    check("the speed cannot be changed while streaming (no live speed command)",
+          not hasattr(Commands(r), "set_speed"))
+
     c = FakeCtrl()
     rep, r = run(c, 2.0 / 60, speed=0.5)
     check("speed 0.5 plays the same clips half as fast", rep["worst_step_of_limit"] <= 1.0
@@ -522,6 +534,8 @@ def main(argv=None):
     tgt.add_argument("--hardware", action="store_true", help="the target is the physical arm: asks first, speed 0.3")
     ap.add_argument("--ip", default=None, help="controller IP (default: playback.toml's)")
     ap.add_argument("--speed", type=float, default=None, help="show clock scale (default 1.0 sim, 0.3 hardware)")
+    ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
+                    help="also send the status here (a control window and TouchDesigner both listening); repeatable")
     ap.add_argument("--minutes", type=float, default=5.0)
     ap.add_argument("--osc", action="store_true", help="TouchDesigner in and out (the config's osc ports)")
     ap.add_argument("--move-vel", type=float, default=None, help="MoveJ %% to the start hub (default 20 sim, 10 hardware)")
@@ -531,8 +545,14 @@ def main(argv=None):
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
     a = ap.parse_args(argv)
     speed = a.speed if a.speed is not None else (HARDWARE_SPEED if a.hardware else 1.0)
-    if not 0.05 <= speed <= 1.0:
-        ap.error("--speed must be within 0.05..1 (the clips are made at the show's range speed)")
+    if not MIN_SPEED <= speed <= 1.0:
+        ap.error("--speed must be within %g..1 (the clips are made at the show's range speed)" % MIN_SPEED)
+    also = []
+    for t in a.osc_out:
+        host, _, port = t.rpartition(":")
+        if not host or not port.isdigit():
+            ap.error("--osc-out wants HOST:PORT, got %r" % t)
+        also.append((host, int(port)))
     ip = a.ip or _toml_ip()
     cfg_path = os.path.abspath(a.config)
     cfg = json.load(open(cfg_path))
@@ -556,17 +576,18 @@ def main(argv=None):
     if off is None:
         print(json.dumps(rep, indent=1))
         return 1
-    plan = ("Stream %s: %.1f min at speed %.2f from hub %s, ServoJ %g Hz%s.\nStop: Ctrl+C or OSC /robot/stop "
+    plan = ("Stream %s: %.1f min at speed %.2f (fixed for the run) from hub %s, ServoJ %g Hz%s."
+            "\nStop: Ctrl+C or OSC /robot/stop "
             "(software stop). Keep a hand on the E-stop." % (cfg.get("name", "show"), a.minutes, speed, runner.hub,
                                                               RATE_HZ, ", TouchDesigner on OSC" if a.osc else ""))
     print(plan)
     if not ask(plan):
         return 1
-    cmds = Commands(runner)
+    cmds = Commands(runner, speed)
     osc = None
     if a.osc:
         o = cfg["osc"]
-        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"])
+        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also)
         print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
     guard = Guard(RP.velocity_limits(prof), [tuple(x) for x in prof["robot"]["limits_deg"]], dt, speed)
     link = Link(ip)
@@ -579,6 +600,7 @@ def main(argv=None):
     stamp = time.strftime("%Y%m%d-%H%M%S")
     base = write_log(a.log, stamp, out, ticks_cmd, dt, link.samples, start)
     summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
+                                       "speed",
                                        "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
                                        "send_ms_p95", "max_late_ms", "controller_error")}
     print(json.dumps(summary, indent=1))
