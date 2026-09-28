@@ -62,7 +62,11 @@ import math
 import os
 import sys
 
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
+try:
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
+except ImportError as e:                    # the room cannot be read without OpenUSD: say how to get it
+    raise ImportError("the room is OpenUSD and this Python has no pxr (%s). Run the toolkit in its own "
+                      "environment: uv sync, then uv run scripts/<script>.py" % sys.executable) from e
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)

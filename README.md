@@ -742,12 +742,20 @@ deadlocks scripted and bridge-driven runs.
 
 ## Installing the assets
 
-The system Python needs two packages from PyPI: `usd-core` (Pixar's OpenUSD, for the room) and `ruckig`
-(jerk-limited moves). Houdini's hython has its own OpenUSD.
+The scripts (the show, the player, `show_ui`) run in the project's own environment, managed by
+[uv](https://docs.astral.sh/uv/): `pyproject.toml` lists what they need -- `python-osc` (TouchDesigner),
+`usd-core` (Pixar's OpenUSD: the room is `envs/*.usda`), `ruckig` (jerk-limited moves) -- and `uv.lock`
+pins the versions, so the lab PC gets the same set. Whichever Python a `.py` file would open with (the
+`py` launcher's default, a conda base) no longer matters:
 
 ```
-python -m pip install usd-core ruckig
+uv sync                                  # once, and after pulling a changed uv.lock: makes .venv
+uv run scripts/show_ui.py                # any script, in .venv (show_ui starts show_stream in the same one)
+uv run scripts/show_stream.py shows/party.json --sim --ip 192.168.116.128 --osc
 ```
+
+Houdini's hython has its own OpenUSD, and Isaac Sim brings its own Python (`C:/isaacsim6/python.bat`);
+neither uses `.venv`.
 
 The toolkit is a Houdini package, `houdini/houdini_robot_toolkit.json` (paths relative to itself via
 `$HOUDINI_PACKAGE_PATH`): it puts this repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O

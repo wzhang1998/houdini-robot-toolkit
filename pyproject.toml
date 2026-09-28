@@ -1,0 +1,15 @@
+[project]
+name = "houdini-robot-toolkit"
+version = "0.1.0"
+description = "Motion clips, checks and the live show for a Fairino FR20, designed in Houdini"
+readme = "README.md"
+# the scripts run on the lab PC's Python; Houdini's hython and Isaac Sim bring their own
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "python-osc>=1.9",   # OSC to and from TouchDesigner (show, show_stream, show_ui)
+    "usd-core>=25.0",    # OpenUSD (pxr): the room, envs/*.usda (room_usd, collision)
+    "ruckig>=0.14",      # jerk-limited moves between hubs (transitions)
+]
+
+[tool.uv]
+package = false          # a folder of scripts, not an installable package

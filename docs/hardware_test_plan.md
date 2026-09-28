@@ -21,14 +21,14 @@ All commands run from the repo root; replace `<IP>` with the real robot's IP.
 1. Run the self-tests; each one should print OK at the end:
 
 ```bash
-python scripts/fairino_player.py --self-test
+uv run scripts/fairino_player.py --self-test
 ```
 
 ```bash
-python scripts/collision.py
+uv run scripts/collision.py
 ```
 
-2. **Change the playback settings.** Your local `playback.toml` currently has `speed = 1.0` and `acc_limit = 300` — that's for SimMachine; do not use it on the real robot. Open `python scripts/play_ui.py` and change it in the UI to:
+2. **Change the playback settings.** Your local `playback.toml` currently has `speed = 1.0` and `acc_limit = 300` — that's for SimMachine; do not use it on the real robot. Open `uv run scripts/play_ui.py` and change it in the UI to:
 
 | Item | Hardware value | Reason |
 |---|---|---|
@@ -54,7 +54,7 @@ python scripts/collision.py
 In play_ui press **1 Check**, or:
 
 ```bash
-python scripts/fairino_player.py --check --hardware --ip <IP>
+uv run scripts/fairino_player.py --check --hardware --ip <IP>
 ```
 
 Check four things: model, error code is 0, current joint angles, **the FK vs URDF difference** (the difference between the controller's TCP and the TCP computed from our URDF).
@@ -77,7 +77,7 @@ In play_ui press **6 Go HOME**. Once it's in position, press **1 Check** again a
 In play_ui press **4 Wiggle** (J1 3°), or:
 
 ```bash
-python scripts/fairino_player.py --hardware --ip <IP> --wiggle 1 3 4 1
+uv run scripts/fairino_player.py --hardware --ip <IP> --wiggle 1 3 4 1
 ```
 
 The whole arm will sway gently side to side. The log will show `wiggle: J1 moved 3.00 deg`. This step checks whether the ServoJ streaming path works: earlier, J6 at 5° wasn't visible moving on the real robot.
@@ -90,13 +90,13 @@ The room (`envs/volvox_lab.json` then; now `envs/volvox_lab.usda`) was estimated
 2. Open the point-probing window (read-only, will not move the arm):
 
 ```bash
-python scripts/probe_ui.py
+uv run scripts/probe_ui.py
 ```
 
    Select the object (common ones are in the dropdown), touch the tool tip to the point, and press **Record point** or Enter.
    - The table lists each point along with "URDF vs controller mm": how much the TCP computed from our URDF differs from the controller's TCP. This is the FK cross-check, done incidentally at every point.
    - The line below shows how many points each object already has and how many more are needed.
-   - The command-line version is still there too: `python scripts/probe_env.py --ip <IP> --tool-len 0.0`; type the name and press Enter, `u` to undo, `q` to quit.
+   - The command-line version is still there too: `uv run scripts/probe_env.py --ip <IP> --tool-len 0.0`; type the name and press Enter, `u` to undo, `q` to quit.
 
 | Name | Points |
 |---|---|
@@ -112,7 +112,7 @@ If a tool is attached, fill in the tool length (in meters) with `--tool-len`. Fo
 3. In the window, press **Preview fit** first to see what will change, then press **Write env** to write it (the old file is saved as `.bak`, and it lists how much each object moved). Command-line version:
 
 ```bash
-python scripts/env_from_points.py envs/volvox_lab_points.json
+uv run scripts/env_from_points.py envs/volvox_lab_points.json
 ```
 
 4. In Houdini, open **Display > Cell** on robot_arm and check whether the room matches reality.
@@ -130,13 +130,13 @@ All planning currently uses 150 deg/s², which is the manual's value for a 20–
 Test with the window (moves only one joint; it checks joint limits and the room before starting; on hardware it asks you before every level):
 
 ```bash
-python scripts/accel_ui.py
+uv run scripts/accel_ui.py
 ```
 
 First test J6, J5, J4 (3°, the wrist is mostly pose-independent), then test J3, J2, J1 at HOME (2°, results only apply to poses close to the test pose). Press **1 Check** first to see the pre-check, then press **2 Run levels**. Results are stored in `tests/accel/`. Command-line version:
 
 ```bash
-python scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report accel_j6.json
+uv run scripts/accel_probe.py --hardware --ip <IP> --joint 6 --amp 3 --report accel_j6.json
 ```
 
 Record each joint's "clean up to" value. If there's shaking, unusual noise, or an error, stop — that level doesn't count. **Don't put these numbers into the profile yet — send them to me.**
@@ -195,13 +195,13 @@ per run. On SimMachine (2026-09-27): 3 min, 22,634 ServoJ sends, 0 skips,
 no controller error, and tracking 0.54 deg max after a 40 ms lag. OSC
 triggers and `/robot/stop` were tested too.
 
-**Before**: `python scripts/show.py build shows/party.json` if the show
+**Before**: `uv run scripts/show.py build shows/party.json` if the show
 changed (it writes `shows/party.compiled.json`). Film it (see the top of
 this file). Hand on the E-stop.
 
 **Runs, in order** (each asks for `yes` on hardware; the first move to the
 start hub goes through the checked route):
-1. `python scripts/show_stream.py shows/party.json --hardware --ip <IP> --speed 0.3 --minutes 3`
+1. `uv run scripts/show_stream.py shows/party.json --hardware --ip <IP> --speed 0.3 --minutes 3`
 2. The same at `--speed 0.6 --minutes 5`.
 3. With TouchDesigner: add `--osc`.
    - Send `/robot/trigger greet`, then `/robot/trigger scan`.

@@ -40,3 +40,6 @@ houdini.env
 
 # stream reports and joint logs (show_stream.py)
 logs/
+
+# --- uv environment (pyproject.toml + uv.lock are the source) -----------
+.venv/

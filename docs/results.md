@@ -43,6 +43,12 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 | 2026-09-27 | Show v4 library (34 idle clips: 12 dances with animation principles, 22 gestures and spatial paths over 17 families; Ruckig moves), streamed 3 min at speed 1.0: 22,764 sends, 0 skips, max lateness 1.1 ms, no controller error, ended at a hub; largest step 80 % of the velocity limit; tracking after a 40 ms lag max 0.28 deg (RMS 0.027) | see git log |
 | 2026-09-27 | Show stream, 30 min with TouchDesigner-style OSC (39 triggers greet / scan / calm, a pause and resume, energy changes), after the GC fix: 225,501 sends, 0 skips, max lateness 5.4 ms, no controller error, ended at a hub; 350 segments. The arm's lag grew 40 -> 68 ms over the run (clock drift, see Failures); tracking after the best single lag 2.2 deg max, RMS 0.29 | 32ef7a8 |
 
+## Isaac Sim
+
+| Date | Result | Commit |
+|---|---|---|
+| 2026-09-27 | Show v4 in Isaac Sim 6.0, headless 2 min, the room read from OpenUSD (`shows/party.usda` over `envs/volvox_lab.usda`), a scan trigger every ~30 s: 31 clips over both hubs, 4 scans (trigger to scan 5.4 s mean, 6.7 max), 0 arm-room contacts (PhysX), tracking under gravity and the drives max 0.67 deg (J5), RMS <= 0.23 | see git log |
+
 ## Houdini / unit
 
 | Date | Result | Before -> after | Commit |

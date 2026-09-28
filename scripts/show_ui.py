@@ -2,8 +2,8 @@
 way TouchDesigner will: start show_stream.py, press sequences, pause,
 resume, set the mood and energy, watch the state.
 
-    python scripts/show_ui.py [shows/party.json]
-    python scripts/show_ui.py --self-test
+    uv run scripts/show_ui.py [shows/party.json]
+    uv run scripts/show_ui.py --self-test
 
 The window starts `show_stream.py <config> --sim --ip <IP> --osc` as its own
 process and talks to it over the show's OSC ports (the config's "osc":
@@ -54,6 +54,15 @@ def default_sim_ip():
         if s.startswith("ip") and "=" in s:
             ip = s.split("=", 1)[1].strip().strip('"')
     return ip if target == "sim" else ""
+
+
+REQUIRED = ("pxr", "pythonosc")            # what show_stream needs in this Python: the room (OpenUSD), OSC
+
+
+def missing_packages(names=REQUIRED):
+    """The modules show_stream would fail to import in this Python."""
+    import importlib.util
+    return [n for n in names if importlib.util.find_spec(n) is None]
 
 
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable):
@@ -197,6 +206,11 @@ def run_window(config):
         if not 0.05 <= speed.get() <= 1.0:
             messagebox.showerror("Speed", "Speed is 0.05 .. 1.0.")
             return
+        miss = missing_packages()
+        if miss:
+            messagebox.showerror("Missing packages", "This Python (%s) has no %s.\n\nRun the window in the toolkit's "
+                                 "environment:\nuv sync\nuv run scripts/show_ui.py" % (sys.executable, ", ".join(miss)))
+            return
         link.start(ip.get().strip(), minutes.get(), speed.get(),
                    [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [])
 
@@ -322,6 +336,8 @@ def self_test():
         if not ok:
             fails.append(label)
 
+    check("the packages show_stream needs are in this Python", not missing_packages(), missing_packages())
+    check("a missing package is named", missing_packages(("pythonosc", "no_such_module_x")) == ["no_such_module_x"])
     got = []
     d = dispatcher.Dispatcher()
     d.set_default_handler(lambda addr, *v: got.append((addr, v)))
