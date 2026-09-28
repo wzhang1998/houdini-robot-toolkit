@@ -461,11 +461,28 @@ def build(cfg_path, log=print):
         hubs["scan_start"], hubs["scan_end"] = list(sq[0]), list(sq[-1])
         segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end"))
         home = cfg["scan"]["from_hub"]
+        # an approach, as a machining or painting cell does: the checked route
+        # goes to a pose approach_m back from the scan's start (the same tool
+        # attitude, clear of the paper by the moves' margins), then straight
+        # in along the paper's normal -- a tool held near the paper would
+        # otherwise swing past it on the way (the LED strip, 2026-09-28)
+        back = cfg["scan"].get("approach_m", 0.2)
+        near = {"scan_start": approach_pose(rig, hubs["scan_start"], cfg["canvas"]["normal"], back),
+                "scan_end": approach_pose(rig, hubs["scan_end"], cfg["canvas"]["normal"], back)}
         for name, kind, a, b in (("to_scan", "to_scan", home, "scan_start"), ("from_scan", "from_scan", "scan_end", home)):
-            path, why = safe_move.route(hubs[a], hubs[b], scan_env, model)
-            if path is None:
+            scan_side = b if kind == "to_scan" else a
+            pa = near[scan_side]
+            if pa is None:
+                raise SystemExit("%s: no pose %.2f m back from the scan's end with the same tool attitude" % (name, back))
+            if kind == "to_scan":
+                path, why = safe_move.route(hubs[a], pa, scan_env, model)
+                way = None if path is None else [hubs[a]] + path + [hubs[b]]
+            else:
+                path, why = safe_move.route(pa, hubs[b], scan_env, model)
+                way = None if path is None else [hubs[a], pa] + path
+            if way is None:
                 raise SystemExit("%s: %s" % (name, why))
-            t, q = timed_move([hubs[a]] + path, cfg["transition_safety"], vel, acc)
+            t, q = timed_move(way, cfg["transition_safety"], vel, acc)
             rep = C.check(model, scan_env, t, q)
             if not rep["ok"]:
                 raise SystemExit("%s: %s" % (name, C.describe(rep)))
@@ -483,6 +500,14 @@ def build(cfg_path, log=print):
     if unreachable:
         raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
     return g
+
+
+def approach_pose(rig, q, normal, back):
+    """Joints with the tool back m further from the paper along its normal
+    (-normal), the tool's attitude kept, nearest q; None if not reachable."""
+    R, tcp, _ = rig.tool(q)
+    p = [tcp[i] - normal[i] * back for i in range(3)]
+    return rig.solve(p, (R[0][2], R[1][2], R[2][2]), 0.0, q, R=R)
 
 
 def placeholder_scan(cfg, env):
