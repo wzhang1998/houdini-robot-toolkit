@@ -5,7 +5,8 @@ seen in the room they read as the arm swinging at right angles, with the
 wrist mostly along for the ride. People read a robot arm the way they read
 a head and neck: where it LOOKS. Here every key is a tool position AND a
 point the tool looks at, so the wrist (J4-J6, J5 above all) carries the
-character, and small moves of the TCP read as leaning in or backing off.
+character -- and the body goes with it: it sinks, rises, dives and sweeps
+through heights, the more the higher the intensity.
 
 Zones (robot base frame, boxes centre / size / yaw):
 
@@ -14,11 +15,16 @@ Zones (robot base frame, boxes centre / size / yaw):
     greet      where the TCP performs for them (inside the stage)
     idle       the space around the rest hub, for looking around
 
-The TCP stays in the zone its hub's tool tip is in (greet first; a 0.4 m
-box around the tip when it is in none); keys outside are pulled onto the
-zone's boundary. A hub that faces away from the audience looks at it turned
-into its view (the audience's centre within GAZE_CONE_DEG * 0.6 of the
-hub's aim, no look beyond GAZE_CONE_DEG).
+The space a gesture uses (Space): ACROSS, the footprint of the zone its
+hub's tool tip stands in (greet first; a FALLBACK_M square around the tip
+when it stands in none); UP AND DOWN, the whole operating band TCP_Z (the
+show's range.tcp_z) -- the zone is design space, not a wall. Hard limits on
+top, from the room (when make() has one): inside every work zone (the
+stage, the controller's work area: z 0.1-1.6 m) and out of the slow zones
+the hub is not in (the operator's), by HARD_PAD. Keys outside are pulled
+onto its boundary. A hub that faces away from the audience looks at it
+turned into its view (the audience's centre within GAZE_CONE_DEG * 0.6 of
+the hub's aim, no look beyond GAZE_CONE_DEG).
 
 A gesture starts and ends at its hub (at rest), so it chains in the show
 graph like any clip: a quarter beat still at the start (the mirror of the
@@ -26,52 +32,88 @@ half beat at the end), then the first move eases out of rest (never
 front-loaded), so the first and last 24 fps steps are zero and speed and
 acceleration rise from zero at both joins. Families:
 
-    look    glance from point to point in the audience, holds between,
-            leaning a few cm towards each, the gaze leading the lean
-    wave    the TCP swings sideways while the tool keeps aiming at one
-            person and rolls with the swing, the roll trailing it
-    nod     the gaze drops and comes back up (twice, the second smaller),
-            the TCP dipping
-    reach   leans back, then moves out towards the audience (an offer),
-            holds, offers again a little further, returns
+    look    glance from point to point in the audience (and above their
+            heads, and down at their feet), holds between, leaning and
+            bobbing towards each, the gaze leading the lean
+    wave    the "hand" goes up, the TCP swings sideways while the tool
+            keeps aiming at one person and rolls with the swing
+    nod     the gaze drops and comes back up (two or three, smaller each
+            time), the TCP dipping
+    reach   leans back, then moves out and up (or down) towards the
+            audience (an offer), holds, offers again a little further
     tilt    the tool keeps aiming at someone and rolls to one side and the
-            other, like a head tilting (J6, J5), holds
-    trace   the TCP draws a loose path through the zone while the gaze
-            drifts across the audience, trailing it
-    peek    curious: creeps towards a person, cocks the wrist, pauses,
-            darts back a little
-    shy     the gaze drops away and the TCP retreats towards the robot,
-            then it slowly looks back
-    stretch a big slow reach up and out, the wrist rolling, like a yawn,
-            then settles
-    bounce  small up-down bobs on the beat, the gaze fixed on someone,
-            like a head bob to music
-    search  scans the audience side to side, quick look and hold, as if
-            looking for someone; ends leaning towards one person
+            other, like a head tilting (J6, J5), holds -- the calm one
+    trace   the TCP draws a loose, flowing path through its space while the
+            gaze drifts across the audience, trailing it
+    peek    ducks low and creeps towards a person, still, then pops up to
+            peek, cocks the wrist, pauses, darts back a little
+    shy     the gaze drops away and the TCP shrinks back and down towards
+            the robot, then it slowly looks back
+    stretch a big slow reach up and out (out and across when there is no
+            room above), the wrist rolling, like a yawn, then settles
+    bounce  bobs on the beat, the gaze fixed on someone, the groove
+            sinking or lifting halfway, like a head bob to music
+    search  scans the audience side to side, travelling and bending low
+            and high, quick look and hold; ends leaning towards one person
+    rise    gathers low (the gaze on the floor), still, then rises high,
+            looking up and out over the audience, holds, settles back
+    dive    a small lift, then swoops down towards the floor in front and
+            back up past the hub, like a bird dipping, the gaze leading
+    sweep   a big arc across the stage and through heights (a rainbow or a
+            swing), the gaze leading the way, and back
+    pop     an accent, 3-4 s: a flick the other way, a snap to a pose (up,
+            down, out, across) that stops dead, a freeze, back
 
 Animation inside the keys (all scaled by intensity k):
 
-    anticipation   a small counter-move before a big move (leans back
-                   before reaching out, dips before stretching up)
+    anticipation   a counter-move before a big move (leans back before
+                   reaching out, dips before stretching up)
     overshoot      fast moves go past their target and settle back
     overlap        the gaze / roll has its own clock: it trails the TCP
                    (follow-through: the wrist catches up) or leads it (the
                    eyes turn first, the lean follows)
     ease           min-jerk on a warped clock per move: decisive (quick
                    start, long settle) or hesitant (slow start, late landing)
+    flow           a key marked via is passed through without stopping: one
+                   eased clock over the run, a cubic through its keys (arcs,
+                   swoops, loops)
     breathing      a slow drift of the TCP (a few mm) and the gaze over the
                    whole clip, a breath a bar, faded in and out: holds are
                    never frozen
 
-    make(rig, hub_q, family, zones, rng, bpm, intensity) -> motion clip dict (or None)
+Rhythm: the tempo (bpm) sets the beat, the intensity how many beats a move
+takes (TEMPO: a calm move up to twice its beats, a lively one 0.6 of them,
+no quicker than V_DRAW / A_DRAW as drawn) and how big it is (sizes from
+calm to lively, +-15 %). A clip's length is drawn first: a pop is 3-4.2 s, a
+short accent form (likelier the livelier; quick even when calm, parts left
+out) 3.2-4.8 s, the rest a long form of 5-12 s (the calmer, the longer);
+repeats (glances, swings, bobs, nods) fill it, counted again from an
+estimate of the joints' time when they would not. Within a clip:
+accelerando / ritardando over repeats, a sudden stop into a held pose,
+stillness then a burst.
+
+    make(rig, hub_q, family, zones, rng, bpm, intensity, clip_id=None, env=None,
+         safety=PLAN_SAFETY) -> motion clip dict (or None); labels["family"],
+         labels["params"] (form, length, tempo, accents, space, size, slowed)
 
 Timing: keys at beat multiples; sampled at 24 fps through IK that tracks
 the previous frame (Newton from it, so the arm stays on its branch; the
-closed form when that fails). Each move is then given the time its joints
-need at the plan safety (fairino_player.need_profile, per key, rounded up
-to a quarter beat) -- a move that would need more than MAX_STRETCH times
-its beats, a key the arm cannot hold, a branch flip or the room drop the
-gesture to a smaller size of itself (SIZES) before the draw is given up.
+closed form when that fails). A key whose pose -- or the way to it --
+would take the wrist near its singularity has its gaze turned back
+towards the hub's aim (wrist_safe: a hub with J5 at 25-35 degrees cannot
+look as far about). Each move is then given the time its joints need at
+the plan safety (fairino_player.need_profile, per key, rounded up to an
+eighth of a beat): a big move takes more beats, up to MAX_STRETCH times its
+own and a clip of MAX_CLIP_S (the holds give time back first). Only a move
+that would crawl, a clip that would run over MAX_CLIP_S, a key the arm
+cannot hold, a branch flip or the room drop the gesture to a smaller size of
+itself (SIZES) -- the last resort -- before the draw is given up.
+
+hub_pose (show.resolve_hubs) solves a hub from its tool tip and look point:
+the IK pose nearest its seed, away from the wrist singularity and, as far
+as a roll allows, the joint limits; when that pose is not clear of the
+floor and itself (a low hub from a high hub's seed is elbow-down), every
+branch is weighed instead.
 Pure Python.
 
     python scripts/gestures.py        self-test
@@ -94,16 +136,32 @@ import ur_ik  # noqa: E402
 import urdf_rig as U  # noqa: E402
 
 FPS = 24.0
-FAMILIES = ("look", "wave", "nod", "reach", "tilt", "trace", "peek", "shy", "stretch", "bounce", "search")
+FAMILIES = ("look", "wave", "nod", "reach", "tilt", "trace", "peek", "shy", "stretch", "bounce", "search",
+            "rise", "dive", "sweep", "pop")
 LIMIT_MARGIN = 3.0
 MAX_STEP_DEG = 30.0              # per 24 fps frame: more is a branch flip (~180), not a quick gesture; timing is fitted after
 PLAN_SAFETY = 0.85
 GAZE_CONE_DEG = 50.0             # the most the gaze turns from the hub's aim
-SIZES = (1.0, 0.7, 0.45)         # a draw that does not work is tried smaller
-MAX_STRETCH = 2.5                # a move needing more than this times its beats is too big for the tempo
-BEATS = (9.0, 12.0)              # a gesture's length in beats (holds lengthened / shortened to fit)
+SIZES = (1.0, 0.8, 0.6, 0.45)    # the last resort: a draw that does not work is tried smaller
+MAX_STRETCH = 4.0                # a move needing more than this times its beats would crawl: smaller instead
+MIN_CLIP_S, MAX_CLIP_S = 3.0, 12.0   # a clip's length (the show's library.duration_s)
+TEMPO = (2.0, 0.6)               # a move's beats times this, calm (k 0) .. lively (k 1)
+TCP_Z = (0.35, 1.9)              # the show's operating band for the TCP (shows/*.json range.tcp_z)
+Z_PAD = 0.05                     # m inside the operating band
+ZONE_PAD = 0.02                  # m inside a zone's footprint
+HARD_PAD = 0.03                  # m inside the room's work zones, outside its slow zones
+FALLBACK_M = 0.8                 # the footprint around a hub that stands in no zone
+SHOULDER = (0.0, 0.0, 0.215)     # the FR20's J2 axis (ur_ik model p2)
+REACH_M = 1.6                    # the TCP this near the shoulder (or as near as its hub): beyond, a tool that
+                                 # must look somewhere runs out of arm (the wrist centre reaches 1.72 m)
 RATE_HZ = 125.0                  # the player's rate (fairino_player)
+V_DRAW, W_DRAW = 1.5, 240.0      # a move is drawn no quicker than these peaks (m/s of the TCP, deg/s of gaze and roll)
+A_DRAW, AW_DRAW = 4.0, 600.0     # nor more violent than these (m/s^2, deg/s^2): quicker would step like a branch
+                                 # flip, or need its time many times over, before the joints' own time is fitted
+A_EST, AW_EST = 1.4, 220.0       # what the joints usually allow a move (m/s^2 of the TCP, deg/s^2 of the gaze):
+                                 # the estimate a clip's repeats are counted by
 UP = (0.0, 0.0, 1.0)
+DOWN = (0.0, 0.0, -1.0)
 
 
 class Rig:
@@ -123,12 +181,16 @@ class Rig:
     def within(self, q):
         return all(lo + LIMIT_MARGIN < x < hi - LIMIT_MARGIN for x, (lo, hi) in zip(q, self.limits))
 
-    def solve(self, tcp, direction, roll, near, R=None):
+    def solutions(self, tcp, direction, roll, near, R=None):
+        """Every IK pose for the tool at tcp (within the limits and their
+        margin), each unwrapped towards near."""
         R = R or C.tool_frame(direction, roll)
         p6 = U._sub(tcp, U._mat_vec(R, (0.0, 0.0, self.fo)))
         sols = ur_ik.within_limits(self.model, ur_ik.solve(self.model, R, p6, q6_when_singular=near[5]))
-        sols = [s for s in sols if self.within(s["q"])]
-        best = ur_ik.nearest(sols, near)
+        return [s for s in sols if self.within(s["q"])]
+
+    def solve(self, tcp, direction, roll, near, R=None):
+        best = ur_ik.nearest(self.solutions(tcp, direction, roll, near, R), near)
         if best is None:
             return None
         return [b - 360.0 * round((b - a) / 360.0) for a, b in zip(near, best["q"])]
@@ -196,6 +258,10 @@ def _lerp(a, b, u):
     return [x + (y - x) * u for x, y in zip(a, b)]
 
 
+def _mix(a, b, u):
+    return a + (b - a) * u
+
+
 def _cap(v, most):
     """v shortened to at most `most` long."""
     n = U._norm(v)
@@ -220,6 +286,21 @@ def _side_of(d):
     return U._normalize(s) if U._norm(s) > 0.1 else (1.0, 0.0, 0.0)
 
 
+def _flat(v):
+    """v's horizontal direction (None when v is vertical)."""
+    h = (v[0], v[1], 0.0)
+    return U._normalize(h) if U._norm(h) > 1e-6 else None
+
+
+def _pick(rng, weighted):
+    r = rng.random() * sum(w for _, w in weighted)
+    for x, w in weighted:
+        r -= w
+        if r <= 0:
+            return x
+    return weighted[-1][0]
+
+
 def box_point(box, rng, fx=(-0.5, 0.5), fy=(-0.5, 0.5), fz=(-0.5, 0.5)):
     """A random point in a (yawed) box, each axis within the given fractions."""
     c, s = box["center"], box["size"]
@@ -228,11 +309,17 @@ def box_point(box, rng, fx=(-0.5, 0.5), fy=(-0.5, 0.5), fz=(-0.5, 0.5)):
     return (c[0] + math.cos(yaw) * lx - math.sin(yaw) * ly, c[1] + math.sin(yaw) * lx + math.cos(yaw) * ly, c[2] + lz)
 
 
-def inside(box, p, pad=0.0):
-    c, s = box["center"], box["size"]
+def _local(box, p):
+    """p in a (yawed) box's frame, from its centre."""
+    c = box["center"]
     yaw = math.radians(box.get("yaw_deg", 0.0))
-    dx, dy, dz = p[0] - c[0], p[1] - c[1], p[2] - c[2]
-    lx, ly = math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy
+    dx, dy = p[0] - c[0], p[1] - c[1]
+    return (math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy, p[2] - c[2])
+
+
+def inside(box, p, pad=0.0):
+    lx, ly, dz = _local(box, p)
+    s = box["size"]
     return abs(lx) <= s[0] / 2 - pad and abs(ly) <= s[1] / 2 - pad and abs(dz) <= s[2] / 2 - pad
 
 
@@ -241,22 +328,96 @@ def into(box, p, pad=0.0):
     c, s = box["center"], box["size"]
     yaw = math.radians(box.get("yaw_deg", 0.0))
     cy, sy = math.cos(yaw), math.sin(yaw)
-    dx, dy, dz = p[0] - c[0], p[1] - c[1], p[2] - c[2]
-    lx, ly = cy * dx + sy * dy, -sy * dx + cy * dy
+    lx, ly, dz = _local(box, p)
     h = [max(0.0, x / 2.0 - pad) for x in s]
     lx, ly, dz = max(-h[0], min(h[0], lx)), max(-h[1], min(h[1], ly)), max(-h[2], min(h[2], dz))
     return (c[0] + cy * lx - sy * ly, c[1] + sy * lx + cy * ly, c[2] + dz)
 
 
-def tcp_zone(zones, p):
-    """The box the TCP performs in: the zone (not the audience) the hub's
-    tool tip is in, greet first; a 0.4 m box around the tip when none is."""
-    names = ["greet", "idle"] + sorted(k for k in zones if k not in ("greet", "idle", "audience"))
-    for n in names:
-        z = zones.get(n)
-        if z and "center" in z and inside(z, p):
-            return z
-    return {"center": list(p), "size": [0.4, 0.4, 0.4], "yaw_deg": 0.0}
+# --------------------------------------------------------------------------
+# the space a gesture (or a path) may use
+# --------------------------------------------------------------------------
+
+def footprint_zone(zones, p, name=None):
+    """(name, box) of the zone a hub's tool tip performs in: the named one
+    (when its footprint holds p), else the zone that holds p, else the one
+    whose footprint (across, any height) holds p -- greet, idle, the others
+    in turn, never the audience; (None, None) when none does."""
+    names = [name] if name else ["greet", "idle"] + sorted(k for k in zones if k not in ("greet", "idle", "audience"))
+    boxes = [(n, zones[n]) for n in names if zones.get(n) and "center" in zones[n]]
+    for n, z in boxes:
+        if inside(z, p):
+            return n, z
+    for n, z in boxes:
+        lx, ly, _ = _local(z, p)
+        if abs(lx) <= z["size"][0] / 2 and abs(ly) <= z["size"][1] / 2:
+            return n, z
+    return None, None
+
+
+class Space:
+    """Where the TCP may go from a hub at p0: the zone's footprint (ZONE_PAD
+    inside) across, the operating band (Z_PAD inside) up and down, inside
+    the room's work zones and out of the slow zones p0 is not in (HARD_PAD),
+    within REACH_M of the shoulder; the hub's own point always inside.
+
+        box              the soft space as a yawed box (footprint x band)
+        bottom, top      its height band (m)
+        clamp(p)         the nearest point of the space
+        contains(p, pad) p inside it"""
+
+    def __init__(self, zones, p0, env=None, name=None, band=TCP_Z):
+        self.p0 = tuple(p0)
+        self.name, zone = footprint_zone(zones or {}, p0, name)
+        if zone is None:
+            zone = {"center": list(p0), "size": [FALLBACK_M, FALLBACK_M, 1.0], "yaw_deg": 0.0}
+        lx, ly, _ = _local(zone, p0)
+        hx, hy = zone["size"][0] / 2 - ZONE_PAD, zone["size"][1] / 2 - ZONE_PAD
+        xlo, xhi, ylo, yhi = min(-hx, lx), max(hx, lx), min(-hy, ly), max(hy, ly)
+        zlo, zhi = band[0] + Z_PAD, band[1] - Z_PAD
+        objs = (env or {}).get("objects", [])
+        self.work = [o for o in objs if o.get("role") == "work" and o.get("type") == "box"]
+        for w in self.work:
+            zlo = max(zlo, w["center"][2] - w["size"][2] / 2 + HARD_PAD)
+            zhi = min(zhi, w["center"][2] + w["size"][2] / 2 - HARD_PAD)
+        zlo, zhi = min(zlo, p0[2]), max(zhi, p0[2])
+        yaw = math.radians(zone.get("yaw_deg", 0.0))
+        cx, cy = (xlo + xhi) / 2, (ylo + yhi) / 2
+        c = zone["center"]
+        self.box = {"center": [c[0] + math.cos(yaw) * cx - math.sin(yaw) * cy,
+                               c[1] + math.sin(yaw) * cx + math.cos(yaw) * cy, (zlo + zhi) / 2],
+                    "size": [xhi - xlo, yhi - ylo, zhi - zlo], "yaw_deg": zone.get("yaw_deg", 0.0)}
+        self.bottom, self.top = zlo, zhi
+        self.reach = max(REACH_M, math.dist(p0, SHOULDER) + 0.02)
+        # the slow zones (the operator's) the hub is not in: kept out of, across
+        self.slow = []
+        for o in objs:
+            if o.get("role") == "slow" and o.get("type") in ("cylinder", "sphere"):
+                r = o["radius"] + HARD_PAD
+                if math.hypot(p0[0] - o["center"][0], p0[1] - o["center"][1]) > r:
+                    self.slow.append(((o["center"][0], o["center"][1]), r))
+
+    def clamp(self, p):
+        p = tuple(p)
+        for _ in range(2):
+            p = into(self.box, p)
+            for w in self.work:
+                if inside(w, self.p0, HARD_PAD):
+                    p = into(w, p, HARD_PAD)
+            for (cx, cy), r in self.slow:
+                d = math.hypot(p[0] - cx, p[1] - cy)
+                if d < r:
+                    s = r / d if d > 1e-9 else 1.0
+                    p = (cx + (p[0] - cx) * s, cy + (p[1] - cy) * s, p[2])
+            d = math.dist(p, SHOULDER)
+            if d > self.reach:
+                p = U._add(SHOULDER, U._scale(U._sub(p, SHOULDER), self.reach / d))
+        return p
+
+    def contains(self, p, pad=0.0):
+        return (inside(self.box, p, pad) and all(inside(w, p, HARD_PAD + pad) for w in self.work if inside(w, self.p0, HARD_PAD))
+                and all(math.hypot(p[0] - cx, p[1] - cy) >= r + pad for (cx, cy), r in self.slow)
+                and math.dist(p, SHOULDER) <= self.reach - pad)
 
 
 # --------------------------------------------------------------------------
@@ -309,64 +470,172 @@ class _View:
         return self.in_view(e)
 
 
+def clip_length(rng, k, family):
+    """(form, (lo, hi) s) a clip is drawn to last: a pop 3-4.2 s; a short
+    accent form (likelier the livelier) 3.2-5 s; else a long form round a
+    length drawn from 7-11 s (calm) .. 5-8.5 s (lively), within 5-12 s."""
+    if family == "pop":
+        return "pop", (MIN_CLIP_S, 4.2)
+    if rng.random() < 0.35 + 0.4 * k:
+        return "short", (3.2, 4.8)
+    mid = rng.uniform(_mix(7.0, 5.0, k), _mix(11.0, 8.5, k))
+    return "long", (max(5.0, mid - 1.5), min(MAX_CLIP_S, mid + 1.0))
+
+
 class _Draw:
     """The keys of one gesture as it is drawn: the current tool tip, look
-    point and roll, and moves from them. Durations are in beats here."""
+    point and roll, and moves from them. Durations are in beats here; a
+    move's are multiplied by the intensity's tempo (holds and the still
+    start are not)."""
 
-    def __init__(self, home, zones, rng, beat, k):
+    def __init__(self, home, zones, rng, beat, k, space, budget, form="long"):
         self.p0, self.look0, self.r0 = home
         self.p, self.look, self.roll = home
         self.rng, self.beat, self.k = rng, beat, k
-        self.zone = tcp_zone(zones, self.p0)
+        self.space = space
+        self.zone = space.box
         self.view = _View(zones, self.p0, self.look0)
+        self.budget = budget                  # beats the clip is drawn to last
         self.keys = []
+        self.repeats = False
+        self.params = {"tempo": "steady", "accents": []}
+        self.tempo = _mix(TEMPO[0], TEMPO[1], k)
+        self.short = form != "long"
+        if self.short:                        # an accent is quick even when calm
+            self.tempo = min(self.tempo, _mix(1.0, TEMPO[1], k))
         self.over = 0.08 + 0.17 * k           # overshoot, fraction of the move
         self.anti = 0.08 + 0.17 * k           # anticipation, fraction of the move
         self.lag = beat * (0.1 + 0.25 * k)    # overlap of the gaze / roll, s
+        a = zones.get("audience")
+        f = _flat(U._sub(a["center"], self.p0)) if a else None
+        f = f or _flat(self.view.d0) or _flat((-self.p0[0], -self.p0[1], 0.0)) or (1.0, 0.0, 0.0)
+        self.fwd = f                                          # across the floor, towards the audience
+        self.side = U._normalize(U._cross(UP, f))             # across, to its left
+        self.back = _flat((-self.p0[0], -self.p0[1], 0.0)) or U._scale(f, -1.0)   # towards the robot
+        self.room_up = max(0.0, space.top - self.p0[2])
+        self.room_down = max(0.0, self.p0[2] - space.bottom)
         # the still start, as the end's rest: a min-jerk move straight from
         # the first frame steps ~10 u^3 of the move at once (0.03-0.1 deg
         # for these); from rest here, the first move eases in from a frame at rest
-        self.key(max(0.25, 2.0 / (FPS * beat)), ease=0.0)
+        self.key(max(0.25, 2.0 / (FPS * beat)), ease=0.0, raw=True)
         self.keys[-1][4]["lead"] = True
 
+    # -- where
     def clamp(self, p):
-        return p if inside(self.zone, p, 0.02) else into(self.zone, p, 0.02)
+        return self.space.clamp(p)
+
+    def at(self, fwd=0.0, side=0.0, up=0.0, base=None):
+        """A point fwd towards the audience, side across, up from base (the hub)."""
+        b = base or self.p0
+        return (b[0] + self.fwd[0] * fwd + self.side[0] * side, b[1] + self.fwd[1] * fwd + self.side[1] * side, b[2] + up)
+
+    def amp(self, lo, hi):
+        """A size from lo (calm) to hi (lively), varied +-15 %."""
+        return _mix(lo, hi, self.k) * self.rng.uniform(0.85, 1.15)
+
+    def vert(self, want, prefer=0):
+        """A signed height change of `want` from the hub: up or down (prefer
+        +1 / -1 when both fit), where the space has room; less when neither
+        side has it."""
+        up, dn = max(0.0, self.room_up - 0.01), max(0.0, self.room_down - 0.01)
+        fits = [s for s, r in ((1, up), (-1, dn)) if r >= want]
+        if prefer and prefer in fits:
+            return prefer * want
+        if fits:
+            return self.rng.choice(fits) * want
+        return min(want, up) if up >= dn else -min(want, dn)
 
     def eyes(self):
         return self.view.eyes(self.rng)
 
+    def azimuth(self, p):
+        """p's bearing about the robot's base axis (degrees)."""
+        return math.degrees(math.atan2(p[1], p[0]))
+
+    def swung(self, p, lead_deg=0.0, pitch_deg=0.0):
+        """A look point for the tool at p that turns with the body: the
+        hub's aim turned about the vertical by p's change of bearing from the
+        hub (as J1 turns it) and lead_deg more, pitched up by pitch_deg. The
+        wrist stays quiet, so the arm can swing at its quickest."""
+        turn = self.azimuth(p) - self.azimuth(self.p0) + lead_deg
+        d = U._mat_vec(U.axis_angle_matrix(UP, math.radians(turn)), self.view.d0)
+        if pitch_deg:
+            d = _turn(d, UP, pitch_deg)
+        return U._add(p, U._scale(d, 1.5))
+
     def gaze(self, p=None, look=None):
         p, look = p or self.p, look or self.look
         return U._normalize(U._sub(look, p))
+
+    # -- when
+    def left(self):
+        """Beats still free in the budget (the way home kept aside)."""
+        return self.budget - sum(k[0] for k in self.keys) - 2.0 * self.tempo - 0.5
+
+    def reps(self, per, lo, hi):
+        """How many repeats of `per` beats (a move's, before the tempo) fit, lo..hi."""
+        self.repeats = True
+        return max(lo, min(hi, int(self.left() / max(1e-6, per * self.tempo))))
+
+    def curve(self, n):
+        """Duration factors for n repeated moves (mean 1): steady, accelerando
+        (each quicker, the last about half the first) or ritardando (each
+        slower); the livelier, the likelier an accelerando."""
+        kind = _pick(self.rng, (("steady", 1.0), ("accel", 0.6 + 0.8 * self.k), ("rit", 0.8)))
+        if n < 2 or kind == "steady":
+            return [1.0] * n
+        self.params["tempo"] = kind
+        r = (0.5 if kind == "accel" else 1.8) ** (1.0 / (n - 1))
+        ms = [r ** i for i in range(n)]
+        mean = sum(ms) / n
+        return [m / mean for m in ms]
 
     def ease(self):
         """A varied slow-in / slow-out for an ordinary move."""
         return self.rng.uniform(-0.25, 0.35) * (0.4 + 0.6 * self.k)
 
     def target(self, p=None, look=None, roll=None):
-        """(tcp, look, roll) of a key: the TCP kept in its zone, the look in
+        """(tcp, look, roll) of a key: the TCP kept in its space, the look in
         view; what is not given stays (the gaze keeps its direction)."""
         p = self.clamp(p) if p is not None else self.p
         look = self.view.in_view(look) if look is not None else U._add(p, U._sub(self.look, self.p))
         return p, look, self.roll if roll is None else roll
 
-    def key(self, beats, p=None, look=None, roll=None, ease=None, lag=0.0, hold=False):
+    def key(self, beats, p=None, look=None, roll=None, ease=None, lag=0.0, hold=False, via=False, least=0.5, raw=False):
+        """A key `beats` after the last (times the tempo unless a hold or raw).
+        via: passed through without stopping (the next key must move)."""
         p, look, roll = self.target(p, look, roll)
+        if not (hold or raw):
+            beats *= self.tempo
+            # no quicker than V_DRAW / W_DRAW, A_DRAW / AW_DRAW at the min-jerk
+            # peaks (1.875 d / T, 5.77 d / T^2)
+            ang, dist = max(_angle(self.gaze(), self.gaze(p, look)), abs(roll - self.roll)), math.dist(p, self.p)
+            least = max(1.875 * dist / V_DRAW, 1.875 * ang / W_DRAW, math.sqrt(5.77 * dist / A_DRAW),
+                        math.sqrt(5.77 * ang / AW_DRAW), 0.15)
+            beats = max(beats, least / self.beat)
         if len(self.keys) == 1:                             # the first move: out of rest gently, never front-loaded
             ease = min(0.0, self.ease() if ease is None else ease)
-        self.keys.append((beats, p, look, roll, {"ease": self.ease() if ease is None else ease, "lag": lag, "hold": hold}))
+        if hold and self.keys and self.keys[-1][4].get("via"):
+            del self.keys[-1][4]["via"]                    # a run cannot flow into a standstill
+        opt = {"ease": self.ease() if ease is None else ease, "lag": lag, "hold": hold}
+        if hold:
+            opt["least"] = least
+        if via:
+            opt["via"] = True
+        self.keys.append((beats, p, look, roll, opt))
         self.p, self.look, self.roll = p, look, roll
 
-    def hold(self, beats):
-        self.key(beats, ease=0.0, hold=True)
+    def hold(self, beats, least=None):
+        """A hold of `beats` (not shortened under least: half a beat, a third in an accent)."""
+        self.key(beats, ease=0.0, hold=True, least=least if least is not None else (0.35 if self.short else 0.5))
 
     def _past(self, p, look, roll, frac, away=False):
         """A state past the target (overshoot) or before the start, away
-        from the target (anticipation): frac of the move, at most 4 cm,
-        10 degrees of gaze, 10 degrees of roll."""
+        from the target (anticipation): frac of the move, at most 3-9 cm
+        (with intensity), 10 degrees of gaze, 10 degrees of roll."""
         sgn = -1.0 if away else 1.0
         base_p, base_d, base_r = (self.p, self.gaze(), self.roll) if away else (p, self.gaze(p, look), roll)
-        dp = _cap(U._scale(U._sub(p, self.p), sgn * frac), 0.04)
+        dp = _cap(U._scale(U._sub(p, self.p), sgn * frac), 0.03 + 0.06 * self.k)
         q = self.clamp(U._add(base_p, dp))
         d_from, d_to = self.gaze(), self.gaze(p, look)
         ang = min(10.0, frac * _angle(d_from, d_to))
@@ -382,23 +651,55 @@ class _Draw:
         q, lq, rq = self._past(*self.target(p, look, roll), frac=self.anti, away=True)
         self.key(beats, q, lq, rq, ease=-0.2)
 
-    def arrive(self, beats, p=None, look=None, roll=None, lag=0.0, settle=0.5, ease=0.35):
+    def arrive(self, beats, p=None, look=None, roll=None, lag=0.0, settle=0.5, ease=0.35, via=False):
         """A quick move that goes past its target and settles back."""
         p, look, roll = self.target(p, look, roll)
         q, lq, rq = self._past(p, look, roll, self.over)
         self.key(beats, q, lq, rq, ease=ease, lag=lag)
         self.key(settle, p, look, roll, ease=-0.15, lag=lag * 0.5)
 
+    def stop(self, beats, p=None, look=None, roll=None, lag=0.0):
+        """A sudden stop into a held pose: gathering speed to the very end
+        (a late landing), a small overshoot, settled in a quarter beat."""
+        p, look, roll = self.target(p, look, roll)
+        q, lq, rq = self._past(p, look, roll, 0.5 * self.over)
+        self.key(beats, q, lq, rq, ease=-0.35, lag=lag)
+        self.key(0.25, p, look, roll, ease=0.0, lag=0.0)
+        self.params["accents"].append("stop")
+
+    def burst(self, still, beats, p=None, look=None, roll=None, lag=0.0, via=False):
+        """Stillness, then a burst: a hold of `still` beats (it breathes),
+        then a move that starts at once and settles long."""
+        self.hold(still, least=max(0.5, still * 0.6))
+        self.key(beats, p, look, roll, ease=0.45, lag=lag, via=via)
+        self.params["accents"].append("burst")
+
     def home(self, lag):
         """Back to the hub (the wrist settling last), then at rest."""
         self.key(1.5, self.p0, self.look0, self.r0, ease=0.1, lag=lag)
         self.keys[-1][4]["home"] = True
-        self.key(0.5, self.p0, self.look0, self.r0, ease=0.0, lag=0.0)
+        self.key(0.5, self.p0, self.look0, self.r0, ease=0.0, lag=0.0, raw=True)
         self.keys[-1][4]["home"] = True
 
 
+def estimate(keys, beat):
+    """About how long (s) the joints will make keys (durations in beats):
+    each move at least what A_EST / AW_EST allow its distance and turn of
+    gaze and roll (min-jerk: T = sqrt(5.77 d / a)), holds as drawn."""
+    total, prev = 0.0, None
+    for b, p, look, roll, opt in keys:
+        t = b * beat
+        if prev is not None and not opt.get("hold"):
+            d0, d1 = U._normalize(U._sub(prev[1], prev[0])), U._normalize(U._sub(look, p))
+            ang = max(_angle(d0, d1), abs(roll - prev[2]))
+            t = max(t, math.sqrt(5.77 * math.dist(p, prev[0]) / A_EST), math.sqrt(5.77 * ang / AW_EST))
+        total += t
+        prev = (p, look, roll)
+    return total
+
+
 def _fit_beats(keys, lo, hi):
-    """Holds lengthened (or shortened, not under half a beat) so the keys
+    """Holds lengthened (or shortened, not under their least) so the keys
     add up to lo..hi beats; a hold added before the way home when there are
     none to lengthen."""
     total = sum(k[0] for k in keys)
@@ -406,147 +707,366 @@ def _fit_beats(keys, lo, hi):
     if total < lo:
         if not holds:
             i = next(i for i, k in enumerate(keys) if k[4].get("home"))
-            keys.insert(i, (0.0, keys[i - 1][1], keys[i - 1][2], keys[i - 1][3], {"ease": 0.0, "lag": 0.0, "hold": True}))
+            if keys[i - 1][4].get("via"):
+                del keys[i - 1][4]["via"]
+            keys.insert(i, (0.0, keys[i - 1][1], keys[i - 1][2], keys[i - 1][3], {"ease": 0.0, "lag": 0.0, "hold": True, "least": 0.0}))
             holds = [i]
         add = (lo - total) / len(holds)
         for i in holds:
             keys[i] = (keys[i][0] + add,) + keys[i][1:]
     elif total > hi and holds:
-        room = sum(keys[i][0] - 0.5 for i in holds)
+        room = sum(max(0.0, keys[i][0] - keys[i][4].get("least", 0.5)) for i in holds)
         cut = min(total - hi, room)
         for i in holds:
-            share = (keys[i][0] - 0.5) / room if room > 1e-9 else 0.0
+            share = max(0.0, keys[i][0] - keys[i][4].get("least", 0.5)) / room if room > 1e-9 else 0.0
             keys[i] = (keys[i][0] - cut * share,) + keys[i][1:]
     return keys
 
 
-def keys_for(family, home, zones, rng, beat, k):
-    """Keys after the start: [(duration s, tcp, look, roll, options)], ending
-    at home at rest. home = (tcp, look, roll) of the hub; k = intensity 0..1.
-    options: ease (the warp of the min-jerk clock), lag (s the gaze / roll
-    trails the TCP; < 0 leads it), hold (a hold: may be lengthened)."""
-    g = _Draw(home, zones, rng, beat, k)
-    p0, r0 = g.p0, g.r0
-    hold = lambda: rng.choice((0.5, 1.0, 1.0, 1.5))
+def _moves(g, family, form):
+    """A family's keys drawn into g (all but the way home)."""
+    rng, k, p0, r0 = g.rng, g.k, g.p0, g.r0
+    short = form != "long"
+    def hold():
+        return 0.5 if short else rng.choice((0.5, 1.0, 1.0, 1.5))
+    lively = rng.random() < k                                 # accents: likelier the livelier
     if family == "look":
-        for _ in range(rng.choice((2, 3))):
+        n = g.reps(2.2, 1 if form == "short" else 2, 4)
+        ts = g.curve(n)
+        for i in range(n):
             e = g.eyes()
-            p = _toward(p0, e, 0.04 + 0.06 * k)
-            g.arrive(rng.choice((1, 1.5)), p, e, r0 + rng.uniform(-15, 15) * k, lag=-g.lag)   # the eyes lead
+            x = rng.random()
+            if x < 0.1 + 0.2 * k:
+                e = (e[0], e[1], e[2] + g.amp(0.3, 0.8))                        # above their heads
+            elif x < 0.2 + 0.4 * k:
+                e = (e[0], e[1], max(0.1, e[2] - g.amp(0.5, 1.1)))              # down at their feet
+            dz = (e[2] - p0[2]) * 0.12 + rng.uniform(-1, 1) * g.amp(0.03, 0.16)  # the body bobs with the gaze
+            p = U._add(_toward(p0, e, g.amp(0.06, 0.26)), (0.0, 0.0, dz))
+            roll = r0 + rng.uniform(-15, 15) * k
+            if lively and i == n - 1:
+                g.stop(0.75 * ts[i], p, e, roll, lag=-g.lag)                    # the eyes lead, then it freezes
+            else:
+                g.arrive(rng.choice((0.75, 1.0)) * ts[i], p, e, roll, lag=-g.lag)
             g.hold(hold())
     elif family == "wave":
         e = g.eyes()
-        base = _toward(p0, e, 0.05)
+        base = U._add(_toward(p0, e, g.amp(0.03, 0.1)), (0.0, 0.0, g.vert(g.amp(0.03, 0.22), prefer=1)))   # the hand goes up
         side = _side_of(U._sub(e, base))
-        amp, ramp = 0.03 + 0.04 * k, 15 + 15 * k
+        amp, ramp = g.amp(0.08, 0.32), 15 + 20 * k
         first = rng.choice((1, -1))
         g.key(1, base, e, r0, lag=-g.lag * 0.5)
-        g.anticipate(0.5, U._add(base, U._scale(side, first * amp)), e, r0 + first * ramp)
-        for i in range(rng.choice((3, 4))):
+        if not short:
+            g.anticipate(0.5, U._add(base, U._scale(side, first * amp)), e, r0 + first * ramp)
+        n = g.reps(1.0, 2 if form == "short" else 3, 6)
+        ts = g.curve(n)
+        for i in range(n):
             sgn = first if i % 2 == 0 else -first
-            g.key(1, U._add(base, U._scale(side, sgn * amp)), e, r0 + sgn * ramp, ease=0.0, lag=g.lag)  # the roll trails the swing
+            g.key(ts[i], U._add(base, U._scale(side, sgn * amp)), e, r0 + sgn * ramp, ease=0.0, lag=g.lag)  # the roll trails the swing
         g.arrive(1, base, e, r0, lag=g.lag)
         g.hold(1)
     elif family == "nod":
         e = g.eyes()
-        g.arrive(1, _toward(p0, e, 0.03), e, r0, lag=-g.lag)
-        for depth in (1.0, 0.65):
-            dip = (12.0 + 12.0 * k) * depth
-            pd = U._add(_toward(p0, e, 0.03), (0.0, 0.0, -(0.02 + 0.03 * k) * depth))
-            d = _turn(U._sub(e, pd), (0.0, 0.0, -1.0), dip)
-            g.key(1, pd, U._add(pd, d), r0, ease=0.2, lag=g.lag * 0.5)
-            g.arrive(1, _toward(p0, e, 0.02), e, r0, lag=g.lag * 0.5)
+        g.arrive(1, _toward(p0, e, g.amp(0.02, 0.06)), e, r0, lag=-g.lag)
+        base = g.p
+        n = g.reps(2.0, 1 if form == "short" else 2, 3)
+        ts = g.curve(n)
+        for i, depth in enumerate((1.0, 0.65, 0.4)[:n]):
+            dip = (12.0 + 18.0 * k) * depth
+            pd = U._add(_toward(base, e, g.amp(0.04, 0.16) * depth), (0.0, 0.0, -g.amp(0.07, 0.26) * depth))   # a bow
+            d = _turn(U._sub(e, pd), DOWN, dip)
+            g.key(ts[i], pd, U._add(pd, d), r0, ease=0.2, lag=g.lag * 0.5)
+            g.arrive(ts[i], _toward(base, e, 0.01), e, r0, lag=g.lag * 0.5)
         g.hold(1.5)
     elif family == "reach":
         e = g.eyes()
-        out = _toward(p0, e, 0.15 + 0.2 * k)
+        out = U._add(_toward(p0, e, g.amp(0.12, 0.32)), (0.0, 0.0, g.vert(g.amp(0.08, 0.38))))   # an offer, high or low
         roll = r0 + rng.uniform(-20, 20)
         g.anticipate(0.75, out, e, roll)                    # leans back first
         g.arrive(1.5, out, e, roll, lag=g.lag)              # the wrist follows through
-        g.hold(1.5)
-        further = _toward(g.p, e, 0.03 + 0.04 * k)
-        g.key(0.75, further, e, roll + rng.choice((-1, 1)) * (8 + 10 * k), ease=0.2, lag=g.lag)   # "here"
-        g.hold(1)
-        g.key(1, _toward(p0, e, 0.05), e, r0, lag=g.lag)
+        g.hold(hold() + 0.5)
+        if not short:
+            further = U._add(_toward(g.p, e, g.amp(0.03, 0.08)), (0.0, 0.0, 0.15 * (g.p[2] - p0[2])))
+            g.key(0.75, further, e, roll + rng.choice((-1, 1)) * (8 + 10 * k), ease=0.2, lag=g.lag)   # "here"
+            g.hold(1)
+            g.key(1, _toward(p0, e, 0.05), e, r0, lag=g.lag)
     elif family == "tilt":
         e = g.eyes()
         g.arrive(1, _toward(p0, e, 0.03), e, r0, lag=-g.lag)
         base = g.p
         side = _side_of(U._sub(e, base))
-        for sgn in rng.sample((1, -1), 2):
-            g.arrive(1, U._add(base, U._scale(side, sgn * (0.01 + 0.015 * k))), e, r0 + sgn * (25 + 20 * k), lag=g.lag)
+        for sgn in rng.sample((1, -1), 1 if short else 2):
+            p = U._add(U._add(base, U._scale(side, sgn * g.amp(0.02, 0.08))), (0.0, 0.0, -g.amp(0.01, 0.06)))
+            g.arrive(1, p, e, r0 + sgn * (25 + 20 * k), lag=g.lag)
             g.hold(hold())
     elif family == "trace":
         e = g.eyes()
-        for _ in range(rng.choice((3, 4))):
-            p = U._add(p0, _cap(U._sub(box_point(g.zone, rng, (-0.35, 0.35), (-0.35, 0.35), (-0.35, 0.35)), p0), 0.25))
+        rad = g.amp(0.2, 0.55)
+        n = g.reps(1.25, 2 if form == "short" else 3, 5)
+        ts = g.curve(n)
+        for i in range(n):
+            q = box_point(g.space.box, rng, (-0.4, 0.4), (-0.4, 0.4), (-0.45, 0.45))
+            p = U._add(p0, _cap(U._sub(q, p0), rad))
             e = g.eyes() if rng.random() < 0.5 else e
-            g.key(rng.choice((1, 1.5)), p, e, r0 + rng.uniform(-20, 20) * k, lag=g.lag)
+            g.key(rng.choice((1, 1.5)) * ts[i], p, e, r0 + rng.uniform(-20, 20) * k, lag=g.lag,
+                  via=i < n - 1 and rng.random() < 0.75)   # flowing through most points
         g.hold(0.5)
     elif family == "peek":
         e = g.eyes()
-        near = _toward(p0, e, 0.10 + 0.12 * k)
-        g.key(2, near, e, r0, ease=-0.3, lag=g.lag)                 # creeps in
+        low = U._add(_toward(p0, e, g.amp(0.04, 0.12)), (0.0, 0.0, -g.amp(0.05, 0.26)))
+        g.key(2, low, e, r0, ease=-0.3, lag=g.lag)                          # ducks and creeps in
+        top = U._add(_toward(p0, e, g.amp(0.08, 0.22)), (0.0, 0.0, min(g.room_up, g.amp(0.0, 0.14))))
         cock = rng.choice((-1, 1)) * (20 + 20 * k)
-        g.arrive(0.75, near, e, r0 + cock, lag=g.lag)               # cocks the wrist
-        g.hold(1.5)
-        g.arrive(0.5, _toward(p0, e, 0.03 + 0.04 * k), e, r0 + cock * 0.5, ease=0.5)   # darts back a little
-        g.hold(1)
+        g.burst(rng.choice((0.75, 1.0, 1.5)), 0.75, top, e, r0 + cock * 0.3, lag=-g.lag * 0.5)   # still, then pops up to peek
+        g.arrive(0.5, top, e, r0 + cock, lag=g.lag)                         # cocks the wrist
+        g.hold(hold() + 0.5)
+        if not short:
+            g.arrive(0.5, _toward(p0, e, 0.03 + 0.04 * k), e, r0 + cock * 0.5, ease=0.5)   # darts back a little
+            g.hold(1)
     elif family == "shy":
         e = g.eyes()
         g.key(1, _toward(p0, e, 0.03), e, r0, lag=-g.lag)
         d = U._normalize(U._sub(e, g.p))
-        away = _turn(_turn(d, (0.0, 0.0, -1.0), 30 + 15 * k), _side_of(d), rng.choice((-1, 1)) * (12 + 12 * k))
-        back = U._normalize((-p0[0], -p0[1], 0.0)) if math.hypot(p0[0], p0[1]) > 1e-6 else (0.0, 0.0, 0.0)
-        pr = U._add(p0, U._add(U._scale(back, 0.05 + 0.06 * k), (0.0, 0.0, -0.02 - 0.02 * k)))
+        away = _turn(_turn(d, DOWN, 30 + 15 * k), _side_of(d), rng.choice((-1, 1)) * (12 + 12 * k))
+        pr = U._add(U._add(p0, U._scale(g.back, g.amp(0.08, 0.22))), (0.0, 0.0, -g.amp(0.08, 0.32)))
+        pr = U._add(pr, U._scale(_side_of(d), rng.choice((-1, 1)) * g.amp(0.03, 0.18)))      # and turns aside
         g.key(1, g.p, U._add(g.p, U._scale(away, 1.3)), r0 - 10 * k, ease=0.3, lag=-g.lag)   # the gaze drops away first
-        g.key(1.5, pr, U._add(pr, U._scale(away, 1.3)), r0 - 15 * k, ease=0.0, lag=g.lag)      # and it shrinks back
-        g.hold(1.5)
-        half = U._normalize(_lerp(away, U._normalize(U._sub(e, pr)), 0.5))
-        g.key(1.5, pr, U._add(pr, U._scale(half, 1.3)), r0 - 5 * k, ease=-0.3)                 # a glance back
-        g.hold(0.75)
-        g.key(1.5, _toward(p0, e, 0.02), e, r0, ease=-0.3, lag=g.lag)
+        g.key(1.5, pr, U._add(pr, U._scale(away, 1.3)), r0 - 15 * k, ease=0.0, lag=g.lag)      # and it shrinks back and down
+        pr = g.p
+        g.hold(hold() + 0.5)
+        if not short:
+            half = U._normalize(_lerp(away, U._normalize(U._sub(e, pr)), 0.5))
+            g.key(1.5, pr, U._add(pr, U._scale(half, 1.3)), r0 - 5 * k, ease=-0.3)             # a glance back
+            g.hold(0.75)
+        g.key(2 if form == "long" else 1.5, _toward(p0, e, 0.02), e, r0, ease=-0.3, lag=g.lag)
         g.hold(0.5)
     elif family == "stretch":
         e = g.eyes()
-        d = U._normalize(U._sub(e, p0))
-        out = 0.08 + 0.08 * k
-        top = g.clamp(U._add(p0, (d[0] * out, d[1] * out, 0.12 + 0.12 * k)))    # up and out
-        up = _turn(d, UP, 25 + 20 * k)
+        d = _flat(U._sub(e, p0)) or g.fwd
+        rise = min(g.room_up - 0.01, g.amp(0.15, 0.45))
+        if rise >= 0.12:
+            top = U._add(g.at(up=rise), U._scale(d, g.amp(0.05, 0.18)))        # up and out
+            up = _turn(d, UP, 25 + 20 * k)
+        else:                                                               # no room above: long, out and across
+            top = g.at(fwd=g.amp(0.08, 0.2), side=rng.choice((-1, 1)) * g.amp(0.1, 0.3), up=max(0.0, rise))
+            up = _turn(d, UP, 10 + 10 * k)
         roll = r0 + rng.choice((-1, 1)) * (30 + 25 * k)
         g.anticipate(0.75, top, U._add(top, U._scale(up, 1.5)), roll)       # dips first
-        g.key(3, top, U._add(top, U._scale(up, 1.5)), roll, ease=-0.2, lag=g.lag * 2)   # the long yawn, the wrist rolling after
-        g.hold(1)
-        g.arrive(2, _toward(p0, e, 0.02), e, r0, lag=g.lag, ease=0.0, settle=0.75)            # settles, a little sag
+        g.key(2 if short else 3, top, U._add(top, U._scale(up, 1.5)), roll, ease=-0.2, lag=g.lag * 2)   # the long yawn, the wrist rolling after
+        g.hold(hold() + 0.5)
+        sag = U._add(_toward(p0, e, 0.02), (0.0, 0.0, -g.amp(0.01, 0.06)))
+        g.arrive(1.5 if short else 2, sag, e, r0, lag=g.lag, ease=0.0, settle=0.75)   # settles, a little sag
     elif family == "bounce":
         e = g.eyes()
         base = _toward(p0, e, 0.03)
         g.key(1, base, e, r0, lag=-g.lag)
-        depth = 0.015 + 0.02 * k
-        sway = 3 + 5 * k
-        for i in range(rng.choice((5, 6))):
+        depth, sway = g.amp(0.05, 0.18), 3 + 5 * k
+        across = _side_of(U._sub(e, base))
+        n = g.reps(1.0, 2 if form == "short" else 4, 8)
+        ts = g.curve(n)
+        groove = g.vert(g.amp(0.0, 0.12)) if rng.random() < 0.6 else 0.0   # halfway it sinks (or lifts) into the groove,
+        step = U._scale(across, rng.choice((-1, 1)) * g.amp(0.02, 0.2))       # stepping aside
+        for i in range(n):
             sgn = 1 if i % 2 == 0 else -1
-            g.key(0.5, U._add(base, (0.0, 0.0, -depth)), e, r0 + sgn * sway, ease=0.3, lag=g.lag * 0.4)   # down on the beat
-            g.key(0.5, base, e, r0, ease=-0.2, lag=g.lag * 0.4)
+            b = U._add(base, (0.0, 0.0, groove if i >= n // 2 else 0.0))
+            b = U._add(b, step) if i >= n // 2 else b
+            b = U._add(b, U._scale(across, sgn * g.amp(0.01, 0.08)))
+            g.key(0.5 * ts[i], U._add(b, (0.0, 0.0, -depth)), e, r0 + sgn * sway, ease=0.3, lag=g.lag * 0.4)   # down on the beat
+            g.key(0.5 * ts[i], b, e, r0, ease=-0.2, lag=g.lag * 0.4)
         g.hold(1)
     elif family == "search":
-        es = sorted((g.eyes() for _ in range(rng.choice((3, 4)))),
+        es = sorted((g.eyes() for _ in range(g.reps(1.5, 2 if form == "short" else 3, 4))),
                     key=lambda x: U._dot(U._sub(x, p0), _side_of(g.view.d0)))
         if rng.random() < 0.5:
             es.reverse()
-        g.key(1.5, _toward(p0, es[0], 0.02), es[0], r0, lag=-g.lag)          # to one end of the room
+        travel = g.amp(0.08, 0.36)
+        across = _side_of(g.view.d0)
+        spread = max(1e-6, max(abs(U._dot(U._sub(x, p0), across)) for x in es))
+
+        def spot(e):
+            s = U._dot(U._sub(e, p0), across) / spread
+            return U._add(U._add(_toward(p0, e, 0.02), U._scale(across, s * travel)), (0.0, 0.0, rng.uniform(-1, 1) * g.amp(0.04, 0.2)))
+        g.key(1.5, spot(es[0]), es[0], r0, lag=-g.lag)                    # to one end of the room
         g.hold(0.5)
-        for e in es[1:]:
-            g.arrive(1, _toward(p0, e, 0.02), e, r0 + rng.uniform(-10, 10) * k, lag=-g.lag, ease=0.3)   # quick look
+        ts = g.curve(len(es) - 1)
+        for i, e in enumerate(es[1:]):
+            g.arrive(ts[i], spot(e), e, r0 + rng.uniform(-10, 10) * k, lag=-g.lag, ease=0.3)   # quick look
             g.hold(rng.choice((0.5, 0.75, 1.0)))
         e = rng.choice(es)
-        g.key(1, _toward(p0, e, 0.05 + 0.05 * k), e, r0 + rng.choice((-1, 1)) * (10 + 10 * k), lag=-g.lag)   # found you
+        found = _toward(p0, e, g.amp(0.05, 0.15))
+        if lively:
+            g.stop(1, found, e, r0 + rng.choice((-1, 1)) * (10 + 10 * k), lag=-g.lag)   # there you are
+        else:
+            g.key(1, found, e, r0 + rng.choice((-1, 1)) * (10 + 10 * k), lag=-g.lag)
         g.hold(1.5)
+    elif family == "rise":
+        e = g.eyes()
+        want = g.amp(0.15, 0.6)                                           # the height it travels
+        up_r, dn_r = g.room_up - 0.01, g.room_down - 0.01
+        top = max(0.0, min(up_r, want * rng.uniform(0.5, 0.75)))
+        low = max(0.0, min(dn_r, max(want - top, g.amp(0.05, 0.2))))
+        top = max(0.0, min(up_r, max(top, want - low)))
+        gather = g.at(fwd=-g.amp(0.02, 0.08), up=-low)
+        floor = U._add(gather, U._add(U._scale(g.fwd, 2.0), (0.0, 0.0, -0.8)))   # the eyes down ahead (not at its feet:
+                                                                                 # the wrist would whip back up)
+        g.key(2, gather, floor, r0 + rng.uniform(-10, 10) * k, ease=-0.2, lag=-g.lag)   # sinks, the eyes first
+        peak = g.at(fwd=g.amp(0.02, 0.12), up=top)
+        over = U._add(e, (0.0, 0.0, g.amp(0.2, 0.6)))                       # up and out, over their heads
+        roll = r0 + rng.choice((-1, 1)) * (15 + 25 * k)
+        mid = U._add(_lerp(gather, peak, 0.55), U._scale(g.fwd, 0.03))
+        g.burst(0.75 if short else rng.choice((1.0, 1.5)), 0.75, mid, _lerp(floor, over, 0.6), _mix(r0, roll, 0.5), lag=-g.lag, via=True)
+        g.arrive(1, peak, over, roll, lag=-g.lag * 0.5)
+        g.hold(0.75 if short else rng.choice((1.0, 1.5, 2.0)))
+        if not short:
+            g.key(2, g.at(fwd=0.02, up=-0.02), e, r0, ease=-0.25, lag=g.lag)   # settles back, slowing
+            g.hold(0.5)
+    elif family == "dive":
+        e = g.eyes()
+        depth = max(0.05, min(g.room_down - 0.01, g.amp(0.15, 0.6)))
+        out = g.amp(0.06, 0.25)
+        lift = min(g.room_up, 0.03 + 0.07 * k)
+        if not short:
+            g.key(1, g.at(fwd=-0.02 - 0.04 * k, up=lift), U._add(e, (0.0, 0.0, 0.15)), r0, ease=-0.2, lag=-g.lag)   # a lift, the bird rises before it dips
+        mid = g.at(fwd=out * 0.6, up=-depth * 0.55)
+        bottom = g.at(fwd=out, up=-depth)
+        # the gaze leads down and ahead, along the swoop (not at the floor
+        # below: the wrist would whip down and back up)
+        def ahead(p, drop):
+            return g.at(fwd=out + 2.0, up=max(0.2, p[2] - drop) - p0[2])
+        swing = rng.choice((-1, 1)) * (10 + 20 * k)
+        g.burst(0.35 if short else rng.choice((0.5, 0.75)), 0.75, mid, ahead(mid, 0.7), r0 + swing * 0.5, lag=-g.lag * 0.5, via=True)   # swoops
+        g.key(0.5, bottom, ahead(bottom, 0.5), r0 + swing, lag=-g.lag * 0.5)          # dips (a stop: the swoop turns there)
+        g.arrive(1, g.at(fwd=out * 0.3, up=min(g.room_up, g.amp(0.03, 0.12))), U._add(e, (0.0, 0.0, 0.1)), r0, ease=0.3, lag=g.lag)   # and back up past the hub
+        g.hold(1)
+    elif family == "sweep":
+        wide = g.amp(0.15, 0.6)
+        h = g.amp(0.08, 0.3)
+        rainbow = g.room_up > g.room_down * 0.6 if rng.random() < 0.7 else rng.random() < 0.5
+        ends, crest = (-0.5 * h, 0.5 * h) if rainbow else (0.5 * h, -0.5 * h)   # low ends, a high middle (or a swing)
+        sgn = rng.choice((1, -1))
+        a_ = g.clamp(g.at(side=sgn * wide, up=ends))
+        m_ = g.clamp(g.at(fwd=g.amp(0.03, 0.12), up=crest))
+        b_ = g.clamp(g.at(side=-sgn * wide, up=ends))
+        # the gaze turns with the body (a quiet wrist: the arm swings at its
+        # quickest), leading it: turned on towards where it is going
+        span = g.azimuth(b_) - g.azimuth(a_)
+        tilt = (8 + 12 * k) * (1 if rainbow else -1)
+        if not short:
+            g.anticipate(0.5, a_, g.swung(a_, -0.1 * span), r0)
+        g.key(1.5, a_, g.swung(a_, 0.15 * span, -0.5 * tilt), r0 + sgn * 10 * k, lag=-g.lag)   # out to one end, looking across
+        g.hold(hold())
+        g.key(1.25, m_, g.swung(m_, 0.3 * span, tilt), r0, ease=0.2, lag=-g.lag, via=True)     # the arc across, the gaze leading
+        g.key(1.25, b_, g.swung(b_, 0.05 * span, -0.5 * tilt), r0 - sgn * 10 * k, lag=-g.lag)
+        g.hold(hold())
+        if not short:
+            back = g.at(fwd=0.02, side=-sgn * wide * 0.3, up=-0.3 * crest)
+            g.key(1.25, back, g.swung(back, -0.2 * span), r0, lag=-g.lag, via=True)   # back through the other height
+    elif family == "pop":
+        e = g.eyes()
+        kind = _pick(rng, (("up", 3), ("down", 2), ("out", 2), ("across", 2)))
+        mag = g.amp(0.12, 0.58)
+        if kind == "up":
+            p, look = g.at(fwd=0.02, up=min(g.room_up, mag)), U._add(e, (0.0, 0.0, 0.6))
+        elif kind == "down":
+            p, look = g.at(fwd=0.04, up=-min(g.room_down, mag)), U._add(e, (0.0, 0.0, -0.8))
+        elif kind == "out":
+            p, look = U._add(_toward(p0, e, mag * 0.6), (0.0, 0.0, g.vert(mag * 0.7))), e
+        else:
+            side = rng.choice((-1, 1))
+            p = g.clamp(g.at(side=side * mag, up=g.vert(mag * 0.5)))
+            look = g.swung(p, 0.3 * (g.azimuth(p) - g.azimuth(p0)))        # the head whips round with it
+        roll = r0 + rng.choice((-1, 1)) * (10 + 25 * k)
+        g.params["pose"] = kind
+        g.anticipate(0.5, p, look, roll)                                   # a flick the other way
+        g.stop(0.5, p, look, roll, lag=-g.lag * 0.5)                       # snaps there, stops dead
+        g.hold(1.5, least=1.0)                                             # freeze (it breathes)
     else:
         raise ValueError("unknown family %r" % family)
-    g.home(min(g.lag, 0.25 * beat))
-    keys = _fit_beats(g.keys, *BEATS)
-    return [(b * beat, p, look, roll, opt) for b, p, look, roll, opt in keys]
+
+
+def draw_keys(family, home, zones, rng, beat, k, space=None, length=None):
+    """(keys, params): the keys after the start [(duration s, tcp, look,
+    roll, options)], ending at home at rest, and what was drawn. home =
+    (tcp, look, roll) of the hub; k = intensity 0..1; space: a Space (the
+    zones' when None); length: (form, (lo, hi) s), drawn when None.
+    options: ease (the warp of the min-jerk clock), lag (s the gaze / roll
+    trails the TCP; < 0 leads it), hold (a hold: may be lengthened or
+    shortened, not under least_s), via (passed through without stopping).
+    Repeats are counted from the beats the length leaves; when the joints
+    will likely need longer than it (estimate), the same draw is made again
+    with fewer."""
+    space = space or Space(zones, home[0])
+    form, (lo_s, hi_s) = length or clip_length(rng, k, family)
+    state, budget = rng.getstate(), hi_s / beat
+    for attempt in range(4):
+        rng.setstate(state)
+        g = _Draw(home, zones, rng, beat, k, space, budget, form)
+        _moves(g, family, form)
+        g.home(min(g.lag, 0.25 * beat))
+        est = estimate(g.keys, beat)
+        if est <= hi_s or not g.repeats:
+            break
+        budget *= max(0.5, 0.95 * hi_s / est)
+    keys = _fit_beats(g.keys, lo_s / beat, hi_s / beat)
+    out = []
+    for b, p, look, roll, opt in keys:
+        opt = dict(opt)
+        if "least" in opt:
+            opt["least_s"] = opt.pop("least") * beat
+        out.append((b * beat, p, look, roll, opt))
+    prm = dict(g.params, family=family, form=form, length_s=[round(lo_s, 3), round(hi_s, 3)],
+               tempo_factor=round(g.tempo, 3), space={"zone": space.name, "z": [round(space.bottom, 3), round(space.top, 3)]})
+    return out, prm
+
+
+def keys_for(family, home, zones, rng, beat, k, space=None, length=None):
+    """draw_keys' keys alone."""
+    return draw_keys(family, home, zones, rng, beat, k, space, length)[0]
+
+
+WRIST_KEY_MIN = 0.35             # |sin J5| a key's pose keeps (the sampler refuses 0.2: the wrist singularity)
+
+
+def wrist_safe(rig, hub_q, keys, home):
+    """keys with the gaze of any whose pose -- or the way to it -- would bring
+    the wrist near its singularity (|sin J5| < WRIST_KEY_MIN, or no pose)
+    turned back towards the hub's aim, a third at a time (a hub already
+    near it -- J5 of 25-35 degrees -- cannot look as far about)."""
+    p0, look0, r0 = home
+    d0 = U._normalize(U._sub(look0, p0))
+    out, prev, last = [], list(hub_q), (p0, d0, r0)
+
+    def clear(p, d, roll, near):
+        """The pose at a key and on the way to it (a third, two thirds) with
+        the wrist clear of its singularity, or None."""
+        q = near
+        for u in (1.0 / 3.0, 2.0 / 3.0, 1.0):
+            pu = _lerp(last[0], p, u)
+            du = U._normalize(_lerp(last[1], d, u))
+            q = rig.solve(pu, du, _mix(last[2], roll, u), q)
+            if q is None or abs(math.sin(math.radians(q[4]))) < WRIST_KEY_MIN:
+                return None
+        return q
+    for key in keys:
+        dur, p, look, roll = key[:4]
+        d = U._normalize(U._sub(look, p))
+        dist = U._norm(U._sub(look, p))
+        best = None
+        for blend in (0.0, 0.35, 0.7, 1.0):
+            db = U._normalize(_lerp(d, d0, blend))
+            q = clear(p, db, _mix(roll, r0, blend), prev)
+            if q is not None:
+                best = (blend, db, q)
+                break
+        if best is None or best[0] == 0.0:
+            out.append(tuple(key))
+            if best:
+                prev = best[2]
+            last = (p, d, roll)
+            continue
+        blend, db, q = best
+        out.append((dur, p, U._add(p, U._scale(db, dist)), _mix(roll, r0, blend)) + tuple(key[4:]))
+        prev, last = q, (p, db, _mix(roll, r0, blend))
+    return out
 
 
 def shrink(keys, home, size):
@@ -587,14 +1107,44 @@ def _gaze_times(tp, lags):
     return tg
 
 
-def _at(times, values, eases, t):
-    """A channel at time t: min-jerk (eased) between keyed values."""
-    j = max(0, min(len(times) - 2, bisect.bisect_right(times, t) - 1))
-    u = _ease((t - times[j]) / max(1e-9, times[j + 1] - times[j]), eases[j + 1])
-    a, b = values[j], values[j + 1]
-    if isinstance(a, float):
-        return a + (b - a) * u
-    return _lerp(a, b, u)
+class _Track:
+    """A channel through keyed values (lists) at times: min-jerk on a warped
+    clock (the reached key's ease) from key to key; a run of keys marked via
+    is passed through without stopping -- one eased clock (the run's first
+    key's ease) over the whole run, a cubic Hermite through its keys
+    (Catmull-Rom tangents), so speed and acceleration are zero only where
+    the run starts and stops."""
+
+    def __init__(self, times, values, eases, via):
+        self.t, self.v, self.e = times, [list(x) for x in values], eases
+        n = len(times)
+        self.stops = [i for i in range(n) if i in (0, n - 1) or not via[i]]
+        self.st = [times[i] for i in self.stops]
+        self.m = [None] * n
+        for a, b in zip(self.stops, self.stops[1:]):
+            if b - a < 2:
+                continue
+            for i in range(a, b + 1):
+                i0, i1 = max(a, i - 1), min(b, i + 1)
+                dt = max(1e-9, times[i1] - times[i0])
+                self.m[i] = [(y - x) / dt for x, y in zip(self.v[i0], self.v[i1])]
+
+    def at(self, t):
+        k = max(0, min(len(self.stops) - 2, bisect.bisect_right(self.st, t) - 1))
+        a, b = self.stops[k], self.stops[k + 1]
+        ta, tb = self.t[a], self.t[b]
+        u = (t - ta) / max(1e-9, tb - ta)
+        if b == a + 1:
+            return _lerp(self.v[a], self.v[b], _ease(u, self.e[b]))
+        tau = ta + _ease(u, self.e[a + 1]) * (tb - ta)
+        j = max(a, min(b - 1, bisect.bisect_right(self.t, tau) - 1))
+        h = self.t[j + 1] - self.t[j]
+        if h < 1e-9:
+            return list(self.v[j + 1])
+        s = (tau - self.t[j]) / h
+        h00, h10, h01, h11 = 2 * s ** 3 - 3 * s * s + 1, s ** 3 - 2 * s * s + s, -2 * s ** 3 + 3 * s * s, s ** 3 - s * s
+        return [h00 * p + h10 * h * m0 + h01 * q + h11 * h * m1
+                for p, q, m0, m1 in zip(self.v[j], self.v[j + 1], self.m[j], self.m[j + 1])]
 
 
 def _frames(rig, hub_q, keys, home, style, n, total, extra_roll=None):
@@ -602,15 +1152,17 @@ def _frames(rig, hub_q, keys, home, style, n, total, extra_roll=None):
     roll on theirs (the lags), plus the breathing; the tool frame carried
     along (transport), plus extra_roll(t) degrees about z (the end correction)."""
     p0, look0, r0 = home
-    tp, P_, L_, R_, E_, lags = [0.0], [list(p0)], [list(look0)], [float(r0)], [0.0], [0.0]
+    tp, P_, L_, R_, E_, V_, lags = [0.0], [list(p0)], [list(look0)], [[float(r0)]], [0.0], [False], [0.0]
     for dur, p, look, roll, opt in keys:
         tp.append(tp[-1] + dur)
         P_.append(list(p))
         L_.append(list(look))
-        R_.append(float(roll))
+        R_.append([float(roll)])
         E_.append(opt.get("ease", 0.0))
+        V_.append(bool(opt.get("via")))
         lags.append(opt.get("lag", 0.0))
     tg = _gaze_times(tp, lags)
+    tr_p, tr_l, tr_r = _Track(tp, P_, E_, V_), _Track(tg, L_, E_, V_), _Track(tg, R_, E_, V_)
     t_still = tp[-2]                                           # the rest at the end
     t_lead = tp[1] if keys and keys[0][4].get("lead") else 0.0  # the still start
     d0 = U._normalize(U._sub(look0, p0))
@@ -622,9 +1174,9 @@ def _frames(rig, hub_q, keys, home, style, n, total, extra_roll=None):
     Rc, last, last_roll = rig.tool(hub_q)[0], 0.0, float(r0)
     for i in range(n + 1):
         t = min(i / FPS, total)
-        p = _at(tp, P_, E_, t)
-        look = _at(tg, L_, E_, t)
-        roll = _at(tg, R_, E_, t)
+        p = tr_p.at(t)
+        look = tr_l.at(t)
+        roll = tr_r.at(t)[0]
         if style and t_lead < t < t_still:
             w = _minjerk(min(t - t_lead, t_still - t) / ramp)
             bp, bl = style["breath_m"] * w, style["gaze_m"] * w
@@ -659,7 +1211,8 @@ def sample(rig, hub_q, keys, home, style=None):
     left = -math.degrees(math.atan2(U._dot(x_end, y_hub), U._dot(x_end, x_hub)))
     i_home = next((i for i, k in enumerate(keys) if k[4].get("home")), len(keys) - 2)
     t_home, t_end = tg[max(0, i_home)], tg[-2] if tg[-2] > tg[max(0, i_home)] else total
-    fix = lambda t: left * _minjerk((t - t_home) / max(1e-9, t_end - t_home)) if t > t_home else 0.0
+    def fix(t):
+        return left * _minjerk((t - t_home) / max(1e-9, t_end - t_home)) if t > t_home else 0.0
     frames = _frames(rig, hub_q, keys, home, style, n, total, fix)[0] if abs(left) > 1e-6 else first
     qs, prev = [], list(hub_q)
     for i, (t, p, R) in enumerate(frames):
@@ -676,16 +1229,37 @@ def sample(rig, hub_q, keys, home, style=None):
     return [i / FPS for i in range(n + 1)], qs
 
 
-def fit(rig, hub_q, keys, home, style, beat, vel, acc, rounds=5):
+def _squeeze(keys, over):
+    """keys with their holds shortened (not under least_s) by up to `over` s in all."""
+    room = [(i, max(0.0, k[0] - k[4].get("least_s", 0.0))) for i, k in enumerate(keys) if k[4].get("hold")]
+    total = sum(r for _, r in room)
+    if total <= 1e-9 or over <= 0.0:
+        return keys
+    cut = min(over, total)
+    out = list(keys)
+    for i, r in room:
+        out[i] = (keys[i][0] - cut * r / total,) + tuple(keys[i][1:])
+    return out
+
+
+def fit(rig, hub_q, keys, home, style, beat, vel, acc, rounds=6, soft_s=MAX_CLIP_S):
     """(ts, qs, keys) with each move given the time its joints need: the
     player's need (v / limit, sqrt(a / limit)) over each key's span, that
-    key's duration stretched by it and rounded up to a quarter beat, until
-    nothing needs slowing. None when a key cannot be sampled or a move
-    would need more than MAX_STRETCH times its beats."""
+    key's duration stretched by it and rounded up to an eighth of a beat
+    (a flowing run's keys together, by the most any of them needs), until
+    nothing needs slowing; when the clip runs over soft_s (the length it
+    was drawn to) the holds give time back (not under their least). None
+    when a key cannot be sampled, a move would need more than MAX_STRETCH
+    times its beats, or the clip would run over MAX_CLIP_S."""
     keys = _as5(keys)
     base = [k[0] for k in keys]
-    quarter = beat / 4.0
+    eighth = beat / 8.0
     for _ in range(rounds):
+        total = sum(k[0] for k in keys)
+        if total > min(soft_s, MAX_CLIP_S) + 1e-9:
+            keys = _squeeze(keys, total - min(soft_s, MAX_CLIP_S))
+        if sum(k[0] for k in keys) > MAX_CLIP_S + 1e-6:
+            return None
         got = sample(rig, hub_q, keys, home, style)
         if got is None:
             return None
@@ -703,12 +1277,25 @@ def fit(rig, hub_q, keys, home, style, beat, vel, acc, rounds=5):
             for clock in (tp, tg):
                 j = max(0, min(len(keys) - 1, bisect.bisect_right(clock, t) - 1))
                 need[j] = max(need[j], nd)
+        # a flowing run is one move: its keys slow together
+        run, runs = [], []
+        for j, k in enumerate(keys):
+            run.append(j)
+            if not k[4].get("via"):
+                runs.append(run)
+                run = []
+        if run:
+            runs.append(run)
+        for r in runs:
+            top = max(need[j] for j in r)
+            for j in r:
+                need[j] = top
         new = []
         for j, k in enumerate(keys):
             d = k[0]
             if need[j] > 1.0:
-                d = math.ceil(d * need[j] * 1.04 / quarter - 1e-9) * quarter
-                if d > MAX_STRETCH * base[j] + 1e-9:
+                d = math.ceil(d * need[j] * 1.02 / eighth - 1e-9) * eighth
+                if d > MAX_STRETCH * max(base[j], beat) + 1e-9:     # a crawl (a short key may take a few beats)
                     return None
             new.append((d,) + tuple(k[1:]))
         keys = new
@@ -736,7 +1323,8 @@ def room_check(model, env, ts, qs, far=0.3):
                     continue
                 mid = tuple((x + y) / 2.0 for x, y in zip(a, b))
                 bound[i] = min(bound[i], CL.sdf(o, mid) - math.dist(a, b) / 2.0 - r)
-    m = lambda o: o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
+    def m(o):
+        return o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
     keep = [o for i, o in enumerate(objs) if i not in bound or bound[i] - m(o) < far]
     rep = CL.check(model, dict(env, objects=keep), ts, qs)
     c = rep.get("min_env_clearance_m")
@@ -745,23 +1333,58 @@ def room_check(model, env, ts, qs, far=0.3):
     return rep
 
 
+FLOOR_CLEAR_M = 0.03             # a hub's links (but the base's) at least this above the floor
+HUB_HEADROOM_DEG = 30.0          # a hub's joints this far from their limits, when a roll allows
+
+
+def _robot_clear(q):
+    """No link near the floor, no two links touching (the robot alone, no room)."""
+    import collision as CL
+    model = CL.load_model("fr20")
+    caps, _ = CL.capsules(model, q)
+    if any(min(a[2], b[2]) - r < FLOOR_CLEAR_M for name, a, b, r in caps if name not in CL.FIXED_LINKS):
+        return False
+    return all(CL._seg_seg_dist(caps[i][1], caps[i][2], caps[j][1], caps[j][2]) - caps[i][3] - caps[j][3] >= 0.0
+               for i, j in model["pairs"])
+
+
 def hub_pose(rig, tcp, look, near, rolls=range(-180, 180, 10)):
     """A hub from where the tool tip is and what it looks at: the IK pose
     nearest `near` over rolls about the aim (so the arm keeps its elbow /
-    wrist configuration). None when no roll reaches it clear of the wrist
-    singularity."""
+    wrist configuration). When that pose puts a link into the floor or into
+    another link (a low hub from a high one's seed: the nearest branch is
+    elbow-down), every branch at every roll is weighed instead, the clear
+    ones first. None when no roll reaches it clear of the wrist singularity."""
     d = U._sub(look, tcp)
+
+    def cost(q):
+        # a hub the wrist can move from: far from its singularity first
+        # (near it the wrist spins for small changes of aim), then as far
+        # from the joint limits as it can be, up to HUB_HEADROOM_DEG (a J6
+        # at its stop cannot roll one way), then nearest (the largest
+        # change, then all of them)
+        room = min(min(x - lo, hi - x) for x, (lo, hi) in zip(q, rig.limits))
+        diff = [abs(a - b) for a, b in zip(q, near)]
+        return (abs(math.sin(math.radians(q[4]))) < 0.7, -min(room, HUB_HEADROOM_DEG), round(max(diff), 6), sum(diff))
     best = None
     for r in rolls:
         q = rig.solve(tcp, d, r, near)
         if q is None or abs(math.sin(math.radians(q[4]))) < 0.3:
             continue
-        # a hub the wrist can move from: far from its singularity first
-        # (near it the wrist spins for small changes of aim), then nearest
-        cost = (abs(math.sin(math.radians(q[4]))) < 0.7, max(abs(a - b) for a, b in zip(q, near)))
-        if best is None or cost < best[0]:
-            best = (cost, q)
-    return best and best[1]
+        if best is None or cost(q) < best[0]:
+            best = (cost(q), q)
+    if best is not None and _robot_clear(best[1]):
+        return best[1]
+    clear = None
+    for r in rolls:
+        for s in rig.solutions(tcp, d, r, near):
+            q = [b - 360.0 * round((b - a) / 360.0) for a, b in zip(near, s["q"])]
+            q = q if rig.within(q) else list(s["q"])
+            if not rig.within(q) or abs(math.sin(math.radians(q[4]))) < 0.3 or not _robot_clear(q):
+                continue
+            if clear is None or cost(q) < clear[0]:
+                clear = (cost(q), q)
+    return clear[1] if clear else (best and best[1])
 
 
 def home_of(rig, hub_q):
@@ -772,18 +1395,22 @@ def home_of(rig, hub_q):
 
 def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None, safety=PLAN_SAFETY):
     """A gesture clip from hub_q, or None when this draw does not work at
-    any size (unreachable key, branch flip, too violent, hits the room)."""
+    any size (unreachable key, branch flip, too violent, too long, hits the
+    room). labels["family"], labels["params"]: what was drawn and fitted."""
     import collision as CL
     import motion_labels
     home = home_of(rig, hub_q)
     beat = 60.0 / bpm
-    keys = keys_for(family, home, zones, rng, beat, intensity)
+    space = Space(zones, home[0], env)
+    keys, prm = draw_keys(family, home, zones, rng, beat, intensity, space)
+    keys = wrist_safe(rig, hub_q, keys, home)
     style = style_for(rng, beat, intensity)
     vel, acc = [v * safety for v in rig.vel], [a * safety for a in rig.acc]
     nominal = sum(k[0] for k in keys)
     model = CL.load_model("fr20") if env is not None else None
     for size in SIZES:
-        got = fit(rig, hub_q, keys if size == 1.0 else shrink(keys, home, size), home, style, beat, vel, acc)
+        got = fit(rig, hub_q, keys if size == 1.0 else shrink(keys, home, size), home, style, beat, vel, acc,
+                  soft_s=prm["length_s"][1])
         if got is None:
             continue
         ts, qs, fitted = got
@@ -807,6 +1434,10 @@ def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, en
         clip["safety"]["min_clearance_m"] = rep["min_env_clearance_m"]
         clip["safety"]["min_self_clearance_m"] = rep["min_self_clearance_m"]
     clip["labels"] = motion_labels.label(clip)
+    clip["labels"]["family"] = family
+    prm.update(bpm=bpm, intensity=round(intensity, 3), size=size, slowed=clip["style"]["slowed"],
+               reach_m=round(max(math.dist(k[1], home[0]) for k in fitted), 3))
+    clip["labels"]["params"] = prm
     return clip
 
 
@@ -816,18 +1447,33 @@ def wrist_share(qs):
     return sum(travel[3:]) / max(1e-9, sum(travel))
 
 
+def tcp_stats(tcp):
+    """{zspan, extent (largest axis span), travel (bounding-box diagonal),
+    vmean, vpeak (m/s at 24 fps)} of a TCP path."""
+    xs = list(zip(*tcp))
+    spans = [max(a) - min(a) for a in xs]
+    sp = [math.dist(a, b) * FPS for a, b in zip(tcp, tcp[1:])] or [0.0]
+    return {"zspan": spans[2], "extent": max(spans), "travel": math.sqrt(sum(s * s for s in spans)),
+            "vmean": sum(sp) / len(sp), "vpeak": max(sp)}
+
+
 # --------------------------------------------------------------------------
-# self-test: the hubs of shows/party.json, every family, a sweep of seeds
+# self-test: the hubs of shows/party.json and a low and a high one, every
+# family, a sweep of seeds, tempi and intensities
 # --------------------------------------------------------------------------
 
 SEEDS = 10                       # draws per family and hub in the sweep
 TRIES = 3                        # a seed's draws before it counts as not made
 STILL_DEG = 0.005                # a frame step under this on every joint is "frozen"
 REST_STEP_DEG = 0.005            # the first and last frame steps, at most (clips join at rest)
+SWEEP_BPM = (70, 140)
+SWEEP_K = (0.2, 1.0)
+SYNTHETIC = (("synth_low", 0.55), ("synth_high", 1.5))   # hubs at the greet hub's x, y at these heights
 
 
-def _room():
-    """The lab: envs/volvox_lab.usda (OpenUSD), or the .json it came from."""
+def _room(cfg=None):
+    """The lab as the show sees it: envs/volvox_lab.usda (OpenUSD), or the
+    .json it came from, with the show's stage and paper (show.show_env)."""
     import collision as CL
     errs = []
     for name in ("volvox_lab.usda", "volvox_lab.json"):
@@ -835,15 +1481,49 @@ def _room():
         if not os.path.exists(path):
             continue
         try:
-            return CL.load_env(path)
+            env = CL.load_env(path)
         except (ValueError, ImportError) as e:
             errs.append("%s: %s" % (name, e))
+            continue
+        if cfg:
+            import show
+            env = show.show_env(env, cfg, cfg["margins"]["idle_canvas_m"])
+        return env
     raise SystemExit("no room to check against: %s" % ("; ".join(errs) or "envs/volvox_lab.* missing"))
 
 
-def _show_hubs(rig):
+def synthetic_hubs(rig, cfg, env=None):
+    """{name: (q, tcp)}: hubs at the greet hub's x, y and SYNTHETIC heights,
+    looking at the audience's centre (hub_pose, the greet hub's seed); when
+    that spot has no clear pose, the nearest that does, searched in 5 cm
+    steps up / down and 10 cm across (inside the stage)."""
+    import collision as CL
+    g = cfg["hubs"]["greet"]
+    look = cfg["zones"]["audience"]["center"]
+    model = CL.load_model("fr20") if env is not None else None
+    space = Space(cfg["zones"], g["tcp"], env)
+    out = {}
+    for name, z in SYNTHETIC:
+        tries = [(0.0, 0.0, 0.0)] + [(dx, dy, dz) for dz in (0.0, 0.05, -0.05, 0.1, -0.1) for dx in (0.0, 0.1, -0.1)
+                                      for dy in (0.0, 0.1, -0.1) if (dx, dy, dz) != (0.0, 0.0, 0.0)]
+        for dx, dy, dz in tries:
+            tcp = (g["tcp"][0] + dx, g["tcp"][1] + dy, z + dz)
+            if env is not None and not space.contains((tcp[0], tcp[1], space.box["center"][2])):
+                continue
+            q = hub_pose(rig, tcp, look, g.get("near") or g.get("q"))
+            if q is None or not _robot_clear(q):
+                continue
+            if env is not None and not CL.pose_clearance(model, env, q)[1]:
+                continue
+            out[name] = ([round(x, 4) for x in q], [round(x, 4) for x in tcp])
+            break
+    return out
+
+
+def _show_hubs(rig, synthetic=False, env=None):
     """(zones, {name: q}) of shows/party.json, the hubs resolved as
-    show.resolve_hubs does (a tool tip + look point through hub_pose)."""
+    show.resolve_hubs does (a tool tip + look point through hub_pose); with
+    synthetic, the low and high hubs added (synthetic_hubs)."""
     import json
     cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
     hubs = {}
@@ -856,6 +1536,9 @@ def _show_hubs(rig):
             hubs[name] = [round(x, 4) for x in q]
         else:
             hubs[name] = list(h["q"])
+    if synthetic:
+        for name, (q, _) in synthetic_hubs(rig, cfg, env).items():
+            hubs[name] = q
     return cfg["zones"], hubs
 
 
@@ -863,10 +1546,13 @@ _W = {}
 
 
 def _worker_init():
+    import json
     import collision as CL
     rig = Rig()
-    zones, hubs = _show_hubs(rig)
-    _W.update(rig=rig, zones=zones, hubs=hubs, env=_room(), model=CL.load_model("fr20"))
+    cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
+    env = _room(cfg)
+    zones, hubs = _show_hubs(rig, True, env)
+    _W.update(rig=rig, zones=zones, hubs=hubs, env=env, model=CL.load_model("fr20"))
 
 
 def _still_run(ts, qs, t_from, t_to):
@@ -882,15 +1568,17 @@ def _still_run(ts, qs, t_from, t_to):
 
 
 def _trial(job):
-    """One seed of one family from one hub: up to TRIES draws (show.py's
-    bpm and intensity ranges), the first clip checked. A summary, not the clip."""
+    """One seed of one family from one hub: up to TRIES draws (bpm and
+    intensity drawn from SWEEP_BPM, SWEEP_K, or the fixed k given), the first
+    clip checked. A summary, not the clip."""
     import random
-    fam, hub_name, seed = job
+    fam, hub_name, seed = job[:3]
+    k_fixed = job[3] if len(job) > 3 else None
     rig, hub = _W["rig"], _W["hubs"][hub_name]
-    rng = random.Random(seed)
+    rng = random.Random(seed * 7919 + FAMILIES.index(fam) * 131 + sum(map(ord, hub_name)))
     out = {"fam": fam, "hub": hub_name, "seed": seed, "first": False, "made": False, "problems": []}
     for i in range(TRIES):
-        bpm, k = rng.randint(80, 125), rng.uniform(0.4, 0.9)
+        bpm, k = rng.randint(*SWEEP_BPM), rng.uniform(*SWEEP_K) if k_fixed is None else k_fixed
         c = make(rig, hub, fam, _W["zones"], rng, bpm=bpm, intensity=k, env=_W["env"])
         if c is None:
             continue
@@ -919,28 +1607,37 @@ def _trial(job):
         rep = room_check(_W["model"], _W["env"], ts, qs)
         if not rep["ok"]:
             bad.append("hits the room")
+        z = [p[2] for p in c["tcp"]]
+        if min(z) < TCP_Z[0] or max(z) > TCP_Z[1]:
+            bad.append("TCP outside the operating band (%.2f..%.2f m)" % (min(z), max(z)))
         beat = 60.0 / bpm
-        out.update(first=i == 0, made=True, dur=ts[-1], size=c["style"]["size"], slowed=c["style"]["slowed"],
+        out.update(first=i == 0, made=True, dur=ts[-1], size=c["style"]["size"], slowed=c["style"]["slowed"], k=k,
                    still=_still_run(ts, qs, 0.25, ts[-1] - 0.5 * beat), wrist=wrist_share(qs),
-                   j5=max(q[4] for q in qs) - min(q[4] for q in qs), clearance=rep["min_env_clearance_m"])
+                   j5=max(q[4] for q in qs) - min(q[4] for q in qs), clearance=rep["min_env_clearance_m"],
+                   labels=c["labels"].get("family") == fam and "form" in c["labels"].get("params", {}), **tcp_stats(c["tcp"]))
         break
     return out
 
 
-def _sweep(fams, hub_names, seeds):
-    """_trial over families x hubs x seeds, in worker processes when it can."""
-    jobs = [(f, h, s) for h in hub_names for f in fams for s in range(seeds)]
+def _sweep(jobs):
+    """_trial over the jobs, in worker processes when it can."""
     try:
         from concurrent.futures import ProcessPoolExecutor
-        with ProcessPoolExecutor(max_workers=max(1, min(16, (os.cpu_count() or 2) - 1)), initializer=_worker_init) as ex:
-            return list(ex.map(_trial, jobs, chunksize=2))
+        with ProcessPoolExecutor(max_workers=max(1, min(30, (os.cpu_count() or 2) - 1)), initializer=_worker_init) as ex:
+            return list(ex.map(_trial, jobs, chunksize=1))
     except (OSError, ImportError, RuntimeError) as e:
         print("note: no worker processes (%s); the sweep runs here, 3 seeds" % e)
         _worker_init()
         return [_trial(j) for j in jobs if j[2] < 3]
 
 
+def _median(xs):
+    s = sorted(xs)
+    return s[len(s) // 2] if s else 0.0
+
+
 def self_test():
+    import json
     import random
     import time
     fails = []
@@ -952,6 +1649,8 @@ def self_test():
 
     t0 = time.time()
     rig = Rig()
+    cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
+    env = _room(cfg)
     stage_home = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
     R, tcp, d = rig.tool(stage_home)
     r = roll_of(R, d)
@@ -959,6 +1658,18 @@ def self_test():
     check("roll_of + solve give the hub pose back", q is not None and max(abs(a - b) for a, b in zip(q, stage_home)) < 1e-6, q)
     zones, hubs = _show_hubs(rig)
     check("the greet hub from its tool tip and look point", hubs.get("greet") is not None, hubs.get("greet"))
+    greet_before = [62.6059, -102.2701, 107.725, -194.967, -87.1174, 4.7785]
+    check("hub_pose keeps a clear hub where it was", max(abs(a - b) for a, b in zip(hubs["greet"], greet_before)) < 1e-3,
+          hubs["greet"])
+    synth = synthetic_hubs(rig, cfg, env)
+    check("low and high hubs at the greet hub's x, y (hub_pose: clear of the floor)", len(synth) == len(SYNTHETIC),
+          {n: t for n, (q, t) in synth.items()})
+    for n in sorted(hubs):
+        print("      hub %-10s J5 %6.1f  tcp %s" % (n, hubs[n][4], [round(x, 3) for x in rig.tool(hubs[n])[1]]))
+    g = cfg["hubs"]["greet"]
+    q_low = hub_pose(rig, (g["tcp"][0], g["tcp"][1], 0.55), zones["audience"]["center"], g["near"])
+    check("a low hub from the greet hub's seed is not elbow-down into the floor", q_low is not None and _robot_clear(q_low),
+          q_low and [round(x, 1) for x in q_low])
 
     # the tracking IK: on the branch it starts from, the closed form's answer
     q1 = [x + dx for x, dx in zip(hubs["greet"], (2.0, -1.5, 1.0, 3.0, -2.0, 4.0))]
@@ -974,69 +1685,138 @@ def self_test():
                   and 1.0 - _ease(1.0 - h, b) < 1e-8 and all(_ease((i + 1) / 50.0, b) >= _ease(i / 50.0, b) for i in range(50))
                   for b in (-0.5, -0.2, 0.0, 0.35, 0.5))
     check("eases start and land at rest, never turn back", ease_ok)
+    # a flowing run: through its via key without stopping, at rest where it starts and stops
+    tr = _Track([0.0, 1.0, 2.0], [[0.0], [1.0], [0.0]], [0.0, 0.2, 0.0], [False, True, False])
+    v_mid_dir = (tr.at(0.6)[0] - tr.at(0.5)[0])
+    tr2 = _Track([0.0, 1.0, 2.0], [[0.0], [1.0], [2.0]], [0.0, 0.2, 0.0], [False, True, False])
+    v2 = (tr2.at(1.0 + 1e-4)[0] - tr2.at(1.0 - 1e-4)[0]) / 2e-4
+    check("a via key is passed through, the run starts and stops at rest",
+          abs(tr.at(0.0)[0]) < 1e-12 and abs(tr.at(2.0)[0]) < 1e-12 and abs(tr.at(1e-3)[0]) < 1e-6 and v2 > 0.5 and v_mid_dir > 0,
+          "speed through the via %.2f (straight run)" % v2)
 
-    # keys: every family from each hub ends at the hub at rest, in its beats;
+    # the space: the zone across, the operating band up and down, the room's hard limits
+    home = home_of(rig, hubs["greet"])
+    sp = Space(zones, home[0], env)
+    check("the greet space: its zone across, the band %.2f-%.2f m up and down (controller cap)" % (sp.bottom, sp.top),
+          sp.name == "greet" and sp.bottom <= TCP_Z[0] + Z_PAD + 1e-9 and 1.5 < sp.top <= 1.6 - HARD_PAD + 1e-9, (sp.bottom, sp.top))
+    far = sp.clamp((home[0][0] + 3.0, home[0][1], 3.0))
+    check("the space keeps out of the operator's slow zone and under the controller's cap",
+          all(math.hypot(far[0] - c[0], far[1] - c[1]) >= r - 1e-9 for c, r in sp.slow) and far[2] <= sp.top + 1e-9 and sp.slow,
+          [round(x, 3) for x in far])
+
+    # keys: every family from each hub ends at the hub at rest, in its length;
     # reach leans back first (anticipation); tilt goes past its tilt and
     # settles (overshoot); the gaze trails or leads the TCP (overlap)
     beat = 60.0 / 100
     shapes_ok, lengths = True, {}
     for name, hq in sorted(hubs.items()):
-        home = home_of(rig, hq)
+        home_h = home_of(rig, hq)
         for fam in FAMILIES:
-            ks = keys_for(fam, home, zones, random.Random(3), beat, 0.7)
-            shapes_ok &= all(math.dist(k[1], home[0]) < 1e-9 and abs(k[3] - home[2]) < 1e-9 for k in (ks[0], ks[-2], ks[-1]))
-            lengths[fam] = round(sum(k[0] for k in ks) / beat, 2)
+            for seed in range(4):
+                ks, prm = draw_keys(fam, home_h, zones, random.Random(seed), beat, 0.25 + 0.25 * seed, Space(zones, home_h[0], env))
+                shapes_ok &= all(math.dist(kk[1], home_h[0]) < 1e-9 and abs(kk[3] - home_h[2]) < 1e-9 for kk in (ks[0], ks[-2], ks[-1]))
+                s = sum(kk[0] for kk in ks)
+                lengths.setdefault(fam, []).append(s <= MAX_CLIP_S + 1e-6 and (s >= prm["length_s"][0] - 1e-3 or prm["form"] != "long"))
     check("keys start and end at the hub, at rest", shapes_ok)
-    check("every family is %g-%g beats" % BEATS, all(BEATS[0] - 1e-6 <= b <= BEATS[1] + 1e-6 for b in lengths.values()), lengths)
-    home = home_of(rig, hubs["greet"])
+    check("keys are drawn to their length (a long form at least its bottom, none over %g s)" % MAX_CLIP_S,
+          all(all(v) for v in lengths.values()), {f: sum(v) for f, v in lengths.items()})
     ks = keys_for("reach", home, zones, random.Random(3), beat, 0.7)
     check("reach leans back before it reaches out (anticipation)",
           U._dot(U._sub(ks[1][1], home[0]), U._sub(ks[2][1], home[0])) < 0.0)
     ks = keys_for("tilt", home, zones, random.Random(3), beat, 0.7)
-    rolls = [k[3] - home[2] for k in ks]
+    rolls = [kk[3] - home[2] for kk in ks]
     check("tilt rolls past and settles back (overshoot)", any(abs(a) > abs(b) + 1.0 and a * b > 0 for a, b in zip(rolls, rolls[1:])),
           [round(x, 1) for x in rolls])
-    lags = [k[4]["lag"] for f in FAMILIES for k in keys_for(f, home, zones, random.Random(3), beat, 0.7)]
+    lags = [kk[4]["lag"] for f in FAMILIES for kk in keys_for(f, home, zones, random.Random(3), beat, 0.7)]
     check("the gaze trails and leads the TCP (overlap)", min(lags) < 0.0 < max(lags))
     wave = keys_for("wave", home, zones, random.Random(3), beat, 0.7)
-    check("a smaller draw stays nearer the hub", max(math.dist(k[1], home[0]) for k in shrink(wave, home, 0.5)) <
-          max(math.dist(k[1], home[0]) for k in wave))
+    check("a smaller draw stays nearer the hub", max(math.dist(kk[1], home[0]) for kk in shrink(wave, home, 0.5)) <
+          max(math.dist(kk[1], home[0]) for kk in wave))
+    def pace(k_):                                   # s of moving a metre, over a family's moves
+        out = []
+        for f in FAMILIES:
+            ks = keys_for(f, home, zones, random.Random(5), beat, k_, length=("long", (4.0, 12.0)))
+            t = sum(b[0] for a, b in zip(ks, ks[1:]) if not b[4].get("hold"))
+            d = sum(math.dist(a[1], b[1]) for a, b in zip(ks, ks[1:]) if not b[4].get("hold"))
+            out.append(t / max(1e-6, d))
+        return _median(out)
+    check("the calm move slower than the lively (%.0f vs %.0f s a metre, as drawn)" % (pace(0.2), pace(1.0)),
+          pace(0.2) > 2.5 * pace(1.0))
 
-    # the sweep: every family from greet and rest, SEEDS seeds, TRIES draws each
-    names = [n for n in ("greet", "rest") if n in hubs]
-    res = _sweep(FAMILIES, names, SEEDS)
-    print("\n%-8s %-6s %8s %8s %8s  %-12s %s" % ("family", "hub", "1st draw", "in %d" % TRIES, "4-12 s", "length", "size / slowed"))
+    # the sweep: every family from greet, rest, low and high, SEEDS seeds,
+    # TRIES draws each, bpm and intensity over SWEEP_BPM, SWEEP_K; and reach,
+    # stretch, rise, dive, sweep at full intensity from greet
+    names = [n for n in ("rest", "greet") if n in hubs] + sorted(n for n in hubs if n not in ("rest", "greet"))
+    names += [n for n, _ in SYNTHETIC if n in synth]
+    jobs = [(f, h, s) for h in names for f in FAMILIES for s in range(SEEDS)]
+    full = ("reach", "stretch", "rise", "dive", "sweep")
+    jobs += [(f, "greet", 100 + s, 1.0) for f in full for s in range(5)]
+    allres = _sweep(jobs)
+    res = [x for x in allres if x["seed"] < 100]
+    top = [x for x in allres if x["seed"] >= 100]
+    print("\n%-8s %-6s %8s %8s  %-11s %6s %6s %6s %6s  %s" % ("family", "hub", "1st draw", "in %d" % TRIES, "length",
+                                                          "z m", "ext m", "peak", "mean", "size / slowed"))
     for name in names:
         for fam in FAMILIES:
             rs = [x for x in res if x["fam"] == fam and x["hub"] == name]
             made = [x for x in rs if x["made"]]
             ds = [x["dur"] for x in made]
-            print("%-8s %-6s %5d/%-2d %5d/%-2d %5d/%-2d  %-12s %s" % (
+            print("%-8s %-6s %5d/%-2d %5d/%-2d  %-11s %6.2f %6.2f %6.2f %6.2f  %s" % (
                 fam, name, sum(x["first"] for x in rs), len(rs), len(made), len(rs),
-                sum(4.0 <= x <= 12.0 for x in ds), len(rs), "%.1f-%.1f s" % (min(ds), max(ds)) if ds else "-",
+                "%.1f-%.1f s" % (min(ds), max(ds)) if ds else "-",
+                _median([x["zspan"] for x in made]), _median([x["extent"] for x in made]),
+                _median([x["vpeak"] for x in made]), _median([x["vmean"] for x in made]),
                 "%.2f / %.2f" % (sum(x["size"] for x in made) / len(made), sum(x["slowed"] for x in made) / len(made)) if made else ""))
     made = [x for x in res if x["made"]]
     per = {(x["fam"], x["hub"]) for x in made}
     print()
     check("every family makes a clip from every hub", len(per) == len(FAMILIES) * len(names),
           sorted({(f, n) for f in FAMILIES for n in names} - per))
-    check("most seeds make a clip within %d draws" % TRIES, len(made) >= 0.9 * len(res), "%d/%d" % (len(made), len(res)))
+    cells = {(f, n): sum(x["made"] for x in res if x["fam"] == f and x["hub"] == n) / float(SEEDS) for f in FAMILIES for n in names}
+    low_cells = {"%s/%s" % c: v for c, v in cells.items() if v < 0.8}
+    check("at least 80%% of seeds make a clip within %d draws, every family from every hub" % TRIES, not low_cells,
+          low_cells or "%d/%d overall" % (len(made), len(res)))
     probs = sorted({"%s/%s: %s" % (x["fam"], x["hub"], p) for x in made for p in x["problems"]})
-    check("each starts and ends at the hub at rest, within limits and speed, clear of the room", not probs, probs[:6])
-    inside_ = sum(4.0 <= x["dur"] <= 12.0 for x in made)
-    check("most are 4-12 s long (the show's range)", inside_ >= 0.9 * len(made),
-          "%d/%d, %.1f-%.1f s" % (inside_, len(made), min(x["dur"] for x in made), max(x["dur"] for x in made)))
-    still = max(made, key=lambda x: x["still"])
+    check("each starts and ends at the hub at rest, within limits and speed, clear of the room, in the band", not probs, probs[:6])
+    ds = [x["dur"] for x in made]
+    check("%g-%g s long, at least 20%% of them 5 s or less (accents)" % (MIN_CLIP_S, MAX_CLIP_S),
+          all(MIN_CLIP_S - 1e-6 <= d <= MAX_CLIP_S + 1e-6 for d in ds) and sum(d <= 5.0 for d in ds) >= 0.2 * len(ds),
+          "%.1f-%.1f s, %d%% <= 5 s" % (min(ds), max(ds), 100 * sum(d <= 5.0 for d in ds) / len(ds)))
     steps = (max(x["first_step"] for x in made), max(x["last_step"] for x in made))
     check("first and last steps under %g deg (starts and ends at rest)" % REST_STEP_DEG, max(steps) <= REST_STEP_DEG,
           "first %.4f, last %.4f deg" % steps)
+    still = max(made, key=lambda x: x["still"])
     check("never frozen for 0.4 s (holds breathe)", still["still"] < 0.4,
           "longest %.2f s (%s from %s)" % (still["still"], still["fam"], still["hub"]))
     greet = [x for x in made if x["hub"] == "greet"]
     shares = {f: round(sum(x["wrist"] for x in greet if x["fam"] == f) / max(1, sum(x["fam"] == f for x in greet)), 2) for f in FAMILIES}
-    check("the wrist carries most of look / tilt / nod", all(shares[f] > 0.5 for f in ("look", "tilt", "nod")), shares)
+    check("the wrist carries most of look / tilt", all(shares[f] > 0.5 for f in ("look", "tilt")), shares)
     j5 = {f: round(max([x["j5"] for x in greet if x["fam"] == f] or [0]), 1) for f in FAMILIES}
     check("J5 moves (not a right-angle arm with a still wrist)", sum(v > 8 for v in j5.values()) >= 4, j5)
+    check("labels: family and typed params", all(x["labels"] for x in made))
+    zs, ext = [x["zspan"] for x in made], [x["extent"] for x in made]
+    check("through heights: median TCP height span >= 0.15 m", _median(zs) >= 0.15, "median %.3f m" % _median(zs))
+    # the gestures alone, from every hub (the high ones have little room
+    # above and little arm beyond): the paths' figures lift the library's
+    # median past 0.3 m (paths.py checks theirs)
+    check("big: median TCP extent >= 0.28 m (gestures alone)", _median(ext) >= 0.28, "median %.3f m" % _median(ext))
+    peaks = [x["vpeak"] for x in made]
+    fast, calm_ = sum(v >= 1.0 for v in peaks), sum(v < 0.3 for v in peaks)
+    check("quick and calm: some peak at >= 1 m/s, some stay under 0.3 m/s", fast >= max(5, 0.02 * len(peaks)) and calm_ >= 0.05 * len(peaks),
+          "%d%% >= 1 m/s, %d%% < 0.3 m/s" % (100 * fast / len(peaks), 100 * calm_ / len(peaks)))
+    lo_k = [x for x in made if x["k"] <= 0.45]
+    hi_k = [x for x in made if x["k"] >= 0.75]
+    check("intensity scales size and speed (k >= 0.75 vs <= 0.45: extent x%.1f, mean speed x%.1f)" % (
+          _median([x["extent"] for x in hi_k]) / max(1e-6, _median([x["extent"] for x in lo_k])),
+          _median([x["vmean"] for x in hi_k]) / max(1e-6, _median([x["vmean"] for x in lo_k]))),
+          _median([x["extent"] for x in hi_k]) >= 1.5 * _median([x["extent"] for x in lo_k])
+          and _median([x["vmean"] for x in hi_k]) >= 1.6 * _median([x["vmean"] for x in lo_k]))
+    for f in full:
+        rs = [x for x in top if x["fam"] == f and x["made"]]
+        tv, zz = _median([x["travel"] for x in rs]), _median([x["zspan"] for x in rs])
+        most = 0.7 if f in ("reach", "stretch") else 1.0
+        check("%s at full intensity from greet: travels 0.4-%g m, >= 0.3 m in height" % (f, most),
+              len(rs) >= 4 and 0.4 <= tv <= most and zz >= 0.3, "%d/5 made, travel %.2f m, height %.2f m" % (len(rs), tv, zz))
     print("\n%.0f s" % (time.time() - t0))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0

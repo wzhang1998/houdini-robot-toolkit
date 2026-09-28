@@ -346,20 +346,23 @@ def viewport_look(cam):
     grad.setRenderFlag(True)
 
 
-AUDIENCE_FOCAL = 22.0
+AUDIENCE_FOCAL = 16.0             # wide enough for hubs from 0.5 to 1.5 m
 
 
-def audience_view(show_cfg, hub="greet"):
+def audience_view(show_cfg, hub=None):
     """(eye, target): from the audience zone's side nearest the robot, at eye
-    height, looking at the hub's tool tip -- what a guest sees of a gesture."""
+    height -- what a guest sees. It looks at the hub's tool tip, or (hub None)
+    at the middle of every idle hub's tool tip, so a show with hubs at
+    several levels stays in frame."""
     import json
     import gestures as G
     import show
     cfg = json.load(open(show_cfg))
     a = cfg["zones"]["audience"]
     rig = G.Rig()
-    q = show.resolve_hubs(cfg, rig)[hub]
-    tcp = rig.tool(q)[1]
+    hubs = show.resolve_hubs(cfg, rig)
+    tips = [rig.tool(hubs[h])[1] for h in ([hub] if hub else hubs)]
+    tcp = [sum(p[i] for p in tips) / len(tips) for i in range(3)]
     c = a["center"]
     toward = [tcp[0] - c[0], tcp[1] - c[1]]
     L = math.hypot(*toward)

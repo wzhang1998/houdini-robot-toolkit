@@ -38,7 +38,7 @@
     -88.0,
     4.0
    ],
-   "clips": 22,
+   "clips": 16,
    "generator": "gestures",
    "zone": "greet",
    "families": [
@@ -53,6 +53,10 @@
     "stretch",
     "bounce",
     "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
     "lissajous",
     "figure8",
     "spiral",
@@ -61,6 +65,98 @@
     "spline"
    ],
    "note": "the tool looks at the audience; gestures and spatial paths"
+  },
+  "low": {
+   "clips": 12,
+   "generator": "gestures",
+   "zone": "low",
+   "tcp": [
+    -0.75,
+    -0.35,
+    0.55
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.5
+   ],
+   "near": [
+    6.3,
+    -69.1,
+    135.7,
+    -152.9,
+    34.1,
+    -96.6
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
+  },
+  "high": {
+   "clips": 12,
+   "generator": "gestures",
+   "zone": "high",
+   "tcp": [
+    -0.95,
+    0.0,
+    1.45
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.35
+   ],
+   "near": [
+    -16.7,
+    -73.8,
+    62.2,
+    -175.6,
+    26.4,
+    7.0
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
   }
  },
  "library": {
@@ -69,19 +165,19 @@
    2
   ],
   "bpm": [
-   80,
-   125
+   70,
+   140
   ],
   "duration_s": [
-   4.0,
+   3.0,
    12.0
   ],
   "seed": 11,
   "tries": 6,
   "actions": [],
   "intensity": [
-   0.4,
-   0.9
+   0.2,
+   1.0
   ]
  },
  "sequences": {
@@ -179,6 +275,32 @@
    ],
    "yaw_deg": -11.28,
    "note": "around the rest hub"
+  },
+  "low": {
+   "center": [
+    -0.75,
+    -0.35,
+    0.62
+   ],
+   "size": [
+    0.9,
+    0.9,
+    0.55
+   ],
+   "yaw_deg": 0.0
+  },
+  "high": {
+   "center": [
+    -0.95,
+    0.0,
+    1.36
+   ],
+   "size": [
+    0.8,
+    0.8,
+    0.46
+   ],
+   "yaw_deg": 0.0
   }
  },
  "range": {

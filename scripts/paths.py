@@ -1,11 +1,19 @@
 """Paths: lively spatial figures the tool draws around a show hub.
 
 gestures.py makes the arm look and lean; choreo.py makes it dance in joint
-space. Here the TCP draws a readable FIGURE in the air at human scale
-(0.15-0.5 m) -- a Lissajous knot, a figure eight, a spiral, a coil, a rose,
-a loose loop -- the kind of shape a person traces with a hand, while the
-wrist carries a character of its own (looking at the audience, leaning
-like a brush, or keeping the hub's aim).
+space. Here the TCP draws a readable FIGURE in the air at human to body
+scale (0.2-0.6 m, the livelier the bigger) -- a Lissajous knot, a figure
+eight, a spiral, a coil, a rose, a loose loop -- the kind of shape a person
+traces with a hand, mostly in upright or leaning planes so it passes through
+heights, while the wrist carries a character of its own (looking at the
+audience, leaning like a brush, or keeping the hub's aim).
+
+The figure stays in its space (gestures.Space): the hub's zone across, the
+show's operating band up and down (the zone is design space, not a wall),
+inside the room's work zones (the controller's caps the TCP at 1.6 m), out
+of the operator's slow zone, within reach of the shoulder. Its centre moves
+off the hub point across, towards the audience and up or down; when it does
+not fit it is nudged inwards first, made smaller last.
 
 Every figure is closed: it starts and ends at the hub's TCP, at rest, so it
 chains in the show graph like any clip. The figure blooms out of the hub
@@ -17,18 +25,22 @@ offset) and folds back into it. Families:
     figure8     an eight (standing or lying), bowed into a saddle
     spiral      in the plane: grows turn by turn, then shrinks, domed
                 towards the audience
-    helix       a coil whose axis is the plane normal: rises, then falls
-                back, the radius opening and closing
+    helix       a coil round the vertical (or a leaning axis): climbs above
+                the hub and sinks below it (0.3-0.55 m in all, as the room
+                allows), the radius opening and closing
     rose        r = cos(k t): 3, 4 or 5 petals, the petals bowed
     spline      a smooth closed loop (periodic C2 cubic) through the hub
-                and 3-5 random points in the hub's zone
+                and 3-5 random points in the hub's space
 
 Typed parameters per clip, drawn from an rng with ranges scaled by an
 intensity 0..1 (and returned in labels["params"]): extent (m), aspect,
 depth (out of plane), plane (a named plane -- audience: facing the
 audience; tilted: facing it and leaning back; floor: horizontal; side:
-edge-on to it -- and its normal), centre offset from the hub TCP, cycles,
-bpm / beats, and the tool orientation mode:
+edge-on to it -- and its normal), centre offset from the hub TCP (with a
+height), cycles, form (short: a 3-5 s flourish, simpler and 3/4 the size,
+likelier the livelier; long: 5-11 s), tempo (steady, accel, rit), speed
+(v_mps, a_mps2: calm stays calm, v ~ k^1.5), bpm / beats, and the tool
+orientation mode:
 
     look      the tool aims at a point in the audience zone that drifts
               slowly from face to face (the swing from the hub's aim is
@@ -43,20 +55,25 @@ Timing: the figure is paced along the arc length of the figure at full
 size (so a spiral's small turns take as long as its big ones, as a hand
 draws them) with the two-thirds power law of human drawing (slower in the
 tight turns, faster on the straights: v ~ curvature^-1/3), capped where a
-turn would ask the TCP for more than a_mps2 (v <= sqrt(a / curvature));
-the cruise takes a whole number of beats; min-jerk ease in and out at
-both ends (velocity and acceleration 0). The look / lean / roll fade in
-and out with the same kind of ramp, so the tool frame is the hub's at
-both ends. Sampled at 24 fps through the closed-form
-IK (nearest branch, a step over gestures.MAX_STEP_DEG is a branch flip),
-then slowed uniformly if the player would slow it (fairino_player.limiting
-at the plan safety) -- never clipped.
+turn would ask the TCP for more than a_mps2 (v <= sqrt(a / curvature)),
+surging and easing twice over the figure, speeding up (accel) or slowing
+down (rit) if drawn so; the cruise takes a whole number of beats; min-jerk
+ease in and out at both ends (velocity and acceleration 0), STILL_S at the
+hub before and after (the first and last 24 fps steps are nil). The look /
+lean / roll fade in and out with the same kind of ramp, so the tool frame
+is the hub's at both ends. Sampled at 24 fps through the closed-form IK
+(nearest branch, a step over gestures.MAX_STEP_DEG is a branch flip), then
+slowed where the player would need it (fairino_player.need_profile at the
+plan safety: Pace.ease_off lowers the speed along the figure there, so it
+stays quick on the open stretches), then uniformly if still needed -- never
+clipped, never over MAX_SLOW. A wrist that runs into its singularity gets
+the same figure with half its look / lean / roll, then none (WRIST_SOFTEN).
 
     make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None,
          env=None, safety=PLAN_SAFETY, orient=None, zone=None, why=None)
         -> motion clip dict (as gestures.make) or None; labels["family"],
            labels["params"] (the typed parameters, as drawn and fitted)
-    draw(family, home, zones, rng, bpm, intensity, orient, zone) -> params
+    draw(family, home, zones, rng, bpm, intensity, orient, zone, space) -> params
     near_room(env, model, qs) -> (env with only what the clip can come
                                   near, bound of the rest): the same room
                                   check, several times sooner
@@ -90,8 +107,9 @@ DENSE = 2400                     # samples of a figure for pacing
 POWER_LAW = 1.0 / 3.0            # v ~ curvature^-1/3 (Lacquaniti, Terzuolo & Viviani 1983)
 MAX_SLOW = 2.5                   # slower than this: redraw rather than crawl
 ZONE_PAD = 0.02
-NEAR_ROOM_M = 0.3
-LOOK_FAR = 1.4                   # m: the look point's least distance from the hub                # room objects farther than their margin + this cannot be touched
+NEAR_ROOM_M = 0.3                # room objects farther than their margin + this cannot be touched
+STILL_S = 2.0 / G.FPS            # still at the hub before and after the figure
+LOOK_FAR = 1.4                   # m: the look point's least distance from the hub
 Z = (0.0, 0.0, 1.0)
 
 
@@ -138,7 +156,7 @@ def _turn_towards(d0, target, rad, soft_cap=None):
     soft_cap (cap * tanh(angle / cap): no kink where the cap sets in)."""
     axis = U._cross(d0, target)
     s = U._norm(axis)
-    if s < 1e-12:
+    if s < 1e-12 or (soft_cap is not None and soft_cap < 1e-9):
         return d0
     if soft_cap is not None:
         rad = rad * soft_cap * math.tanh(math.atan2(s, U._dot(d0, target)) / soft_cap)
@@ -292,7 +310,11 @@ class Figure:
             return (math.cos(th), math.sin(th), k["depth"], th, env, _window(s, 0.25), 0.0)
         if f == "helix":
             th = 2 * math.pi * k["turns"] * s * k["sense"]
-            lift = k["rise_m"] * (0.5 - 0.5 * math.cos(2 * math.pi * s))
+            # up to rise_m * split above the start and the rest below it,
+            # smoothly (B (1 - cos) + A sin: max U, min -D)
+            up = k["rise_m"] * k.get("rise_split", 1.0)
+            down = k["rise_m"] - up
+            lift = 0.5 * (up - down) * (1.0 - math.cos(2 * math.pi * s)) + math.sqrt(max(0.0, up * down)) * math.sin(2 * math.pi * s)
             return (math.cos(th), math.sin(th), 0.0, th, _window(s, k["ramp"]), _window(s, 0.3), lift)
         if f == "rose":
             kk = k["k"]
@@ -319,8 +341,9 @@ class Figure:
                     (e * A * x, self.u), (e * A * k["aspect"] * y, self.v), (e * A * w, self.n))
         return pos, th
 
-    def fits(self, box, n=240):
-        return all(G.inside(box, self.at(i / float(n))[0], ZONE_PAD) for i in range(n + 1))
+    def fits(self, space, n=240):
+        """Every point inside the space (a gestures.Space)."""
+        return all(space.contains(self.at(i / float(n))[0]) for i in range(n + 1))
 
 
 # --------------------------------------------------------------------------
@@ -359,16 +382,22 @@ def _pick(rng, weighted):
     return weighted[-1][0]
 
 
+# upright and leaning planes most (they carry the figure through heights),
+# the floor least; a helix coils round the vertical (or a leaning axis)
 PLANE_WEIGHTS = {
-    "lissajous": (("audience", 5), ("tilted", 2.5), ("floor", 1.5), ("side", 1)),
-    "figure8": (("audience", 4.5), ("tilted", 2.5), ("floor", 2), ("side", 1)),
-    "spiral": (("audience", 5), ("tilted", 3), ("floor", 2)),
-    "helix": (("floor", 6), ("audience", 4)),
-    "rose": (("audience", 5), ("tilted", 3), ("floor", 2)),
+    "lissajous": (("audience", 4), ("tilted", 3), ("side", 2), ("floor", 1)),
+    "figure8": (("audience", 4), ("tilted", 3), ("side", 2), ("floor", 1)),
+    "spiral": (("audience", 4), ("tilted", 3), ("side", 1.5), ("floor", 1)),
+    "helix": (("floor", 8), ("tilted", 2)),
+    "rose": (("audience", 4), ("tilted", 3), ("side", 1.5), ("floor", 1)),
     "spline": (("audience", 1),),
 }
-COUNTS = {"lissajous": (1, 2, 3), "figure8": (1, 2, 3), "spiral": (3, 4, 5, 6), "helix": (3, 4, 5, 6),
+COUNTS = {"lissajous": (1, 2, 3), "figure8": (1, 2, 3), "spiral": (2, 3, 4, 5, 6), "helix": (2, 3, 4, 5, 6),
           "rose": (1, 2), "spline": (1, 2)}
+EXTENT_M = (0.18, 0.6)           # a figure's size, calm .. lively (+-15 %)
+HELIX_RISE_M = (0.34, 0.58)      # how high a helix climbs (in z), calm .. lively
+V_MPS = (0.06, 0.8)              # drawing speed, calm .. lively
+A_MPS2 = (0.6, 3.0)              # the most the turns may ask of the TCP, calm .. lively
 
 
 def _resize(prm, p0, s):
@@ -389,28 +418,37 @@ def _eyes(zones, rng):
     return (p[0], p[1], min(max(1.3 + rng.random() * 0.4, zlo), zhi))
 
 
-def draw(family, home, zones, rng, bpm, k, orient=None, zone=None):
+def draw(family, home, zones, rng, bpm, k, orient=None, zone=None, space=None):
     """The typed parameters of one clip (a dict), or None when the figure
-    cannot be fitted into its zone. home = (tcp, look, roll) of the hub."""
+    cannot be fitted into its space. home = (tcp, look, roll) of the hub;
+    space: a gestures.Space (the zone's footprint, the operating band, the
+    room's hard limits), made from zones and zone when None."""
     p0 = home[0]
     beat = 60.0 / bpm
     h = audience_dir(zones, p0)
-    zname, box = zone_of(zones, p0, zone)
-    if box is not None and not G.inside(box, p0, ZONE_PAD):
-        zname, box = None, None                       # a hub outside its zone: the room check still holds
-    orient = orient or _pick(rng, (("look", 4.5), ("tangent", 3.5), ("fixed", 2)))
+    space = space or G.Space(zones, p0, None, zone)
+    zname = space.name
+    orient = orient or _pick(rng, (("look", 4.5), ("tangent", 3.5), ("fixed", 1.5)))
     plane = _pick(rng, PLANE_WEIGHTS[family])
     n, u, v = plane_axes(plane, h)
-    extent = max(0.15, min(0.5, _lerp(0.2, 0.45, k) * rng.uniform(0.85, 1.15)))
+    extent = max(0.15, min(0.62, _lerp(EXTENT_M[0], EXTENT_M[1], k) * rng.uniform(0.85, 1.15)))
+    short = rng.random() < 0.15 + 0.55 * k           # a short accent (the simpler figures), likelier the livelier
+    if short:
+        extent *= 0.75                                # a flourish: the arm draws a big figure no quicker than ~5 s
     prm = {"family": family, "orient": orient, "plane": plane, "normal": [round(x, 4) for x in n],
            "zone": zname, "extent_m": extent, "aspect": rng.uniform(0.65, 1.0),
            "depth": rng.uniform(0.0, 0.25 + 0.3 * k), "bpm": bpm, "intensity": round(k, 3),
            "ramp": rng.uniform(0.18, 0.3)}
-    # the centre drifts off the hub point: across the plane, and in towards the audience
+    # the centre drifts off the hub point: across the plane, in towards the
+    # audience, and up or down (within the band, the figure's own height kept)
     ou, ov, oh = rng.uniform(-0.3, 0.3) * extent, rng.uniform(-0.2, 0.3) * extent, rng.uniform(0.0, 0.05 + 0.1 * k)
-    prm["offset"] = _vsum((ou, u), (ov, v), (oh, h))
+    half_z = extent / 2.0 * (abs(u[2]) + abs(v[2]) + 0.5 * abs(n[2]))
+    oz = rng.uniform(-1.0, 1.0) * _lerp(0.05, 0.3, k)
+    lo_z, hi_z = space.bottom + half_z - p0[2], space.top - half_z - p0[2]
+    oz = max(lo_z, min(hi_z, oz)) if lo_z <= hi_z else 0.5 * (lo_z + hi_z)
+    prm["offset"] = _vsum((ou, u), (ov, v), (oh, h), (oz, Z))
     if family == "lissajous":
-        prm["ratio"] = list(rng.choice(((1, 2), (2, 1), (2, 3), (3, 2), (1, 3), (3, 4))))
+        prm["ratio"] = list(rng.choice(((1, 2), (2, 1)) if short else ((1, 2), (2, 1), (2, 3), (3, 2), (1, 3), (3, 4))))
         prm["phase_deg"] = rng.choice((30.0, 45.0, 60.0, 90.0)) * rng.choice((1, -1))
     elif family == "figure8":
         prm["lying"] = rng.random() < 0.5
@@ -420,12 +458,24 @@ def draw(family, home, zones, rng, bpm, k, orient=None, zone=None):
         prm["depth"] = rng.uniform(0.1, 0.3 + 0.4 * k)
         prm["aspect"] = rng.uniform(0.8, 1.0)
     elif family == "helix":
+        # a real climb: HELIX_RISE_M in z (along a leaning axis, as much in
+        # z), up where the space has room above, else down; the climb is its
+        # height offset
         prm["sense"] = rng.choice((1, -1))
-        prm["rise_m"] = extent * rng.uniform(0.5, 0.9) * rng.choice((1, -1) if plane == "floor" else (1,))
+        rise = _lerp(HELIX_RISE_M[0], HELIX_RISE_M[1], k) * rng.uniform(1.0, 1.1)
+        prm["offset"] = _vsum((1.0, prm["offset"]), (-prm["offset"][2], Z))
+        # as much above the hub as below where there is room (a coil sunk
+        # far below a high hub folds the arm onto its wrist)
+        up_room = max(0.0, space.top - p0[2] - extent * 0.1)
+        down_room = max(0.0, p0[2] - space.bottom - extent * 0.1)
+        up = min(up_room, rise / 2.0 + max(0.0, rise / 2.0 - down_room))
+        down = min(down_room, rise - up)
+        prm["rise_m"] = max(0.05, up + down) / max(0.3, abs(n[2]))
+        prm["rise_split"] = round(up / max(1e-6, up + down), 4)
         prm["aspect"] = rng.uniform(0.85, 1.0)
         prm["ramp"] = rng.uniform(0.12, 0.2)
     elif family == "rose":
-        petals = rng.choice((3, 4, 5))
+        petals = rng.choice((3, 4) if short else (3, 4, 5))
         prm["petals"] = petals
         prm["k"] = petals if petals % 2 else petals // 2
         prm["rot_deg"] = rng.uniform(0, 360)
@@ -437,9 +487,9 @@ def draw(family, home, zones, rng, bpm, k, orient=None, zone=None):
         for _ in range(rng.choice((3, 4, 5))):
             for _try in range(40):
                 q = _vsum((1.0, centre), (rng.uniform(-1, 1) * extent * 0.6, u),
-                          (rng.uniform(-1, 1) * extent * 0.5, v), (rng.uniform(-0.3, 0.6) * extent * 0.5, h))
+                          (rng.uniform(-1, 1) * extent * 0.6, v), (rng.uniform(-0.3, 0.6) * extent * 0.5, h))
                 last = pts[-1] if pts else p0
-                if (box is None or G.inside(box, q, ZONE_PAD + 0.03)) and math.dist(q, last) > 0.35 * extent:
+                if space.contains(q, 0.03) and math.dist(q, last) > 0.35 * extent:
                     pts.append(q)
                     break
         if len(pts) < 3:
@@ -464,14 +514,23 @@ def draw(family, home, zones, rng, bpm, k, orient=None, zone=None):
     prm["roll_deg"] = 0.0 if orient == "fixed" else _lerp(8.0, 22.0, k) * rng.uniform(0.7, 1.2) * rng.choice((1, -1))
     prm["roll_phase_deg"] = rng.uniform(0, 360)
     prm["roll_cycles"] = rng.choice((1.0, 1.5, 2.0))
-    # the timing: a human drawing speed, slower in the turns (power law, and
-    # a cap on the TCP's acceleration), a whole number of beats; as many
-    # cycles as come closest to a clip length drawn from 4.5-9 s
-    prm["v_mps"] = round(_lerp(0.2, 0.42, k) * rng.uniform(0.85, 1.15), 4)
-    prm["a_mps2"] = round(_lerp(0.8, 1.3, k), 4)
+    # the timing: a drawing speed from calm to lively, slower in the turns
+    # (power law, and a cap on the TCP's acceleration), steady or speeding up
+    # / slowing down over the figure, a whole number of beats; as many
+    # cycles as come closest to a clip length: a short accent (3-5 s,
+    # likelier the livelier) or a long figure (7-11 s calm .. 5-8.5 s lively)
+    prm["v_mps"] = round(_lerp(V_MPS[0], V_MPS[1], k ** 1.5) * rng.uniform(0.85, 1.15), 4)   # calm stays calm longer
+    prm["a_mps2"] = round(_lerp(A_MPS2[0], A_MPS2[1], k), 4)
     prm["power_law"] = round(rng.uniform(0.6, 1.0), 3)
-    prm["ease_s"] = round(min(1.6, max(0.6, beat * rng.choice((1.0, 1.5, 2.0)))), 3)
-    target_s = rng.uniform(4.5, 9.0)
+    prm["tempo"] = _pick(rng, (("steady", 1.2), ("accel", 0.5 + 0.8 * k), ("rit", 0.8)))
+    prm["ease_s"] = round(min(1.6, max(_lerp(0.6, 0.35, k), beat * rng.choice((1.0, 1.5, 2.0)))), 3)
+    if short:
+        prm["form"], target_s = "short", rng.uniform(2.4, 3.4)        # as drawn: the joints add a third or so
+        prm["v_mps"] = round(max(prm["v_mps"] * 1.25, 0.35 + 0.45 * k), 4)   # an accent: quick, eased in and out sooner
+        prm["a_mps2"] = round(prm["a_mps2"] * 1.2, 4)
+        prm["ease_s"] = round(min(prm["ease_s"], max(0.35, beat)), 3)
+    else:
+        prm["form"], target_s = "long", rng.uniform(_lerp(7.0, 5.0, k), _lerp(11.0, 8.5, k))
     while True:
         best = None
         for c in COUNTS[family]:
@@ -480,27 +539,34 @@ def draw(family, home, zones, rng, bpm, k, orient=None, zone=None):
             else:
                 prm["cycles"] = c
             dur = Pace(Figure(family, prm, p0, (n, u, v)), prm, 500).duration
-            if best is None or abs(dur - target_s) < abs(best[0] - target_s):
-                best = (dur, c)
-        if best[0] < 10.0 or prm["extent_m"] < 0.2:
+            off = abs(dur - target_s) + (100.0 if dur < G.MIN_CLIP_S + 0.1 else 0.0)   # never under a clip's least
+            if best is None or off < best[2]:
+                best = (dur, c, off)
+        if best[0] < G.MAX_CLIP_S - 1.5 or prm["extent_m"] < 0.2:
             break
         _resize(prm, p0, 0.88)                         # too long even once round: a smaller figure
     if family in ("spiral", "helix"):
         prm["turns"], prm["cycles"] = best[1], 1
     else:
         prm["cycles"] = best[1]
-    # into the zone
+    # into the space: the centre nudged inwards first (a hub at the edge of
+    # its space, or of the arm's reach), then the figure smaller
     fig = Figure(family, prm, p0, (n, u, v))
-    if box is not None:
-        while not fig.fits(box):
-            fig.scale *= 0.85
-            if prm["extent_m"] * fig.scale < 0.12:
-                return None
-        if fig.scale < 1.0:
-            _resize(prm, p0, fig.scale)
-            fig = Figure(family, prm, p0, (n, u, v))
-            if not fig.fits(box):
-                return None
+    inward = U._normalize(_vsum((1.0, space.box["center"]), (0.5, G.SHOULDER), (-1.5, p0)))
+    nudges = 0 if family == "spline" else 5
+    while not fig.fits(space):
+        if nudges:
+            nudges -= 1
+            prm["offset"] = _vsum((1.0, prm["offset"]), (0.04, inward))
+            continue
+        fig.scale *= 0.85
+        if prm["extent_m"] * fig.scale < 0.12:
+            return None
+    if fig.scale < 1.0:
+        _resize(prm, p0, fig.scale)
+        fig = Figure(family, prm, p0, (n, u, v))
+        if not fig.fits(space):
+            return None
     prm["offset"] = [round(x, 4) for x in prm["offset"]]
     for key in ("extent_m", "aspect", "depth", "ramp", "max_look_deg", "lean_deg", "roll_deg", "roll_phase_deg",
                 "rise_m", "rot_deg"):
@@ -520,7 +586,7 @@ class Pace:
     power law (normalised to its mean along the arc), capped where the
     turn would ask the TCP for more than a_mps2 (v <= sqrt(a / curvature));
     the cruise rounded to whole beats; ease_s of min-jerk speed ramps at
-    both ends."""
+    both ends. ease_off() then slows it only where the joints need it."""
 
     def __init__(self, fig, prm, n=DENSE):
         ref = [fig.at(i / float(n), True)[0] for i in range(n + 1)]
@@ -537,18 +603,47 @@ class Pace:
         f = [(x + k0) ** -beta for x in kap]
         mean = sum(0.5 * (f[i] + f[i + 1]) * ds[i] for i in range(n)) / sum(ds)
         v = [prm["v_mps"] * max(0.55, min(1.6, x / mean)) for x in f]
+        surge = 0.25 if fig.family == "helix" else 0.15   # it surges and eases twice (a coil's curve is even)
+        v = [x * (1.0 + surge * math.cos(4.0 * math.pi * i / float(n))) for i, x in enumerate(v)]
+        tempo = prm.get("tempo", "steady")
+        if tempo in ("accel", "rit"):                  # the end twice (half) the start's speed
+            g = math.log(2.0) * (1.0 if tempo == "accel" else -1.0)
+            v = [x * math.exp(g * (i / float(n) - 0.5)) for i, x in enumerate(v)]
         v = [max(0.02, min(x, math.sqrt(prm["a_mps2"] / max(1e-6, c)))) for x, c in zip(v, kap)]
-        v = _smooth(v, w)
-        tau = [0.0]
-        for i in range(n):
-            tau.append(tau[-1] + ds[i] / (0.5 * (v[i] + v[i + 1])))
-        beat = 60.0 / prm["bpm"]
-        self.beats = max(2, int(math.ceil(tau[-1] / beat - 0.2)))
-        cruise = self.beats * beat
-        self.tau = [x * cruise / tau[-1] for x in tau]
+        self.v, self.ds, self.w = _smooth(v, w), ds, w
+        self.beat, self.ease = 60.0 / prm["bpm"], prm["ease_s"]
         self.s = [i / float(n) for i in range(n + 1)]
-        self.cruise, self.ease = cruise, prm["ease_s"]
+        self._build()
+
+    def _build(self):
+        tau = [0.0]
+        for i in range(len(self.ds)):
+            tau.append(tau[-1] + self.ds[i] / (0.5 * (self.v[i] + self.v[i + 1])))
+        self.beats = max(2, int(math.ceil(tau[-1] / self.beat - 0.2)))
+        cruise = self.beats * self.beat
+        self.tau = [x * cruise / tau[-1] for x in tau]
+        self.cruise = cruise
         self.duration = cruise + self.ease
+
+    def ease_off(self, prof, slow=1.0, margin=1.05, spread_s=0.3):
+        """Slower where the joints need it: prof = [(t, need)] of the clip as
+        played (`slow` times the design); the speed along the figure divided
+        by the need there (and margin), spread over spread_s either side and
+        smoothed, so the figure keeps its pace elsewhere -- quick on the
+        open stretches, eased in the tight ones."""
+        n = len(self.s)
+        f = [1.0] * n
+        for t, nd in prof:
+            if nd <= 1.0:
+                continue
+            i = max(0, min(n - 1, bisect.bisect_right(self.tau, self.tau_of((t - STILL_S) / slow)) - 1))
+            f[i] = max(f[i], nd * margin)
+        w = max(self.w, int(spread_s * n / max(1e-6, self.cruise)))
+        grown = [max(f[max(0, i - w):i + w + 1]) for i in range(n)]
+        smooth = _smooth(grown, w)
+        self.v = [v / max(1.0, a, b) for v, a, b in zip(self.v, grown, smooth)]
+        self.v = _smooth(self.v, self.w)
+        self._build()
 
     def tau_of(self, t):
         """Cruise time reached at t: min-jerk speed ramps of `ease` s at both ends."""
@@ -586,12 +681,14 @@ def _look_at(prm, u):
 
 
 def frames(rig, hub_q, fig, prm, pace, slow=1.0):
-    """[(t, tcp, R)] at 24 fps for the clip played `slow` times slower."""
+    """[(t, tcp, R)] at 24 fps for the clip played `slow` times slower,
+    STILL_S at the hub before and after (the first and last steps are nil,
+    as a gesture's)."""
     R0, p0, d0 = rig.tool(hub_q)
     T = pace.duration
-    n = int(math.ceil(T * slow * FPS))
+    n = int(math.ceil((T * slow + 2.0 * STILL_S) * FPS))
     ts = [i / FPS for i in range(n + 1)]
-    td = [min(T, t / slow) for t in ts]                   # design time of each frame
+    td = [min(T, max(0.0, t - STILL_S) / slow) for t in ts]   # design time of each frame
     orient = prm["orient"]
     tw = max(pace.ease, 0.2 * T)                          # the look / roll fade in and out
 
@@ -701,6 +798,39 @@ def near_room(env, model, qs, reach=NEAR_ROOM_M):
 # a clip
 # --------------------------------------------------------------------------
 
+WRIST_SOFTEN = (1.0, 0.5, 0.0)   # the orientation's swing, as drawn, then quieter when the wrist cannot follow
+
+
+def _soften(prm, f):
+    """The orientation's swing (look, lean, roll) scaled to f of as drawn (in place)."""
+    base = prm.setdefault("_drawn", {x: prm[x] for x in ("max_look_deg", "lean_deg", "roll_deg") if x in prm})
+    for x, val in base.items():
+        prm[x] = round(val * f, 4)
+    prm["wrist_soften"] = f
+
+
+def _timed(rig, hub_q, fig, prm, pace, designed, vel, acc):
+    """(ts, qs, slow) of the figure through the IK, slowed where the joints
+    need it (pace.ease_off), then, if still needed, all of it; or (None, why)."""
+    slow = 1.0
+    for it in range(10):
+        frs = frames(rig, hub_q, fig, prm, pace, slow)
+        qs, reason = solve_frames(rig, hub_q, frs)
+        if qs is None:
+            return None, reason
+        ts = [f[0] for f in frs]
+        s = P.limiting(ts, qs, 125.0, vel, acc)["scale_needed"]
+        if s <= 1.0:
+            return ts, qs, slow
+        if it < 6:                                     # slower where the joints need it
+            pace.ease_off(P.need_profile(ts, qs, 125.0, vel, acc), slow)
+        else:                                          # then, if still needed, all of it
+            slow *= s * 1.03
+        if pace.duration * slow > MAX_SLOW * designed:
+            return None, "would play %.1fx slower than designed" % (pace.duration * slow / designed)
+    return None, "timing did not settle"
+
+
 def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None, safety=PLAN_SAFETY,
          orient=None, zone=None, why=None):
     """A path clip from hub_q (gestures.make's shape; labels["family"] and
@@ -719,28 +849,31 @@ def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, en
     if family not in FAMILIES:
         raise ValueError("unknown family %r" % family)
     home = G.home_of(rig, hub_q)
-    prm = draw(family, home, zones, rng, bpm, intensity, orient, zone)
+    space = G.Space(zones, home[0], env, zone)
+    prm = draw(family, home, zones, rng, bpm, intensity, orient, zone, space)
     if prm is None:
-        return fail("does not fit its zone")
+        return fail("does not fit its space")
     fig = Figure(family, prm, home[0], plane_axes(prm["plane"], audience_dir(zones, home[0])))
     pace = Pace(fig, prm)
-    prm["beats"], prm["cruise_s"] = pace.beats, round(pace.cruise, 4)
+    designed = pace.duration
     vel, acc = [v * safety for v in rig.vel], [a * safety for a in rig.acc]
-    slow = 1.0
-    for _ in range(4):
-        frs = frames(rig, hub_q, fig, prm, pace, slow)
-        qs, reason = solve_frames(rig, hub_q, frs)
-        if qs is None:
-            return fail(reason)
-        ts = [f[0] for f in frs]
-        s = P.limiting(ts, qs, 125.0, vel, acc)["scale_needed"]
-        if s <= 1.0:
+    # a wrist that runs into its singularity (or flips) gets a quieter
+    # orientation for the same figure: half the look / lean / roll, then none
+    for soft in WRIST_SOFTEN:
+        if soft < 1.0:
+            _soften(prm, soft)
+            pace = Pace(fig, prm)
+            designed = pace.duration
+        got = _timed(rig, hub_q, fig, prm, pace, designed, vel, acc)
+        if got[0] is not None or not any(w in got[1] for w in ("wrist", "branch flip", "unreachable")):
             break
-        slow *= s * 1.03
-        if slow > MAX_SLOW:
-            return fail("would play %.1fx slower than designed" % slow)
-    else:
-        return fail("timing did not settle")
+    if got[0] is None:
+        return fail(got[1])
+    ts, qs, slow = got
+    prm["beats"], prm["cruise_s"] = pace.beats, round(pace.cruise, 4)
+    slow_all, slow = slow, ts[-1] / designed
+    if not G.MIN_CLIP_S <= ts[-1] <= G.MAX_CLIP_S + 1e-6:
+        return fail("%.1f s, outside %g-%g s" % (ts[-1], G.MIN_CLIP_S, G.MAX_CLIP_S))
     clip = {"schema": M.SCHEMA, "id": clip_id or "path_%s" % family, "robot": "fr20",
             "joint_names": ["j%d" % i for i in range(1, 7)], "units": {"angle": "deg", "time": "s", "length": "m"},
             "points": [{"t": round(t, 6), "q": [round(x, 5) for x in q]} for t, q in zip(ts, qs)],
@@ -765,7 +898,8 @@ def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, en
             return fail("hits the room: %s" % CL.describe(rep)[:80])
     clip["labels"] = motion_labels.label(clip)
     clip["labels"]["family"] = family
-    prm["slowed"] = round(slow, 3)
+    prm["slowed"], prm["slowed_all"] = round(slow, 3), round(slow_all, 3)
+    prm.pop("_drawn", None)
     clip["labels"]["params"] = prm
     return clip
 
@@ -778,12 +912,89 @@ def wrist_share(qs):
 # self-test
 # --------------------------------------------------------------------------
 
-def self_test():
+SEEDS = 8                        # draws per family and hub in the sweep
+TRIES = 3                        # a seed's draws before it counts as not made
+MATRIX_TRIES = 8                 # draws for one family x mode from one hub
+_W = {}
+
+
+def _worker_init():
     import json
-    import random
-    import time
     import collision as CL
     import show
+    cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
+    rig = G.Rig()
+    hubs = show.resolve_hubs(cfg, rig)
+    env = show.show_env(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["idle_canvas_m"])
+    for name, (q, _) in G.synthetic_hubs(rig, cfg, env).items():
+        hubs[name] = q
+    _W.update(cfg=cfg, rig=rig, hubs=hubs, env=env, zones=cfg["zones"], model=CL.load_model("fr20"),
+              safety=(cfg.get("range") or {}).get("speed", PLAN_SAFETY))
+
+
+def _summary(c, hq, room_full=False):
+    """What the checks need of a clip (not the clip)."""
+    import collision as CL
+    import show
+    rig, cfg = _W["rig"], _W["cfg"]
+    ts, qs = [p["t"] for p in c["points"]], [p["q"] for p in c["points"]]
+    vel, acc = [v * _W["safety"] for v in rig.vel], [a * _W["safety"] for a in rig.acc]
+    d = c["labels"]["descriptors"]
+    out = {"end": max(max(abs(a - b) for a, b in zip(qs[0], hq)), max(abs(a - b) for a, b in zip(qs[-1], hq))),
+           "rest_v": max(max(abs(a - b) for a, b in zip(qs[1], qs[0])), max(abs(a - b) for a, b in zip(qs[-1], qs[-2]))) * FPS,
+           "step": max(max(abs(a - b) for a, b in zip(x, y)) for x, y in zip(qs, qs[1:])),
+           "need": P.limiting(ts, qs, 125.0, vel, acc)["scale_needed"], "clear": c["safety"]["min_clearance_m"],
+           "dur": c["meta"]["duration_s"], "in_range": show.out_of_range(cfg, qs, c["tcp"]) is None,
+           "safe": bool(c["safety"]["ok"]), "wrist": wrist_share(qs), "ratio": d["tcp_peak_mps"] / max(1e-6, d["tcp_mean_mps"]),
+           "labels": c["labels"]["family"] and "measured" in c["labels"] and "form" in c["labels"]["params"],
+           "orient": c["labels"]["params"]["orient"], "plane": c["labels"]["params"]["plane"],
+           "form": c["labels"]["params"]["form"], "slowed": c["labels"]["params"]["slowed"],
+           "action": c["labels"]["measured"]["action"]}
+    out.update(G.tcp_stats(c["tcp"]))
+    if room_full:                                   # the near-room check against the whole room
+        rep = CL.check(_W["model"], _W["env"], ts, qs)
+        a, b = rep["min_env_clearance_m"], c["safety"]["min_clearance_m"]
+        far = _W["env"].get("margin_m", 0.05) + NEAR_ROOM_M
+        out["room_same"] = rep["ok"] and (abs(a - b) < 1e-6 or (a >= far and b >= far))
+    return out
+
+
+def _job(job):
+    """One draw set: (kind, hub, family, orient, seed, k). 'matrix': up to
+    MATRIX_TRIES draws in one orientation mode; 'sweep': up to TRIES draws,
+    the mode drawn. bpm and intensity from SWEEP_BPM, SWEEP_K (or k)."""
+    import random
+    kind, hub, fam, orient, seed, k_fixed = job
+    hq = _W["hubs"][hub]
+    rng = random.Random(seed * 7919 + FAMILIES.index(fam) * 131 + sum(map(ord, hub)) + (ORIENTS.index(orient) if orient else 7))
+    whys = []
+    tries = MATRIX_TRIES if kind == "matrix" else TRIES
+    for i in range(tries):
+        k = rng.uniform(*G.SWEEP_K) if k_fixed is None else k_fixed
+        c = make(_W["rig"], hq, fam, _W["zones"], rng, bpm=rng.randint(*G.SWEEP_BPM), intensity=k, env=_W["env"],
+                 safety=_W["safety"], orient=orient, why=whys)
+        if c is not None:
+            out = {"kind": kind, "hub": hub, "fam": fam, "mode": orient, "seed": seed, "k": k, "tries": i + 1, "made": True,
+                   "whys": whys}
+            out.update(_summary(c, hq, room_full=seed % 7 == 0))
+            return out
+    return {"kind": kind, "hub": hub, "fam": fam, "mode": orient, "seed": seed, "tries": tries, "made": False, "whys": whys}
+
+
+def _run(jobs):
+    try:
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=max(1, min(30, (os.cpu_count() or 2) - 1)), initializer=_worker_init) as ex:
+            return list(ex.map(_job, jobs, chunksize=1))
+    except (OSError, ImportError, RuntimeError) as e:
+        print("note: no worker processes (%s); run here, 3 seeds" % e)
+        _worker_init()
+        return [_job(j) for j in jobs if j[4] < 3]
+
+
+def self_test():
+    import json
+    import time
     fails = []
 
     def check(label, ok, detail=""):
@@ -793,12 +1004,7 @@ def self_test():
 
     t_start = time.time()
     cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
-    rig = G.Rig()
-    hubs = show.resolve_hubs(cfg, rig)
-    env = show.show_env(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["idle_canvas_m"])
     zones = cfg["zones"]
-    safety = (cfg.get("range") or {}).get("speed", PLAN_SAFETY)
-    lo_d, hi_d = cfg["library"]["duration_s"]
 
     # the pieces
     f = _periodic_spline([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0.5)])
@@ -806,101 +1012,124 @@ def self_test():
           and math.dist(f(1.0), (0, 0, 0)) < 1e-9 and min(math.dist(f(i / 400.0), (1, 1, 0)) for i in range(401)) < 0.01)
     n, u, v = plane_axes("audience", (0.0, -1.0, 0.0))
     check("the audience plane faces the audience, v up", math.dist(n, (0, -1, 0)) < 1e-9 and v[2] > 0.99, (n, u, v))
+    import random
+    rig = G.Rig()
+    home = G.home_of(rig, G._show_hubs(rig)[1]["greet"])
+    sp = G.Space(zones, home[0])
+    prm = draw("helix", home, zones, random.Random(4), 100, 0.2, "fixed", space=sp)
+    if prm is None:
+        return check("a calm helix is drawn from greet", False) or 1
+    fig = Figure("helix", prm, home[0], plane_axes(prm["plane"], audience_dir(zones, home[0])))
+    zs = [fig.at(i / 200.0)[0][2] for i in range(201)]
+    check("a calm helix still climbs >= 0.3 m (in its figure)", max(zs) - min(zs) >= 0.3 - 1e-6, "%.2f m" % (max(zs) - min(zs)))
+    fast = dict(prm, tempo="accel")
+    pa, pf = Pace(fig, dict(prm, tempo="steady")), Pace(fig, fast)
+    check("an accelerando figure ends quicker than it starts", pf.v[-10] > 1.4 * pf.v[10] and abs(pa.v[-10] / pa.v[10] - 1.0) < 0.5,
+          "%.2f -> %.2f m/s" % (pf.v[10], pf.v[-10]))
 
-    rows, made, tries_total, whys = [], [], 0, []
-    for hi, hub in enumerate(("rest", "greet")):
-        hq = hubs[hub]
-        zone = cfg["hubs"][hub].get("zone")
-        for fi, fam in enumerate(FAMILIES):
-            for mi, mode in enumerate(ORIENTS):
-                rng = random.Random(1000 * hi + 10 * fi + mi + 7)
-                clip, tries = None, 0
-                while clip is None and tries < 8:
-                    tries += 1
-                    clip = make(rig, hq, fam, zones, rng, bpm=rng.randint(*cfg["library"]["bpm"]),
-                                intensity=rng.uniform(*cfg["library"]["intensity"]), env=env, safety=safety,
-                                orient=mode, zone=zone, why=whys)
-                tries_total += tries
-                rows.append((hub, fam, mode, tries, clip))
-                if clip:
-                    made.append((hub, fam, mode, hq, clip))
-    print("\n%-6s %-10s %-8s %5s %6s %7s %6s %6s  %s" % ("hub", "family", "mode", "tries", "dur s", "ext m",
-                                                        "wrist", "slow", "plane / action"))
-    for hub, fam, mode, tries, c in rows:
-        if c is None:
-            print("%-6s %-10s %-8s %5d   --- none" % (hub, fam, mode, tries))
+    # the matrix: every family x mode from every hub; the sweep: every family
+    # from every hub, SEEDS seeds, TRIES draws, the mode drawn
+    hubs = ["rest", "greet"] + sorted(h for h in cfg["hubs"] if h not in ("rest", "greet"))
+    jobs = [("matrix", h, fm, m, 0, None) for h in hubs for fm in FAMILIES for m in ORIENTS]
+    hubs += [name for name, _ in G.SYNTHETIC]
+    jobs += [("sweep", h, fm, None, s, None) for h in hubs for fm in FAMILIES for s in range(SEEDS)]
+    jobs += [("top", "greet", fm, None, 100 + s, 1.0) for fm in FAMILIES for s in range(4)]
+    res = _run(jobs)
+    hubs = [h for h in hubs if any(r["hub"] == h for r in res)]
+    mat = [r for r in res if r["kind"] == "matrix"]
+    sweep = [r for r in res if r["kind"] == "sweep"]
+    top = [r for r in res if r["kind"] == "top" and r["made"]]
+    print("\n%-6s %-10s %-8s %5s %6s %7s %6s %6s %6s  %s" % ("hub", "family", "mode", "tries", "dur s", "ext m", "z m",
+                                                         "peak", "slow", "plane / form / action"))
+    for r in mat:
+        if not r["made"]:
+            print("%-6s %-10s %-8s %5d   --- none" % (r["hub"], r["fam"], r["mode"], r["tries"]))
             continue
-        ext = max(c["labels"]["descriptors"]["extent_m"])
-        print("%-6s %-10s %-8s %5d %6.2f %7.3f %6.2f %6.2f  %s / %s" % (
-            hub, fam, mode, tries, c["meta"]["duration_s"], ext, wrist_share([p["q"] for p in c["points"]]),
-            c["labels"]["params"]["slowed"], c["labels"]["params"]["plane"], c["labels"]["measured"]["action"]))
+        print("%-6s %-10s %-8s %5d %6.2f %7.3f %6.2f %6.2f %6.2f  %s / %s / %s" % (
+            r["hub"], r["fam"], r["mode"], r["tries"], r["dur"], r["extent"], r["zspan"], r["vpeak"], r["slowed"],
+            r["plane"], r["form"], r["action"]))
     print()
-    check("every family x mode makes a clip from both hubs", len(made) == len(rows),
-          [(h, f, m) for h, f, m, _, c in rows if c is None])
-    per_fam = {}
-    for hub, fam, mode, tries, c in rows:
-        a = per_fam.setdefault(fam, [0, 0])
-        a[0] += 1 if c else 0
-        a[1] += tries
-    print("     acceptance per family (clips / tries): %s" % {f: "%d/%d" % tuple(x) for f, x in per_fam.items()})
-    ends = [max(max(abs(a - b) for a, b in zip(c["points"][0]["q"], hq)),
-                max(abs(a - b) for a, b in zip(c["points"][-1]["q"], hq))) for _, _, _, hq, c in made]
-    check("each starts and ends at its hub (1e-3 deg)", ends and max(ends) < 1e-3, max(ends) if ends else None)
-    rest_v = []
-    steps = []
-    for _, _, _, hq, c in made:
-        q = [p["q"] for p in c["points"]]
-        rest_v.append(max(max(abs(a - b) for a, b in zip(q[1], q[0])), max(abs(a - b) for a, b in zip(q[-1], q[-2]))) * FPS)
-        steps.append(max(max(abs(a - b) for a, b in zip(x, y)) for x, y in zip(q, q[1:])))
-    check("at rest at both ends (first / last frame joint speed < 1 deg/s)", rest_v and max(rest_v) < 1.0,
-          "max %.3f deg/s" % max(rest_v))
-    check("no step near a branch flip", steps and max(steps) < G.MAX_STEP_DEG, "max %.2f deg a frame" % max(steps))
-    vel, acc = [v * safety for v in rig.vel], [a * safety for a in rig.acc]
-    need = [P.limiting([p["t"] for p in c["points"]], [p["q"] for p in c["points"]], 125.0, vel, acc)["scale_needed"]
-            for _, _, _, _, c in made]
-    check("joint velocity / acceleration within the limits at the plan safety %.2f" % safety,
-          need and max(need) <= 1.0 + 1e-6, "worst %.3f" % max(need))
-    clear = [c["safety"]["min_clearance_m"] for *_, c in made]
-    check("clear of the room (every clip checked, min clearance)", all(x is not None for x in clear),
-          "min %.3f m" % min(clear))
-    # the room check on the pruned room is the check on the whole room
-    model = CL.load_model("fr20")
-    same = []
-    for *_, c in made[::17]:
-        rep = CL.check(model, env, [p["t"] for p in c["points"]], [p["q"] for p in c["points"]])
-        a, b = rep["min_env_clearance_m"], c["safety"]["min_clearance_m"]
-        far = env.get("margin_m", 0.05) + NEAR_ROOM_M
-        same.append(rep["ok"] and (abs(a - b) < 1e-6 or (a >= far and b >= far)))
-    check("the near-room check agrees with the whole room", all(same), same)
-    in_d = sum(lo_d <= c["meta"]["duration_s"] <= hi_d for *_, c in made)
-    check("duration within %g-%g s for most" % (lo_d, hi_d), in_d >= 0.85 * len(made), "%d/%d" % (in_d, len(made)))
-    in_r = sum(show.out_of_range(cfg, [p["q"] for p in c["points"]], c["tcp"]) is None for *_, c in made)
-    check("inside the show's operating range for most", in_r >= 0.85 * len(made), "%d/%d" % (in_r, len(made)))
-    ext = [max(c["labels"]["descriptors"]["extent_m"]) for *_, c in made]
-    check("human-scale figures (largest TCP extent 0.12-0.6 m)", all(0.12 <= e <= 0.6 for e in ext),
+    check("every family x mode makes a clip from every show hub (%s)" % ", ".join(sorted({r["hub"] for r in mat})),
+          all(r["made"] for r in mat),
+          [(r["hub"], r["fam"], r["mode"]) for r in mat if not r["made"]])
+    cells = {}
+    for r in sweep:
+        cells.setdefault((r["fam"], r["hub"]), []).append(r["made"])
+    print("     sweep, clips within %d draws per family and hub: %s" % (TRIES, {"%s/%s" % c: "%d/%d" % (sum(v), len(v))
+                                                                          for c, v in sorted(cells.items())}))
+    low = {"%s/%s" % c: "%d/%d" % (sum(v), len(v)) for c, v in cells.items() if sum(v) < 0.8 * len(v)}
+    check("at least 80%% of seeds make a clip within %d draws, every family from every hub" % TRIES, not low, low)
+    made = [r for r in res if r["made"]]
+    check("each starts and ends at its hub (1e-3 deg)", max(r["end"] for r in made) < 1e-3, max(r["end"] for r in made))
+    check("at rest at both ends (first / last frame steps under %g deg, as a gesture's)" % G.REST_STEP_DEG,
+          max(r["rest_v"] for r in made) <= G.REST_STEP_DEG * FPS, "max %.4f deg" % (max(r["rest_v"] for r in made) / FPS))
+    check("no step near a branch flip", max(r["step"] for r in made) < G.MAX_STEP_DEG, "max %.2f deg a frame" % max(r["step"] for r in made))
+    check("joint velocity / acceleration within the limits at the plan safety %.2f" % _plan_safety(cfg),
+          max(r["need"] for r in made) <= 1.0 + 1e-6, "worst %.3f" % max(r["need"] for r in made))
+    check("clear of the room (every clip checked, min clearance)", all(r["clear"] is not None for r in made),
+          "min %.3f m" % min(r["clear"] for r in made))
+    same = [r["room_same"] for r in made if "room_same" in r]
+    check("the near-room check agrees with the whole room", same and all(same), "%d/%d" % (sum(same), len(same)))
+    ds = [r["dur"] for r in made]
+    check("%g-%g s long, some short accents (<= 5 s)" % (G.MIN_CLIP_S, G.MAX_CLIP_S),
+          all(G.MIN_CLIP_S - 1e-6 <= d <= G.MAX_CLIP_S + 1e-6 for d in ds) and sum(d <= 5.0 for d in ds) >= 0.08 * len(ds),
+          "%.1f-%.1f s, %d%% <= 5 s" % (min(ds), max(ds), 100 * sum(d <= 5.0 for d in ds) / len(ds)))
+    lo_d, hi_d = cfg["library"]["duration_s"]
+    if lo_d > G.MIN_CLIP_S or hi_d < G.MAX_CLIP_S:
+        print("     note: shows/party.json library.duration_s %s drops the clips outside it (%d/%d here)" % (
+            [lo_d, hi_d], sum(not lo_d <= d <= hi_d for d in ds), len(ds)))
+    in_r = sum(r["in_range"] for r in made)
+    check("inside the show's operating range", in_r == len(made), "%d/%d" % (in_r, len(made)))
+    ext = [r["extent"] for r in made]
+    check("human- to body-scale figures (largest TCP extent 0.12-0.9 m)", all(0.12 <= e <= 0.9 for e in ext),
           "%.2f-%.2f m" % (min(ext), max(ext)))
-    ok_play = sum(bool(c["safety"]["ok"]) for *_, c in made)
+    ok_play = sum(r["safe"] for r in made)
     check("every clip plays at its own speed (safety ok)", ok_play == len(made), "%d/%d" % (ok_play, len(made)))
-    ws = {m: [wrist_share([p["q"] for p in c["points"]]) for _, _, mm, _, c in made if mm == m] for m in ORIENTS}
-    avg = {m: round(sum(x) / len(x), 2) for m, x in ws.items() if x}
+    avg = {m: round(sum(r["wrist"] for r in mat if r["made"] and r["mode"] == m) /
+                    max(1, sum(r["made"] and r["mode"] == m for r in mat)), 2) for m in ORIENTS}
     check("the wrist acts more when it looks or leans than when fixed",
           avg.get("look", 0) > avg.get("fixed", 1) and avg.get("tangent", 0) > avg.get("fixed", 1), avg)
-    labs = all(c["labels"]["family"] == f and c["labels"]["params"]["orient"] == m and "measured" in c["labels"]
-               for _, f, m, _, c in made)
-    check("labels: measured, family, typed params", labs)
-    speeds = [c["labels"]["descriptors"]["tcp_peak_mps"] / max(1e-6, c["labels"]["descriptors"]["tcp_mean_mps"])
-              for *_, c in made]
-    check("not constant speed (peak / mean TCP speed > 1.3)", min(speeds) > 1.3, "min %.2f" % min(speeds))
+    check("labels: measured, family, typed params", all(r["labels"] for r in made))
+    flat = min(made, key=lambda r: r["ratio"])
+    check("not constant speed (peak / mean TCP speed > 1.3)", flat["ratio"] > 1.3,
+          "min %.2f (%s from %s, %s, %s)" % (flat["ratio"], flat["fam"], flat["hub"], flat["plane"], flat["form"]))
+    sw = [r for r in sweep if r["made"]]
+    def med(xs):
+        return sorted(xs)[len(xs) // 2] if xs else 0.0
+    check("through heights: median TCP height span >= 0.15 m", med([r["zspan"] for r in sw]) >= 0.15,
+          "median %.3f m" % med([r["zspan"] for r in sw]))
+    check("big: median TCP extent >= 0.3 m", med([r["extent"] for r in sw]) >= 0.3, "median %.3f m" % med([r["extent"] for r in sw]))
+    hx = [r["zspan"] for r in sw if r["fam"] == "helix"]
+    check("helices climb (median height span >= 0.3 m)", med(hx) >= 0.3, "median %.2f m, min %.2f" % (med(hx), min(hx)))
+    te = [r["extent"] for r in top]
+    check("full intensity from greet: figures 0.3-0.6 m or more (median)", len(top) >= 0.8 * 4 * len(FAMILIES) and med(te) >= 0.3,
+          "%d made, median %.2f m, %.2f-%.2f" % (len(top), med(te), min(te), max(te)))
+    lo_k = [r for r in sw if r["k"] <= 0.45]
+    hi_k = [r for r in sw if r["k"] >= 0.75]
+    check("intensity scales size and speed (k >= 0.75 vs <= 0.45: extent x%.2f, mean speed x%.2f)" % (
+          med([r["extent"] for r in hi_k]) / max(1e-6, med([r["extent"] for r in lo_k])),
+          med([r["vmean"] for r in hi_k]) / max(1e-6, med([r["vmean"] for r in lo_k]))),
+          med([r["extent"] for r in hi_k]) > 1.2 * med([r["extent"] for r in lo_k])
+          and med([r["vmean"] for r in hi_k]) > 1.5 * med([r["vmean"] for r in lo_k]))
+    planes = {}
+    for r in sw:
+        planes[r["plane"]] = planes.get(r["plane"], 0) + 1
+    upright = sum(v for p, v in planes.items() if p != "floor")
+    check("mostly upright or leaning planes (through heights)", upright >= 0.75 * len(sw), planes)
+    whys = [w for r in res for w in r["whys"]]
     if whys:
         counts = {}
         for w in whys:
             key = w.split(" at ")[0][:50]
             counts[key] = counts.get(key, 0) + 1
-        print("     redraws: %s" % dict(sorted(counts.items(), key=lambda x: -x[1])))
-    el = time.time() - t_start
-    print("     %d clips from %d tries in %.1f s" % (len(made), tries_total, el))
+        print("     redraws: %s" % dict(sorted(counts.items(), key=lambda x: -x[1])[:8]))
+    print("     %d clips from %d tries in %.1f s" % (len(made), sum(r["tries"] for r in res), time.time() - t_start))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
+
+
+def _plan_safety(cfg):
+    return (cfg.get("range") or {}).get("speed", PLAN_SAFETY)
 
 
 if __name__ == "__main__":

@@ -154,7 +154,7 @@ A hub's `generator` picks how its clips are made; `clips` is how many.
 | Generator | Module | What it makes |
 |---|---|---|
 | `choreo` | `choreo.py` | Laban dance phrases (punch, slash, press, wring, dab, flick, glide, float) in joint space from the hub's pose, 1-2 bars |
-| `gestures` | `gestures.py`, `paths.py` | The hub's `families` in turn. Gestures: look, wave, nod, reach, tilt, trace, peek, shy, stretch, bounce, search -- the tool aims at people and the wrist carries the character. Spatial paths: lissajous, figure8, spiral, helix, rose, spline -- the tool draws a figure at human scale (0.2-0.4 m), looking at the audience, leaning along the path, or fixed |
+| `gestures` | `gestures.py`, `paths.py` | The hub's `families` in turn. Gestures: look, wave, nod, reach, tilt, trace, peek, shy, stretch, bounce, search, rise, dive, sweep, pop -- the tool aims at people, moves through heights, and the wrist carries the character. Spatial paths: lissajous, figure8, spiral, helix, rose, spline -- the tool draws a figure at human scale (0.2-0.4 m), looking at the audience, leaning along the path, or fixed |
 
 What keeps them alive rather than point-to-point (all scaled by
 intensity or the Laban effort, all inside the joint limits):
@@ -168,6 +168,18 @@ intensity or the Laban effort, all inside the joint limits):
   tenths of a degree, so the arm never freezes (at most 0.04 s still);
 - **timing**: paths follow the human two-thirds power law (slower in tight
   turns) on a beat grid; gestures fit each key to what its joints need.
+
+**Levels, size and rhythm.** The party show has four hubs at three
+heights: `rest` (dances, TCP 1.1 m), `greet` (1.28 m), `low` (0.55 m,
+crouched towards the audience, looking up) and `high` (1.45 m, back left).
+Within a clip the TCP also travels between heights: dances take a level
+per bar (low / mid / high), gestures and paths may use the whole height
+band (0.40-1.57 m, under the controller's 1.6 m) around their hub's zone.
+Size follows intensity and effort; timing mixes 3-4 s accents with long
+slow clips, accelerando, ritardando, a freeze then a burst. A big move
+gets more time before it is made smaller. `show.py report` checks the
+library against its variety targets (party v5: heights 0.40-1.57 m,
+median height change 0.28 m, median extent 0.31 m, 31% of clips <= 5 s).
 
 Every clip still starts and ends exactly at its hub, at rest, so any two
 join. The labels the mood selection uses (`motion_labels.py`) were refitted

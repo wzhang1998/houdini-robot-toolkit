@@ -58,7 +58,7 @@ ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.
 BAD_RGB = (1.0, 0.1, 0.1)
 GHOST_KEEP_PCT = 1.2               # a hub's ghost: the robot's own meshes reduced to this %, drawn as edges
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
-FAMILIES = ("look wave nod reach tilt trace peek shy stretch bounce search "        # gestures.FAMILIES
+FAMILIES = ("look wave nod reach tilt trace peek shy stretch bounce search rise dive sweep pop "   # gestures.FAMILIES
             "lissajous figure8 spiral helix rose spline")                        # paths.FAMILIES
 
 
