@@ -813,7 +813,7 @@ def main(argv=None):
         o = cfg["osc"]
         osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also)
         print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
-    guard = Guard(RP.velocity_limits(prof), [tuple(x) for x in prof["robot"]["limits_deg"]], dt, speed)
+    guard = Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, speed)     # J6: the tool cable's range
     link = Link(ip)
     try:
         out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False,

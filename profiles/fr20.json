@@ -77,9 +77,12 @@
     "end effector is described for ROS / MoveIt / Isaac. collision.load_model adds",
     "its boxes to the last link, so every check -- clips, moves, the show build,",
     "the player -- sees the tool. Edited in Houdini: robot_show > Tool.",
-    "Mass for the controller's tool load (WebApp) once weighed."
+    "Mass for the controller's tool load (WebApp) once weighed.",
+    "cable_j6_deg: the LED cable's J6 range from the mounting pose (J6 = 0, the",
+    "strip along J5's axis): every generated motion keeps J6 inside it",
+    "(robot_profile.motion_limits); the user's call, 2026-09-28."
   ],
-  "tool": {"urdf": "assets/tools/led_strip.urdf", "mass_kg": null},
+  "tool": {"urdf": "assets/tools/led_strip.urdf", "mass_kg": null, "cable_j6_deg": [-150.0, 150.0]},
 
   "output": {
     "_comment_writer": "No Fairino-specific writer exists yet. The CSV columns (time_s, j1_deg..j6_deg) are controller-neutral; how the Fairino side consumes them is still open.",

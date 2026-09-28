@@ -118,7 +118,9 @@ def route(q_from, q_to, env, model=None, limits=None):
     if direct is None:
         return [list(q_to)], "straight MoveJ, clear (margins %.2f m, ceiling %.2f m)" % (MOVE_MARGIN_M, CEILING_MARGIN_M)
     why = "straight MoveJ blocked %.0f%% of the way: %s near %s (%.3f m)" % (100 * direct[0], *direct[1])
-    limits = limits or [(-175, 175), (-265, 85), (-162, 162), (-265, 85), (-175, 175), (-175, 175)]
+    if limits is None:                            # the FR20's motion limits (J6 in the tool cable's range)
+        import robot_profile as RP
+        limits = RP.motion_limits(RP.load("fr20"))
     # folded postures: J2 / J3 on a grid, the wrist already at the goal's.
     # The fold happens facing J1 = t: where the arm is, where it goes, or
     # any other direction (a straightening arm needs open room around it)

@@ -279,7 +279,7 @@ class Kin:
         self.acc = RP.acceleration_limits(prof)
         if acc is not None:
             self.acc = list(acc) if isinstance(acc, (list, tuple)) else [float(acc)] * 6
-        self.limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
+        self.limits = RP.motion_limits(prof)
         self.col = CL.load_model("fr20")
 
     def tcp(self, q):

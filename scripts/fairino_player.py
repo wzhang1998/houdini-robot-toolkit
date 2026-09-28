@@ -536,7 +536,7 @@ def move_plan(q_from, q_to, env_path, robot="fr20"):
 def robot_profile_limits(robot):
     import robot_profile
     prof = robot_profile.load(robot, os.path.join(os.path.dirname(HERE), "profiles"))
-    return [tuple(x) for x in prof["robot"]["limits_deg"]]
+    return robot_profile.motion_limits(prof)
 
 
 def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label):

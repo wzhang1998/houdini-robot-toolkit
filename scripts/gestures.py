@@ -247,7 +247,7 @@ class Rig:
         prof = RP.load("fr20")
         self.acc = RP.acceleration_limits(prof)
         self.vel = RP.velocity_limits(prof)
-        self.limits = [tuple(x) for x in prof["robot"]["limits_deg"]]
+        self.limits = RP.motion_limits(prof)
 
     def tool(self, q):
         """(R, tcp, direction) of pose q."""

@@ -149,6 +149,19 @@ def jerk_limits(prof):
     return [float(x) for x in j] if isinstance(j, list) else [float(j)] * n
 
 
+def motion_limits(prof):
+    """[(lo, hi)] per joint (deg) that generated motion keeps inside: the
+    hardware's robot.limits_deg, with J6 narrowed to the mounted tool's
+    cable range (tool.cable_j6_deg, from the mounting pose J6 = 0) -- a cable
+    wound round the flange by a J6 spun past it (the LED strip, 2026-09-28)."""
+    lim = [tuple(x) for x in prof["robot"]["limits_deg"]]
+    cable = (prof.get("tool") or {}).get("cable_j6_deg")
+    if cable:
+        lo, hi = lim[5]
+        lim[5] = (max(lo, float(cable[0])), min(hi, float(cable[1])))
+    return lim
+
+
 def velocity_limits(prof):
     """Per-joint velocity limits, deg/s. robot.max_velocity_deg_s is either
     one number for every joint (UF850) or one per joint (FR20: the base
@@ -373,6 +386,15 @@ if __name__ == "__main__":
     sh, ok = turns_into_limits([-100.0, 300.0], -175.0, 175.0)
     if ok or sh != 0.0:
         fails.append("a 400 deg sweep fits no shift: keep it (the limit check reports it), got %s" % ((sh, ok),))
+
+    # the mounted tool's cable: the motions keep J6 inside its range, the
+    # hardware limits stay as they are
+    f = load("fr20")
+    ml = motion_limits(dict(f, tool={"urdf": "x", "cable_j6_deg": [-150.0, 150.0]}))
+    if ml[5] != (-150.0, 150.0) or ml[:5] != [tuple(x) for x in f["robot"]["limits_deg"][:5]]:
+        fails.append("a tool cable of +-150 on J6 should narrow J6 only, got %s" % (ml,))
+    if motion_limits(dict(f, tool=None)) != [tuple(x) for x in f["robot"]["limits_deg"]]:
+        fails.append("no tool: the motion limits are the hardware's")
 
     print("profiles found: %s" % ", ".join(list_profiles()))
     if fails:

@@ -526,10 +526,27 @@ def build(cfg_path, log=print):
     bad = g.check_joins()
     if bad:
         raise SystemExit("segments do not meet at their hubs: %s" % bad)
+    out = limit_breaches(segs, RP.motion_limits(prof))
+    if out:
+        raise SystemExit("segments outside the motion limits (J6: the tool cable's range): %s" % out)
     unreachable = [h for h in g.idle_hubs() if g.route(cfg["start_hub"], h) is None]
     if unreachable:
         raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
     return g
+
+
+def limit_breaches(segments, limits):
+    """[(segment, joint 1-6, the furthest value outside)] of every segment
+    that leaves limits -- robot_profile.motion_limits: J6 inside the tool
+    cable's range."""
+    out = []
+    for s in segments:
+        for j, (lo, hi) in enumerate(limits):
+            vals = [q[j] for q in s.q]
+            worst = max(vals, key=lambda v: max(lo - v, v - hi))
+            if worst < lo - 1e-6 or worst > hi + 1e-6:
+                out.append((s.name, j + 1, round(worst, 1)))
+    return out
 
 
 def approach_pose(rig, q, normal, back, down=0.0):
@@ -1131,6 +1148,11 @@ def self_test():
     check("... until it is cleared", sel.target_energy(170.0) == 1.0)
     moving = [Segment("e%d" % k, "idle", [0.0, 1.0, 2.0], [A, [A[0] + 5.0 * k] + list(A[1:]), A], "a", "a", {})
               for k in range(1, 5)]
+    spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
+    lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
+    check("a clip that turns J6 past the tool cable's range is named, with how far",
+          limit_breaches([spin], lim6) == [("spin", 6, 170.0)] and not limit_breaches([spin], [(-175.0, 175.0)] * 6),
+          limit_breaches([spin], lim6))
     turn = motion_stats([0.0, 1.0], [A, list(A[:5]) + [A[5] + 90.0]])
     bare = motion_stats([0.0, 1.0], [A, list(A[:5]) + [A[5] + 90.0]], watch=watched_points("fr20")[:1])
     check("a turn of J6 alone moves the tool's tips (a guest sees the strip spin), not the TCP",

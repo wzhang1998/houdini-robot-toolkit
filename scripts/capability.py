@@ -39,6 +39,8 @@ def load_fr20(root):
     prof = json.load(open(os.path.join(root, "profiles", "fr20.json")))
     chain = U.parse_urdf(os.path.join(root, prof["rig"]["urdf"]))["chain"]
     model = ur_ik.analyse(chain)
+    import robot_profile as RP
+    model["limits"] = RP.motion_limits(prof)          # IK stays inside them (J6: the tool cable's range)
     vel = prof["robot"]["max_velocity_deg_s"]
     vel = list(vel) if isinstance(vel, list) else [float(vel)] * 6
     return model, chain, float(prof["rig"].get("flange_offset_m", 0.0)), vel
@@ -237,10 +239,13 @@ if __name__ == "__main__":
     check("headroom ~0 with the elbow straight (q3 = 0)", h < 1e-3, "%.5f m/s" % h)
 
     # 6. margin
-    # J3 at 0 in +-162 is the nearest to a limit (162); J2 / J4 at -90 in
-    # [-265, 85] and the rest at 0 in +-175 are 175 away
-    m = _margin([0.0, -90.0, 0.0, -90.0, 0.0, 0.0], lim)
-    check("joint-limit margin is the nearest joint's distance to its limit", abs(m - lim[2][1]) < 1e-9,
+    # the nearest joint to a limit sets the margin: at this pose each joint
+    # is min(q - lo, hi - q) from its own (J6 at 0 in the tool cable's
+    # +-150 when the profile mounts one, else J3 at 0 in +-162)
+    pose = [0.0, -90.0, 0.0, -90.0, 0.0, 0.0]
+    m = _margin(pose, lim)
+    want = min(min(q - lo, hi - q) for q, (lo, hi) in zip(pose, lim))
+    check("joint-limit margin is the nearest joint's distance to its limit", abs(m - want) < 1e-9,
           "%.3f deg (URDF: %.3f)" % (m, lim[2][1]))
 
     # 7. with a cell: a point by the floor is reachable but not clear; one mid-air is both

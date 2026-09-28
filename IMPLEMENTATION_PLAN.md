@@ -474,6 +474,39 @@ read USD (URDF / SDF / MJCF only) and is not a target.
 - Not yet: seeing the edit in Isaac (needs Isaac running); a
   collision-checked edit loop inside the robot_show tool.
 
+## Stage 8: The LED strip on the real arm -- scan, cable, headroom, frame (2026-09-28)
+**Goal**: the user's notes after the first strip runs: one scan pass, a cable
+that never winds, room under the sprinkler, a scan speed to tune, a graceful
+way out of the scan, bigger strip gestures, and the real frame in every view.
+**Decisions (the user's)**: scan left to right as seen from the robot's side
+facing the canvas, out from the right end; canvas centre 1.30 m; J6 inside
++-150 deg of the mounting pose; the frame's rails 5.25 in wide on the face,
+overlapping the canvas, which sits behind them.
+**Parts**
+1. Cable: `tool.cable_j6_deg` in the profile; `robot_profile.motion_limits`
+   read by IK (capability.load_fr20), gestures, choreo, safe_move, the player
+   and the stream guard; the build refuses a segment outside them. -- Complete
+2. Frame: `canvas.frame` {outer, face_width, depth}; `show.canvas_parts` (four
+   wooden rails in front, the canvas behind) is the collision obstacle, the
+   show's USD layer (wood and canvas materials: Isaac), the Houdini show asset
+   and the review render. Canvas centre 1.30 m.
+3. Headroom: a ceiling margin for every motion (the sprinkler at the ceiling's
+   centre): nothing within `margins.ceiling_m` of it.
+4. Scan: one pass (`scan.direction` left_to_right), in at the start's approach,
+   out along the paper's normal at the end, then a checked route home; the
+   scan's speed set in the config (m/s) and a run-time scan speed (<= 1: only
+   slower) in show_ui / show_stream, for tuning the exposure.
+5. The way out: a route that stays upright (no lying on the floor): an authored
+   via pose if the planner's detour is still low.
+6. Strip gestures (an agent): window-wipe arcs, a floor mop, a spinning sweep --
+   all inside the cable's range; twirl as a back-and-forth.
+7. Rebuild; report, dry run, SimMachine, Isaac, the review reel.
+**Tests**: motion_limits narrows J6 only; limit_breaches names a J6 past the
+cable; canvas_parts' rails overlap the canvas edges and stand proud of it;
+the scan's first point is at the left end; no segment above the ceiling
+margin; the run-time scan speed slows only the scan.
+**Status**: In Progress
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
