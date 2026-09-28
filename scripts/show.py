@@ -578,17 +578,52 @@ def compiled_path(cfg_path):
     return os.path.splitext(cfg_path)[0] + ".compiled.json"
 
 
-def motion_stats(t, q):
-    """How a clip looks from outside: the TCP's height span and range, its
-    largest extent, mean and peak TCP speed (m/s), the duration (s)."""
-    import motion_clip as M
-    tcp = M._tcp_path("fr20", q)
-    z = [p[2] for p in tcp]
-    sp = [math.dist(a, b) / (t1 - t0) for a, b, t0, t1 in zip(tcp, tcp[1:], t, t[1:]) if t1 > t0]
+_WATCH = {}
+
+
+def watched_points(robot="fr20"):
+    """(chain, points in the last link's frame) a guest's eye follows: the
+    TCP, and the ends of the mounted tool's longest part (the LED strip's
+    tips, collision.tool_capsules) -- a strip spun by J6 alone is lively
+    though the TCP stands still."""
+    if robot not in _WATCH:
+        import collision as C
+        import robot_profile as RP
+        import urdf_rig as U
+        prof = RP.load(robot)
+        fo = float(prof["rig"].get("flange_offset_m", 0.0))
+        pts = [(0.0, 0.0, fo)]
+        caps = C.tool_capsules(C.tool_def(prof), fo)
+        if caps:
+            longest = max(caps, key=lambda c: math.dist(c["a"], c["b"]))
+            pts += [longest["a"], longest["b"]]
+        _WATCH[robot] = (U.parse_urdf(os.path.join(ROOT, prof["rig"]["urdf"]))["chain"], pts)
+    return _WATCH[robot][1]
+
+
+def motion_stats(t, q, watch=None, robot="fr20"):
+    """How a clip looks from outside: the TCP's height span and range; the
+    largest extent and the mean and peak speed (m/s) of the watched points
+    (watched_points: the TCP and the tool's tips), the liveliest of them;
+    the duration (s)."""
+    import ur_ik
+    import urdf_rig as U
+    watch = watch or watched_points(robot)
+    chain = _WATCH[robot][0]
+    paths = [[] for _ in watch]
+    for qk in q:
+        R, p6 = ur_ik.pose_of(chain, qk)
+        for path, w in zip(paths, watch):
+            path.append(U._add(p6, U._mat_vec(R, w)))
+    z = [p[2] for p in paths[0]]
+    ext, vm, vp = 0.0, 0.0, 0.0
+    for path in paths:
+        ext = max(ext, max(max(p[i] for p in path) - min(p[i] for p in path) for i in range(3)))
+        sp = [math.dist(a, b) / (t1 - t0) for a, b, t0, t1 in zip(path, path[1:], t, t[1:]) if t1 > t0]
+        if sp:
+            vm, vp = max(vm, sum(sp) / len(sp)), max(vp, max(sp))
     return {"z_min": round(min(z), 3), "z_max": round(max(z), 3), "z_span": round(max(z) - min(z), 3),
-            "extent": round(max(max(p[i] for p in tcp) - min(p[i] for p in tcp) for i in range(3)), 3),
-            "v_mean": round(sum(sp) / len(sp), 3) if sp else 0.0, "v_peak": round(max(sp), 3) if sp else 0.0,
-            "duration": round(t[-1], 2)}
+            "extent": round(ext, 3), "v_mean": round(vm, 3), "v_peak": round(vp, 3), "duration": round(t[-1], 2)}
 
 
 def add_energy(segments):
@@ -1096,6 +1131,10 @@ def self_test():
     check("... until it is cleared", sel.target_energy(170.0) == 1.0)
     moving = [Segment("e%d" % k, "idle", [0.0, 1.0, 2.0], [A, [A[0] + 5.0 * k] + list(A[1:]), A], "a", "a", {})
               for k in range(1, 5)]
+    turn = motion_stats([0.0, 1.0], [A, list(A[:5]) + [A[5] + 90.0]])
+    bare = motion_stats([0.0, 1.0], [A, list(A[:5]) + [A[5] + 90.0]], watch=watched_points("fr20")[:1])
+    check("a turn of J6 alone moves the tool's tips (a guest sees the strip spin), not the TCP",
+          turn["v_peak"] > 0.5 and bare["v_peak"] < 0.01, (turn["v_peak"], bare["v_peak"]))
     add_energy(moving)
     e = {x.name: x.labels["energy"] for x in moving}
     check("every idle clip gets a measured energy, ranked 0..1", min(e.values()) == 0.0 and max(e.values()) == 1.0, e)
