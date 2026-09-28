@@ -106,15 +106,20 @@ def _travel(path):
     return sum(max(abs(x - y) for x, y in zip(a, b)) for a, b in zip(path, path[1:]))
 
 
+UPRIGHT_DEG_PER_M = 30.0      # a detour's elbow 1 m higher is worth 30 deg more joint travel
+
+
 def _rank(cands, q_from, model):
-    """Detours in the order to try them: least joint travel first, and of
-    equal travel the one whose elbow stands highest -- an upright arm, not
-    one laid towards the floor (the J1 swing often sets the travel alone)."""
+    """Detours in the order to try them: least joint travel, less
+    UPRIGHT_DEG_PER_M for each metre the elbow stays up (its lowest on the
+    waypoints) -- an upright arm, not one laid towards the floor: the J1
+    swing often sets the travel alone, and its ties (to a fraction of a
+    degree) went to the lowest fold in grid order (from_scan, 2026-09-28)."""
     import urdf_rig as U
 
     def elbow_z(path):
         return min(U.forward_kinematics(model["chain"], w)[2]["position"][2] for w in path[:-1])
-    return sorted(cands, key=lambda p: (round(_travel([q_from] + p), 6), -elbow_z(p)))
+    return sorted(cands, key=lambda p: _travel([q_from] + p) - UPRIGHT_DEG_PER_M * elbow_z(p))
 
 
 def _within(q, limits, pad=2.0):
@@ -174,7 +179,7 @@ def self_test():
     q0, q1 = [-150.0, -86.0, 90.0, -184.0, -41.0, 0.0], [-60.0, -90.0, 90.0, -90.0, -90.0, -15.0]
     low, up = [[-150.0, -180.0, 150.0] + q1[3:], q1], [[-150.0, -120.0, 120.0] + q1[3:], q1]
     ranked = _rank([low, up], q0, model)
-    check("detours of equal joint travel: the upright one first (elbow high)",
+    check("detours of (nearly) equal joint travel: the upright one first (elbow high)",
           ranked[0] is up and abs(_travel([q0] + low) - _travel([q0] + up)) < 1e-9, [p[0][:3] for p in ranked])
     ceil = [o for o in menv["objects"] if o["name"] == "ceiling"][0]
     check("the ceiling gets the ceiling margin", ceil["margin_m"] == CEILING_MARGIN_M, ceil["margin_m"])
