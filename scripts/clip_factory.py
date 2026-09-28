@@ -10,6 +10,8 @@ A variant is a dict:
      "center": [x, y, z],        TCP path centre, robot base frame (m, Z up)
      "size": 0.3,                radius / half-length / lobe size (m)
      "plane": "xy" | "xz" | "yz",
+     "axes": [[ax, ay, az], [bx, by, bz]],   optional, instead of plane: the
+                                  primitive's own axes (a line runs along the first)
      "tool": [dx, dy, dz],       fixed tool direction (default straight down)
      "safety": 0.8,              fraction of the velocity / acceleration limits
      "tags": [...]}
@@ -56,7 +58,7 @@ def _axes(plane):
 def path_points(v, n):
     """n + 1 TCP points along the variant's primitive."""
     c, s = v["center"], v["size"]
-    a, b = _axes(v.get("plane", "xy"))
+    a, b = v.get("axes") or _axes(v.get("plane", "xy"))
     out = []
     for i in range(n + 1):
         u = i / float(n)

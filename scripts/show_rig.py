@@ -155,7 +155,8 @@ def canvas_box(c):
     yaw = math.atan2(n[1], n[0])
     cy, sy = math.cos(yaw), math.sin(yaw)
     R = ((cy, -sy, 0.0), (sy, cy, 0.0), (0.0, 0.0, 1.0))
-    return c["center"], R, (c.get("thickness", 0.02), c["size"][0], c["size"][1])
+    import show
+    return c["center"], R, show.canvas_extent(c)
 
 
 def zx_arc_angle(j1_deg):
@@ -439,6 +440,11 @@ def _parms(node, config, env):
                                               min=0.05, max=4.0, disable_when="{ canvas_on == 0 }"))
     zones.addParmTemplate(T.FloatParmTemplate("canvas_thickness", "Canvas Thickness (m)", 1, default_value=(0.02,),
                                               min=0.001, max=0.2, disable_when="{ canvas_on == 0 }"))
+    zones.addParmTemplate(T.FloatParmTemplate("frame_size", "Frame Outer Width, Height (m)", 2, default_value=(0.0, 0.0),
+                                              min=0.0, max=4.0, disable_when="{ canvas_on == 0 }",
+                                              help="The frame around the paper (0: none). It is the obstacle when larger"))
+    zones.addParmTemplate(T.FloatParmTemplate("frame_depth", "Frame Depth (m)", 1, default_value=(0.0,), min=0.0,
+                                              max=0.5, disable_when="{ canvas_on == 0 }"))
     g.append(zones)
 
     hubs = T.FolderParmTemplate("hubs_f", "Hubs", folder_type=T.folderType.Tabs)
@@ -933,6 +939,9 @@ def load_config(node=None):
             node.parm("canvas_facing").set(round(math.degrees(math.atan2(c["normal"][1], c["normal"][0])), 3))
             node.parmTuple("canvas_size").set(c["size"])
             node.parm("canvas_thickness").set(c.get("thickness", 0.02))
+            if node.parm("frame_size") is not None:
+                node.parmTuple("frame_size").set(c.get("frame_size", (0.0, 0.0)))
+                node.parm("frame_depth").set(c.get("frame_depth", 0.0))
     node.parm("zones").set(len(zones))
     for i, (name, z) in enumerate(zones.items(), start=1):
         node.parm("zone_name%d" % i).set(name)
@@ -1015,6 +1024,9 @@ def scene_parts(node=None):
         canvas = {"center": _r(node.parmTuple("canvas_center").eval()),
                   "normal": [round(math.cos(a), 4), round(math.sin(a), 4), 0.0],
                   "size": _r(node.parmTuple("canvas_size").eval(), 3), "thickness": round(node.evalParm("canvas_thickness"), 4)}
+        if node.parm("frame_size") is not None and max(node.parmTuple("frame_size").eval()) > 0:
+            canvas["frame_size"] = _r(node.parmTuple("frame_size").eval(), 3)
+            canvas["frame_depth"] = round(node.evalParm("frame_depth"), 4)
     return {
         "canvas": canvas if node.parm("canvas_on") is not None else "keep",
         "zones": zones, "stage": stage, "hubs": hubs, "start_hub": node.evalParm("start_hub"),

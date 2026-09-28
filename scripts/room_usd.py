@@ -459,8 +459,9 @@ def show_extras(cfg):
     c = cfg.get("canvas")
     if c:
         n = c["normal"]
+        import show
         out.append({"name": "canvas", "type": "box", "center": c["center"], "role": "obstacle",
-                    "size": [c.get("thickness", 0.02), c["size"][0], c["size"][1]],
+                    "size": list(show.canvas_extent(c)),
                     "yaw_deg": math.degrees(math.atan2(n[1], n[0])),
                     "note": "the show's paper (placeholder)" if c.get("placeholder") else "the show's paper"})
     st = cfg.get("stage")

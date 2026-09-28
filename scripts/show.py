@@ -165,12 +165,21 @@ class Graph:
 # build: make and check every motion (heavy imports only here)
 # --------------------------------------------------------------------------
 
+def canvas_extent(c):
+    """(depth, width, height) of what stands there: the paper, or the frame
+    around it when larger (frame_size [w, h], frame_depth), centred on the
+    paper's centre -- the frame's depth half in front of the paper, which is
+    conservative until the frame is measured."""
+    fw, fh = c.get("frame_size") or (0.0, 0.0)
+    return (max(c.get("thickness", 0.02), c.get("frame_depth", 0.0)), max(c["size"][0], fw), max(c["size"][1], fh))
+
+
 def canvas_box(c):
-    """The paper as a thin box for collision.py (yaw from its normal)."""
+    """The paper (in its frame) as a box for collision.py (yaw from its normal)."""
     n = c["normal"]
     yaw = math.degrees(math.atan2(n[1], n[0]))
     return {"name": "canvas", "type": "box", "center": list(c["center"]), "role": "obstacle",
-            "size": [c.get("thickness", 0.02), c["size"][0], c["size"][1]], "yaw_deg": yaw}
+            "size": list(canvas_extent(c)), "yaw_deg": yaw}
 
 
 def show_env(env, cfg, canvas_margin):
@@ -477,14 +486,19 @@ def build(cfg_path, log=print):
 
 
 def placeholder_scan(cfg, env):
-    """A straight line along the canvas at the standoff, the tool pointing at
-    the paper (clip_factory's pipeline: reach, IK, TOPP, room check)."""
+    """A straight line along the canvas (its width, level) at the standoff, the
+    tool pointing at the paper (clip_factory's pipeline: reach, IK, TOPP,
+    room check). With the tool level, roll 0 keeps an LED strip mounted
+    along the flange's y upright, so it sweeps the paper's height."""
     import clip_factory
     c, s = cfg["canvas"], cfg["scan"]
     n = c["normal"]
     centre = [c["center"][i] - n[i] * s["standoff_m"] for i in range(3)]
+    along = (-n[1], n[0], 0.0)                            # the paper's width, level
+    L = math.hypot(*along)
     v = {"id": "scan", "primitive": "line", "center": centre, "size": s["length_m"] / 2.0,
-         "plane": "xy", "tool": list(n), "safety": s["safety"], "tags": ["scan", "placeholder"]}
+         "axes": [[x / L for x in along], [0.0, 0.0, 1.0]], "tool": list(n), "safety": s["safety"],
+         "tags": ["scan", "placeholder"]}
     return clip_factory.make(v, env=env)
 
 

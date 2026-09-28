@@ -132,7 +132,7 @@
     62.2,
     -175.6,
     26.4,
-    7.0
+    -53.0
    ],
    "families": [
     "look",
@@ -194,24 +194,30 @@
  "canvas": {
   "placeholder": true,
   "center": [
-   0.07,
-   1.41,
-   0.88
+   0.0121,
+   1.1157,
+   1.5
   ],
   "normal": [
    0.193,
-   0.981,
+   0.9812,
    0.0
   ],
   "size": [
-   1.0,
-   0.6
+   1.5,
+   1.0
   ],
-  "thickness": 0.02
+  "thickness": 0.02,
+  "_note": "1.5 m wide x 1 m high paper, landscape, in a 67 x 46 in (1.70 x 1.17 m) wooden frame, raised (height to be set; centre 1.5 m for now); scanned left-right by the LED strip upright (user, 2026-09-28). Moved 0.3 m towards the robot from the cat curve's plane so the whole 1.5 m scan line is reachable with the tool level. frame_depth estimated",
+  "frame_size": [
+   1.702,
+   1.168
+  ],
+  "frame_depth": 0.05
  },
  "scan": {
   "placeholder": true,
-  "length_m": 0.8,
+  "length_m": 1.5,
   "standoff_m": 0.25,
   "safety": 0.5,
   "from_hub": "rest"
