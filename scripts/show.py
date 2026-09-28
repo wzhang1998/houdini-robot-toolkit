@@ -467,27 +467,38 @@ def build(cfg_path, log=print):
         # in along the paper's normal -- a tool held near the paper would
         # otherwise swing past it on the way (the LED strip, 2026-09-28)
         back = cfg["scan"].get("approach_m", 0.2)
-        near = {"scan_start": approach_pose(rig, hubs["scan_start"], cfg["canvas"]["normal"], back),
-                "scan_end": approach_pose(rig, hubs["scan_end"], cfg["canvas"]["normal"], back)}
-        for name, kind, a, b in (("to_scan", "to_scan", home, "scan_start"), ("from_scan", "from_scan", "scan_end", home)):
-            scan_side = b if kind == "to_scan" else a
-            pa = near[scan_side]
-            if pa is None:
-                raise SystemExit("%s: no pose %.2f m back from the scan's end with the same tool attitude" % (name, back))
-            if kind == "to_scan":
-                path, why = safe_move.route(hubs[a], pa, scan_env, model)
-                way = None if path is None else [hubs[a]] + path + [hubs[b]]
-            else:
-                path, why = safe_move.route(pa, hubs[b], scan_env, model)
-                way = None if path is None else [hubs[a], pa] + path
-            if way is None:
-                raise SystemExit("%s: %s" % (name, why))
-            t, q = timed_move(way, cfg["transition_safety"], vel, acc)
-            rep = C.check(model, scan_env, t, q)
-            if not rep["ok"]:
-                raise SystemExit("%s: %s" % (name, C.describe(rep)))
-            segs.append(Segment(name, kind, t, q, a, b))
-            log("%s: %.1f s, %s" % (name, t[-1], why))
+        found = find_approach(rig, hubs["scan_start"], cfg["canvas"]["normal"], back, model, scan_env)
+        if found is None:
+            raise SystemExit("scan: no approach pose near its start clear by the moves' margins")
+        pa = found[0]
+        log("approach to the scan's start: %.2f m back, %.2f m down" % (found[1], found[2]))
+        # in and out at the scan's start only: the far end can be a folded arm
+        # with no clear approach (the LED strip's scan, 2026-09-28), so the
+        # way out first sweeps back along the scan's own line (checked with the
+        # scan's margins; the LEDs off), as a scanning cell returns its head
+        path, why = safe_move.route(hubs[home], pa, scan_env, model)
+        if path is None:
+            raise SystemExit("to_scan: %s" % why)
+        t, q = timed_move([hubs[home]] + path + [hubs["scan_start"]], cfg["transition_safety"], vel, acc)
+        rep = C.check(model, scan_env, t, q)
+        if not rep["ok"]:
+            raise SystemExit("to_scan: %s" % C.describe(rep))
+        segs.append(Segment("to_scan", "to_scan", t, q, home, "scan_start"))
+        log("to_scan: %.1f s, %s" % (t[-1], why))
+        path, why = safe_move.route(pa, hubs[home], scan_env, model)
+        if path is None:
+            raise SystemExit("from_scan: %s" % why)
+        tb = [st[-1] - x for x in reversed(st)]                   # the scan's line, back to its start
+        qb = [list(x) for x in reversed(sq)]
+        tm, qm = timed_move([hubs["scan_start"], pa] + path, cfg["transition_safety"], vel, acc)
+        hold = 0.2
+        t = tb + [tb[-1] + hold + x for x in tm]
+        q = qb + [list(x) for x in qm]
+        rep = C.check(model, scan_env, t, q)
+        if not rep["ok"]:
+            raise SystemExit("from_scan: %s" % C.describe(rep))
+        segs.append(Segment("from_scan", "from_scan", t, q, "scan_end", home))
+        log("from_scan: %.1f s (%.1f s back along the line), %s" % (t[-1], tb[-1], why))
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
@@ -502,12 +513,29 @@ def build(cfg_path, log=print):
     return g
 
 
-def approach_pose(rig, q, normal, back):
+def approach_pose(rig, q, normal, back, down=0.0):
     """Joints with the tool back m further from the paper along its normal
-    (-normal), the tool's attitude kept, nearest q; None if not reachable."""
+    (-normal) and down m lower, the tool's attitude kept, nearest q; None if
+    not reachable."""
     R, tcp, _ = rig.tool(q)
     p = [tcp[i] - normal[i] * back for i in range(3)]
+    p[2] -= down
     return rig.solve(p, (R[0][2], R[1][2], R[2][2]), 0.0, q, R=R)
+
+
+def find_approach(rig, q, normal, back, model, env):
+    """The first approach pose clear by the moves' margins (safe_move.blocked):
+    back back (then +0.1 m), and lowered in 0.1 m steps -- a tall tool at a
+    paper near the ceiling (the LED strip's top 0.14 m under it) has to come
+    in from below. (q, back, down) or None."""
+    import safe_move
+    menv = safe_move.move_env(env)
+    for b in (back, back + 0.1):
+        for down in (0.0, 0.1, 0.2, 0.3):
+            a = approach_pose(rig, q, normal, b, down)
+            if a is not None and not safe_move.blocked(model, menv, a):
+                return a, b, down
+    return None
 
 
 def placeholder_scan(cfg, env):
