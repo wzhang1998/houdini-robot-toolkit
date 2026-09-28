@@ -72,17 +72,23 @@ within +-90 degrees lays it any way across the aim), keep its lower end
 STRIP_FLOOR_M over the floor, and draw a few candidate designs (headings,
 heights, pane tilts, aims), performing the first whose poses and the ways
 between -- the way home included -- the probe finds the tool can take (make's
-Probe: the joint limits, the wrist, the room and the arm, the strip
-included):
+Probe: the joint limits, J6 PROBE_J6_DEG inside the tool cable's range, the
+wrist, the room and the arm, the strip included).
 
-    twirl   the wrist spins the strip like a propeller / baton, face on to
-            the audience (else level ahead, its own aim, aside; out, further
-            out or lower: the roomiest): winds up (further back where the
-            room ahead is short), spins 160-300 degrees (J6: its limits, the
-            room and the arm scanned first, roll_room), speeding up and
-            braking past its mark, settles; spins back past the start (long)
-            or unwinds; the tool tip drifting a little. Under TWIRL_MIN_DEG
-            of room anywhere, the draw is refused
+The strip's cable winds round the flange: J6 stays inside its range
+(robot_profile.motion_limits, +-150 degrees from the mounting pose) by
+CABLE_MARGIN_DEG in every clip -- the spins swing back and forth, never a
+full turn, and make() refuses a clip past it whatever drew it (limit_breach):
+
+    twirl   the wrist swings the strip back and forth like a baton, face on
+            to the audience (else level ahead, its own aim, aside; out,
+            further out or lower: the roomiest): winds up, spins one way
+            (120-260 degrees end to end, as J6's range, the room and the arm
+            leave room, roll_room, and the length leaves time), braking past
+            its mark, back the other way through the start, and again (2-4
+            swings, J6 at SPIN_W_DEG_S: the strip's ends at about a metre a
+            second), settles face on; the tool tip drifting a little. Under
+            TWIRL_MIN_DEG of room anywhere, the draw is refused
     wipe    a squeegee on a pane in front (facing the audience; turned, or
             leaning back like a windscreen, where the arm cannot face it
             square): the face flat to the glass, the strip the blade, 3-5
@@ -101,6 +107,22 @@ included):
     salute  raised upright like a sabre before the face, held; a flourish
             (spun end over end when J6 has the room, or a cut across and
             back); lowered across and forward, a bow
+    window  a big window cleaned: the strip flat on a pane in front (facing
+            the audience; turned or tilted back where the arm cannot face it
+            square), the blade level (else upright), pressed on, big strokes
+            across it (WINDOW_M, 0.45-0.7 m) -- a lying figure eight, or arcs
+            back and forth stepping down -- the blade tipping with each
+            stroke, the face trailing; lifted off, a shake
+    mop     a floor mopped: the strip low and near level, the face down (else
+            level: a floor squeegee), wide arcs side to side (MOP_M, 0.5-0.7
+            m) pushed out through the middle, pulled back at the ends, the
+            head swivelling through each turn (J6), creeping back; lifted, a
+            wring. Refused from a hub over MOP_HUB_TOP_M (the high ones) and
+            where the strokes stand nowhere
+    spin_sweep  a sweep with the strip spinning: the tool tip on a broad arc
+            across (SPIN_SWEEP_M, 0.4-0.7 m), face on, a swing of the strip
+            (J6) each third of the way, so its ends trace big loops; brakes,
+            holds, unwinds, home
 
 The other families keep the strip clear by its roll: a key whose pose would
 put the strip (or the arm) into the room or the arm is turned by the least
@@ -182,9 +204,10 @@ import urdf_rig as U  # noqa: E402
 FPS = 24.0
 HEAD_FAMILIES = ("look", "wave", "nod", "reach", "tilt", "trace", "peek", "shy", "stretch", "bounce", "search",
                  "rise", "dive", "sweep", "pop")
-STRIP_FAMILIES = ("twirl", "wipe", "scoop", "broom", "salute")   # the LED strip as the prop
+STRIP_FAMILIES = ("twirl", "wipe", "scoop", "broom", "salute", "window", "mop", "spin_sweep")   # the LED strip as the prop
 FAMILIES = HEAD_FAMILIES + STRIP_FAMILIES
 LIMIT_MARGIN = 3.0
+CABLE_MARGIN_DEG = 5.0           # every clip keeps J6 this far inside the tool cable's range (rig.limits, motion_limits)
 MAX_STEP_DEG = 30.0              # per 24 fps frame: more is a branch flip (~180), not a quick gesture; timing is fitted after
 PLAN_SAFETY = 0.85
 GAZE_CONE_DEG = 50.0             # the most the gaze turns from the hub's aim
@@ -210,14 +233,30 @@ UP = (0.0, 0.0, 1.0)
 DOWN = (0.0, 0.0, -1.0)
 STRIP_DEFAULT = (0.06, 0.5, (0.0, 1.0, 0.0), 0.016)   # the LED strip (assets/tools/led_strip.urdf) when none is mounted
 STRIP_FLOOR_M = 0.2              # a strip family keeps the strip's lower end this high (the checks: 5 cm margin)
-STRIP_TOP_M = 1.95               # and its upper end this low (the ceiling at 2.16 m, less its margin)
+CEILING_MARGIN_M = 0.30          # the show build's margin under the ceiling (2.155 m)
+CEILING_FAMILIES = ("twirl", "window", "mop", "spin_sweep")   # checked under it by the self-test
+STRIP_TOP_M = 1.84               # and its upper end this low (the ceiling less CEILING_MARGIN_M, 1.5 cm spare)
 STRIP_ROLLS = (15.0, -15.0, 30.0, -30.0, 45.0, -45.0, 60.0, -60.0, 75.0, -75.0, 90.0)   # strip_safe's turns, least first
-TWIRL_MIN_DEG = 120.0            # a twirl spins the strip at least this far (J6)
-# (family, hub) the strip makes impossible, checked as refused: the high hub's
-# wrist (J5 26 deg) cannot turn the face down to the floor without passing
-# its singularity or folding onto the forearm (every heading, face angle and
-# approach tried)
-STRIP_REFUSED = (("broom", "high"),)
+TWIRL_MIN_DEG = 120.0            # a twirl swings the strip at least this far (J6), end to end
+SPIN_OVER_DEG = 13.0             # kept spare past a swing's mark: its overshoot (_past: at most 10 degrees of
+                                 # roll), and 3 for the breathing and the frame as the sampler carries it
+SPIN_W_DEG_S = (100.0, 130.0)    # a swing's J6 peak, calm .. lively (the strip's ends at 0.87-1.13 m/s; J6 plans at 153)
+WINDOW_M = (0.45, 0.7)           # a window's strokes across the pane (TCP, m)
+MOP_M = (0.5, 0.7)               # a mop's strokes across the floor (TCP, m)
+MOP_HUB_TOP_M = 1.35             # a mop starts from a hub whose tool tip stands at most this high
+SPIN_SWEEP_M = (0.4, 0.7)        # a spin_sweep's arc across (TCP, m)
+# (family, hub) the strip makes impossible (or rare), not asked of the sweep:
+# the high hub's wrist (J5 26 deg) cannot turn the face down to the floor
+# without passing its singularity or folding onto the forearm (every heading,
+# face angle and approach tried); a mop from a hub standing over
+# MOP_HUB_TOP_M (the high ones: refused as drawn); a mop from the low hub,
+# whose wrist looks up (J5 +34 deg) with the partition 0.6 m ahead: the
+# strokes stand only turned out from the robot, and the way there mostly
+# passes the wrist's singularity (a few draws in ten); a spin_sweep from the
+# rest hub, which looks down with its forearm folded over the strip: face on,
+# the spinning strip meets the forearm, looking down the paper's margin
+# (refused as drawn: no room to swing on an arc)
+STRIP_REFUSED = (("broom", "high"), ("mop", "high"), ("mop", "synth_high"), ("mop", "low"), ("spin_sweep", "rest"))
 _STRIP = []
 
 
@@ -548,13 +587,18 @@ class _View:
 
 
 def clip_length(rng, k, family):
-    """(form, (lo, hi) s) a clip is drawn to last: a pop 3-4.2 s; a wipe,
-    broom or salute always long (6.5-11 s, round a length drawn); else a
-    short accent form (likelier the livelier) 3.2-5 s, or a long form round
-    a length drawn from 7-11 s (calm) .. 5-8.5 s (lively), within 5-12 s."""
+    """(form, (lo, hi) s) a clip is drawn to last: a pop 3-4.2 s; a window
+    or mop 7.5-12 s (the big strokes); a wipe, broom, salute, twirl or
+    spin_sweep always long (6.5-11 s, round a length drawn: the prop's
+    strokes, swings, ceremony); else a short accent form (likelier the
+    livelier) 3.2-5 s, or a long form round a length drawn from 7-11 s
+    (calm) .. 5-8.5 s (lively), within 5-12 s."""
     if family == "pop":
         return "pop", (MIN_CLIP_S, 4.2)
-    if family in ("wipe", "broom", "salute"):          # a routine with the prop: its strokes, its ceremony
+    if family in ("window", "mop"):                    # the big strokes: most of the time they may take
+        mid = rng.uniform(9.0, 10.5)
+        return "long", (mid - 1.5, min(MAX_CLIP_S, mid + 1.5))
+    if family in ("wipe", "broom", "salute", "twirl", "spin_sweep"):   # a routine with the prop
         mid = rng.uniform(_mix(8.0, 6.5, k), _mix(11.0, 9.5, k))
         return "long", (max(5.0, mid - 1.5), min(MAX_CLIP_S, mid + 1.0))
     if rng.random() < 0.35 + 0.4 * k:
@@ -795,15 +839,18 @@ class _Draw:
         across the aim), turned from the current roll by at most 90 degrees."""
         return self.roll + self._turn_to(self.frame_at(p, look, self.roll), s)
 
-    def lay(self, targets, check=True):
+    def lay(self, targets, check=True, flip=False):
         """[(p, look, roll)] of keys for targets [(p, look, way)] in turn from
         the last key: the tool tip in its space, raised where the strip's
         lower end would come under STRIP_FLOOR_M; the roll laying the strip
         along `way` (a vector; turned at most 90 degrees), or the roll `way`
-        (a number), or as it is (None). With check (and a probe), None when
-        a pose or the way to it -- in steps of 15 degrees and 8 cm -- is one
-        the tool cannot take: a joint limit, the wrist singularity, a branch
-        flip, the room, the arm itself, the strip included."""
+        (a number), or as it is (None). flip: the first strip laid along a
+        vector turned half a turn more, towards the middle of J6's range --
+        the strip lies the same, J6 on the other side of its range. With
+        check (and a probe), None when a pose or the way to it -- in steps
+        of 15 degrees and 8 cm -- is one the tool cannot take: a joint
+        limit, the wrist singularity, a branch flip, the room, the arm
+        itself, the strip included."""
         R, roll, p_, l_ = self.R, self.roll, self.p, self.look
         probe = self.probe if check else None
         q = probe.pose(p_, R) if probe else None
@@ -811,12 +858,15 @@ class _Draw:
             return self._why("the start")
         out = []
         for tgt in targets:
+            turn = 0.0
+            if flip and tgt[2] is not None and not isinstance(tgt[2], (int, float)):
+                turn, flip = (180.0 if q is None or q[5] < 0.0 else -180.0), False
             p, look, way = tgt[:3]
             p = self.clamp(p)
             for _ in range(2 if len(tgt) < 4 or tgt[3] else 1):   # raise the tool tip over the strip's lower end
                 Rt = transport(R, U._sub(look, p), 0.0)
                 phi = (way - roll if isinstance(way, (int, float)) else
-                       self._turn_to(Rt, way) if way is not None else 0.0)
+                       self._turn_to(Rt, way) + turn if way is not None else 0.0)
                 Rt = transport(R, U._sub(look, p), phi)
                 c = U._add(p, U._scale((Rt[0][2], Rt[1][2], Rt[2][2]), self.strip[0]))
                 low = c[2] - self.strip[1] * abs(U._mat_vec(Rt, self.strip[2])[2])
@@ -844,16 +894,20 @@ class _Draw:
             self.why.append(reason)
         return None
 
-    def perform(self, designs, fallback=-1):
+    def perform(self, designs, fallback=-1, flips=(False,)):
         """Keys from the first of the candidate designs the tool can take
         (lay), the way home included: a design is a list of moves (kind,
         beats, p, look, way, opts) -- kind key, arrive or stop (a hold:
-        ("hold", beats)). designs[fallback], unchecked, when none is clear
+        ("hold", beats)); each laid as it is and flipped (lay), in the
+        order of flips. designs[fallback], unchecked, when none is clear
         (make's checks then refuse it or not). The index of the design used."""
         home = (self.p0, self.look0, float(self.r0), False)
         chosen, laid = None, None
         for i, moves in enumerate(designs):
-            laid = self.lay([m[2:5] for m in moves if m[0] != "hold"] + [home])
+            for fl in flips:
+                laid = self.lay([m[2:5] for m in moves if m[0] != "hold"] + [home], flip=fl)
+                if laid is not None:
+                    break
             if laid is not None:
                 chosen = i
                 break
@@ -879,12 +933,13 @@ class _Draw:
         hi = min(self.space.top - reach, STRIP_TOP_M - up)
         return max(lo, min(hi, z)) if lo <= hi else 0.5 * (lo + hi)
 
-    def roll_room(self, p, look, roll, most=330.0, step=10.0):
+    def roll_room(self, p, look, roll, most=330.0, step=10.0, margin=CABLE_MARGIN_DEG):
         """(down, up): how far (degrees) the roll may turn each way from
         `roll` with the tool at p looking at look -- the joint limits (J6
-        above all), the wrist, the room and the arm itself, the strip
-        included -- scanned in steps from the pose nearest the hub; None
-        without a probe."""
+        above all, kept `margin` inside the tool cable's range), the wrist,
+        the room and the arm itself, the strip included -- scanned in steps
+        from the pose nearest the hub; None without a probe. (A roll about
+        the aim with the tool tip standing is J6 alone, the same way.)"""
         if self.probe is None:
             return None
         p = self.clamp(p)
@@ -902,7 +957,8 @@ class _Draw:
                     break
                 q, a = qn, a + step
             out.append(a)
-        return tuple(out)
+        lo, hi = self.probe.rig.limits[5]
+        return (max(0.0, min(out[0], q0[5] - lo - margin)), max(0.0, min(out[1], hi - margin - q0[5])))
 
 
 def estimate(keys, beat):
@@ -1235,19 +1291,55 @@ def _strip_moves(g, family, form, hold, lively):
     def ahead(p, d):
         return U._add(p, U._scale(U._normalize(d), 1.5))
 
+    v_swing = _mix(SPIN_W_DEG_S[0], SPIN_W_DEG_S[1], k)
+
+    def swings(span, free_s, most, least=2, extra=0.0):
+        """(n, span, beats): how many swings of the strip `span` degrees end
+        to end (J6 peaking at v_swing, each on the half beat, `extra` s
+        after it) fit in free_s s, least..most -- the span cut (not under
+        TWIRL_MIN_DEG) when even `least` do not; beats a swing's, as a
+        move's before the tempo."""
+        g.repeats = True
+
+        def t_of(s):
+            return max(1, math.ceil(1.875 * s / v_swing / (0.5 * g.beat) - 1e-9)) * 0.5 * g.beat
+        n = max(least, min(most, int(free_s / (t_of(span) + extra))))
+        if n * (t_of(span) + extra) > free_s:
+            span = max(min(span, TWIRL_MIN_DEG), (free_s / n - extra) * v_swing / 1.875)
+        return n, span, max(0.5, t_of(span) / (g.beat * g.tempo))
+
+    def swing_ends(room, span):
+        """(sgn, (first end, other end)): the rolls swings `span` wide turn
+        between, from the roll the tool arrives with (g.roll) with room
+        (down, up) to turn (roll_room): centred on it where both sides have
+        room, SPIN_OVER_DEG spare; the first towards the roomier side."""
+        dn, up = max(0.0, room[0] - SPIN_OVER_DEG), max(0.0, room[1] - SPIN_OVER_DEG)
+        span = min(span, dn + up)
+        below = min(dn, max(span / 2.0, span - up))
+        lo_end, hi_end = g.roll - below, g.roll - below + span
+        if hi_end - g.roll >= g.roll - lo_end:
+            return 1.0, (hi_end, lo_end)
+        return -1.0, (lo_end, hi_end)
+
     if family == "twirl":
-        # the wrist spins the strip like a propeller / a baton: winds up,
-        # spins up and brakes past its mark, settles; (long) spins back past
-        # where it started; the tool tip drifting a little. Where: face on
-        # to a face in the audience, else level ahead, else the hub's aim --
-        # the one with the most room to spin (roll_room: J6's limits, the
-        # room and the arm, the strip included)
+        # the wrist swings the strip back and forth like a baton: winds up,
+        # spins one way (speeding up, braking past its mark), spins back the
+        # other way through where it started, and again (2-4 swings as the
+        # length leaves room), settles face on; the tool tip drifting a
+        # little between. Never a full turn: the swings stay inside the tool
+        # cable's J6 range by CABLE_MARGIN_DEG, SPIN_OVER_DEG spare past
+        # their marks, each at SPIN_W_DEG_S (the strip's ends sweeping at
+        # about a metre a second). Where: face on to a face in the audience,
+        # else level ahead, else the hub's aim, aside -- out a little,
+        # further out, or lower: the one with the most room to swing
+        # (roll_room: J6's range, the room and the arm, the strip included)
         e = g.eyes()
         out = g.amp(0.04, 0.16)
-        want = g.amp(160.0, 300.0)
+        want = g.amp(170.0, 260.0)                              # a swing, end to end
         drift = U._add(U._scale(sd, rng.uniform(-1.0, 1.0) * g.amp(0.02, 0.06)), (0.0, 0.0, g.amp(0.01, 0.05)))
         dz = rng.uniform(-1.0, 1.0) * g.amp(0.0, 0.08)
         wind0 = 15.0 + 20.0 * k
+        free = (g.left() - 3.0 * g.tempo - 1.0) * g.beat       # s for the swings (out, wind-up, settling: the rest)
         designs, rooms = [], []
         aims = ("audience", "level", "hub", "side", "side")
         # out a little, further out, or lower down (under what is close by)
@@ -1259,37 +1351,32 @@ def _strip_moves(g, family, form, hold, lively):
             P = g.clamp((P[0], P[1], g.strip_z(P[2] + dz, r - off * d[2], r + off * d[2])))
             look = ahead(P, d)
             room = g.roll_room(P, look, g.roll)
-            if room is None:
-                room = (90.0, 360.0) if rng.random() < 0.5 else (360.0, 90.0)
-            sgn = 1.0 if room[1] >= room[0] else -1.0
-            spin = max(0.0, min(want, max(room) - 15.0))            # (the overshoot's 10 degrees and 5 spare)
-            back = min(room)
-            # a longer wind-up where the spin is short of room: the spin
-            # starts from further back (J6 travels wind + spin)
-            wind = min(max(wind0, TWIRL_MIN_DEG + 5.0 - spin), max(0.0, back - 8.0))
-            second = min(g.amp(90.0, 200.0), max(0.0, back - 20.0), max(0.0, 380.0 - spin)) if not short else 0.0
-            P2 = U._add(P, drift)
+            if room is None:                                    # (no probe: the keys alone)
+                room = (130.0, 130.0)
+            n, span, beats = swings(min(want, room[0] + room[1] - 2.0 * SPIN_OVER_DEG), free, 2 if short else 4,
+                                    extra=0.4 * g.tempo * g.beat)
             r_s = g.roll
+            sgn, ends = swing_ends(room, span)
+            wind = min(wind0, abs(ends[1] - r_s))               # the wind-up: towards the other end, within it
+            P2 = U._add(P, drift)
             moves = [("key", 1.25, P, look, r_s, {"lag": -g.lag}),                                  # out to where it twirls
-                     ("key", 0.75, U._add(P, (0.0, 0.0, -0.01 - 0.02 * k)), look, r_s - sgn * wind, {"ease": -0.2}),   # winds up
-                     ("arrive", 1.5 if lively else 2.0, P2, ahead(P2, d), r_s + sgn * spin, {"ease": -0.3}),   # spins up, brakes past, settles
-                     ("hold", hold())]
-            if second > 0.0:
-                moves += [("arrive", 1.5, P, look, r_s - sgn * second, {"ease": -0.2}), ("hold", 0.5)]   # back the other way
-            else:
-                moves += [("key", 1.25, P, look, r_s, {"ease": -0.2})]                            # unwinds
+                     ("key", 0.75, U._add(P, (0.0, 0.0, -0.01 - 0.02 * k)), look, r_s - sgn * wind, {"ease": -0.2})]   # winds up
+            for i in range(n):                                  # spins up, brakes past its mark, settles; and back
+                p_ = P2 if i % 2 == 0 else P
+                moves.append(("arrive", beats, p_, ahead(p_, d), ends[i % 2], {"ease": -0.3 if i == 0 else -0.1, "settle": 0.4}))
+            moves += [("hold", hold()), ("key", 1.0, P, look, r_s, {"ease": -0.2})]                   # settles face on
             designs.append(moves)
-            rooms.append((spin, sgn, second, room, aims[len(rooms) % len(aims)], wind))
-            if spin >= want:                            # all the spin it wants: no need to look further
+            rooms.append((span, sgn, n, room, aims[len(rooms) % len(aims)], wind))
+            if span >= want:                            # all the swing it wants: no need to look further
                 break
-        # the roomiest first; too little room anywhere (a twirl under
-        # TWIRL_MIN_DEG, its wind-up included) and the draw is refused
-        order = sorted(range(len(designs)), key=lambda i: -min(rooms[i][0] + rooms[i][5], TWIRL_MIN_DEG + 60.0))
+        # the roomiest first; too little room anywhere (a swing under
+        # TWIRL_MIN_DEG) and the draw is refused
+        order = sorted(range(len(designs)), key=lambda i: -min(rooms[i][0], TWIRL_MIN_DEG + 60.0))
         used = order[g.perform([designs[i] for i in order], fallback=0)]
-        spin, sgn, second, room, aim_, wind = rooms[used]
-        if spin + wind < TWIRL_MIN_DEG and g.probe is not None:
-            g.params["refused"] = "twirl: %.0f degrees of room to spin" % (spin + wind)
-        g.params.update(spin_deg=round(sgn * spin, 1), wind_deg=round(-sgn * wind, 1), back_deg=round(-sgn * second, 1),
+        span, sgn, n, room, aim_, wind = rooms[used]
+        if span < TWIRL_MIN_DEG and g.probe is not None:
+            g.params["refused"] = "twirl: %.0f degrees of room to swing" % span
+        g.params.update(spin_deg=round(sgn * span, 1), swings=n, wind_deg=round(-sgn * wind, 1),
                         room_deg=[round(x) for x in room], aim=aim_)
     elif family == "wipe":
         # a squeegee on a pane in front of it: the LED face flat to the
@@ -1560,6 +1647,296 @@ def _strip_moves(g, family, form, hold, lively):
                 [("hold", 1.0)]]                                                                          # (held, then home)
         g.perform([tail + e_ for e_ in ends])
         g.params.update(flourish=kind, aim=("audience", "level", "hub")[designs.index(chosen)])
+    elif family == "window":
+        # a big window cleaned: the strip flat on an imagined pane in front
+        # (facing the audience; turned, or tilted back, where the arm cannot
+        # face it square), the LED face to the glass and the blade near
+        # level; pressed on, then big overlapping strokes across the pane on
+        # the beat -- figure eights, or arcs back and forth stepping down it
+        # -- the blade tipping with each stroke's rise and fall, the face
+        # trailing it; lifted off, a shake. wipe's squeegee, several times as
+        # big: WINDOW_M across
+        W = max(WINDOW_M[0], min(WINDOW_M[1], g.amp(0.5, 0.7)))
+        H = g.amp(0.16, 0.3)                                    # up and down the pane
+        sag = g.amp(0.04, 0.1)                                  # an arc's dip at its middle
+        eights = rng.random() < 0.5
+        count = g.reps(5.0, 1, 2) if eights else g.reps(2.6, 2, 4)   # loops, or passes
+        ts = g.curve(count)
+        press, lift = 0.012 + 0.01 * k, 0.03 + 0.02 * k
+        lean, tip = 3.0 + 4.0 * k, 5.0 + 7.0 * k               # the face trailing, the blade tipping
+        shake = 10.0 + 10.0 * k
+        out_ = g.amp(0.04, 0.12)
+        across = rng.uniform(-1.0, 1.0) * g.amp(0.0, 0.08)
+        z_pick = rng.uniform(-0.05, 0.05)
+        el0 = math.degrees(math.asin(max(-1.0, min(1.0, g.view.d0[2]))))    # the hub's aim above level
+        side0 = rng.choice((1.0, -1.0))
+
+        def path(w):
+            """[(a across, b up, (da, db) its way, beats, via)] of the strokes
+            in the pane, w wide, and where they start."""
+            out = []
+            if eights:                                          # a lying eight, loop after loop
+                for loop in range(count):
+                    for j in range(1, 9):
+                        s_ = j * math.pi / 4.0
+                        out.append((side0 * w / 2.0 * math.sin(s_), H / 2.0 * math.sin(2.0 * s_),
+                                    (side0 * w / 2.0 * math.cos(s_), H * math.cos(2.0 * s_)), 0.5 * ts[loop],
+                                    j not in (2, 6) and not (loop == count - 1 and j == 8)))   # (a stop at each tip)
+                return out, (0.0, 0.0)
+            ys = [H / 2.0 - i * H / count for i in range(count + 1)]
+            for i in range(count):                              # arcs across and back, stepping down
+                s_ = side0 * (1.0 if i % 2 == 0 else -1.0)
+                dy = ys[i + 1] - ys[i]
+                for u in (0.25, 0.5, 0.75, 1.0):
+                    out.append((s_ * w / 2.0 * (1.0 - 2.0 * u), ys[i] + dy * u - sag * (1.0 - (1.0 - 2.0 * u) ** 2),
+                                (-s_ * w, dy - 4.0 * sag * (1.0 - 2.0 * u)), 0.5 * ts[i], u < 1.0))
+            return out, (side0 * w / 2.0, ys[0])
+        # the blade level, else upright (where a level one would sweep into
+        # the arm or the room on the way); a smaller pane last
+        cands = [(t_, h_, 1.0, up_) for t_ in sorted((0.0, 20.0, -15.0), key=lambda t: abs(t - el0)) for h_ in headings(f)[:3]
+                 for up_ in (False, True)]
+        cands += [(t_, f, 0.8, False) for t_, _, _, _ in cands[::6]]
+        designs, panes = [], []
+        for tilt, h, scale, upright in cands:
+            w = max(WINDOW_M[0] * 0.9, W * scale)
+            strokes, (a0, b0) = path(w)
+            n = _turn(h, UP, tilt)                              # the pane's normal, into the glass
+            u = U._normalize(U._cross(UP, n))                   # across the pane
+            v = U._cross(n, u)                                  # up the pane
+            reach = (H / 2.0 + sag) * abs(v[2]) + 0.01
+            ext = reach + half * (abs(v[2]) if upright else math.sin(_rad(tip))) + 0.03
+            cz = g.strip_z(p0[2] + z_pick, ext, ext, reach)
+            c = U._add(g.at(side=across, up=cz - p0[2]), U._scale(h, out_))
+
+            def at_(a, b, into):
+                return U._add(c, U._add(U._scale(u, a), U._add(U._scale(v, b), U._scale(n, into))))
+
+            def put(beats, p, way, **kw):
+                """A key at p, the face on the glass trailing `way` (da, db:
+                None standing), the blade tipped with its rise and fall."""
+                d, blade = n, (v if upright else u)
+                if way is not None:
+                    tv = U._normalize(U._add(U._scale(u, way[0]), U._scale(v, way[1])))
+                    d = U._sub(U._scale(n, math.cos(_rad(lean))), U._scale(tv, math.sin(_rad(lean))))
+                    al = _rad(tip * way[1] / max(1e-9, math.hypot(*way)) * (1.0 if way[0] >= 0.0 else -1.0))
+                    blade = U._add(U._scale(u, math.cos(al)), U._scale(v, math.sin(al)))
+                    if upright:                                 # (upright: leaning into the stroke)
+                        blade = U._add(U._scale(v, math.cos(al)), U._scale(u, -math.sin(al)))
+                return ("key", beats, p, ahead(p, d), blade, kw)
+            for _ in range(8):                                  # the pane moved in where the space (the arm's reach) cuts it
+                pts = [at_(a, b, press) for a, b, _, _, _ in strokes] + [at_(a0, b0, -lift - 0.03)]
+                cut = max((U._sub(g.clamp(q_), q_) for q_ in pts), key=U._norm)
+                if U._norm(cut) < 0.002:
+                    break
+                c = U._add(c, U._scale(cut, 1.0 + 0.01 / U._norm(cut)))
+            moves = [put(1.5, at_(a0, b0, -lift - 0.03), None, lag=-g.lag),     # turns its face to the pane
+                     put(0.5, at_(a0, b0, press), None, ease=0.2)]              # presses on
+            for a, b, way, beats, via in strokes:                               # the strokes
+                moves.append(put(beats, at_(a, b, press), way, ease=0.0 if via else -0.1, via=via, lag=g.lag * 0.3))
+            a1, b1 = strokes[-1][:2]
+            moves.append(put(0.5, at_(a1, b1, -lift - 0.02), None, ease=0.3))  # lets go
+            designs.append(moves)
+            panes.append((n, u, tilt, w, upright))
+        used = g.perform(designs, flips=(False, True))
+        g.key(0.35, g.p, g.look, g.roll + shake, ease=0.2)                      # shakes the blade off
+        g.key(0.35, g.p, g.look, g.roll - shake, ease=-0.2)
+        g.hold(0.5)
+        n, u, tilt, w, upright = panes[used]
+        g.params.update(pane_n=[round(x, 4) for x in n], sweep_axis=[round(x, 4) for x in u], pane_tilt_deg=tilt,
+                        blade="upright" if upright else "level",
+                        pattern="eights" if eights else "arcs", count=count, width_m=round(w, 3), height_m=round(H, 3))
+    elif family == "mop":
+        # a floor mopped in big strokes: the strip low and near level, its
+        # face down (the pad), swung side to side in wide arcs (MOP_M across)
+        # that push out ahead through the middle and pull back at the ends,
+        # the head swivelling through each turn into the next stroke (its
+        # leading end ahead: J6 swings it back and forth over the first half
+        # of a stroke), the face trailing, creeping back as it goes (a
+        # mopper walks backwards); lifted with a wring. Ahead is the
+        # audience first, then out from the robot, turned, in; the face less
+        # steep (level, a little up: a floor squeegee) where the wrist cannot
+        # point it down; the strokes moved across and back, away from a wall
+        # close by. Only from a hub whose tool tip stands at most
+        # MOP_HUB_TOP_M up (from higher the way down and back would be most
+        # of the clip), and where the strokes stand -- else refused
+        if p0[2] > MOP_HUB_TOP_M:
+            g.params["refused"] = "mop: the hub's tool tip is %.2f m up, over %.2f m" % (p0[2], MOP_HUB_TOP_M)
+            g.hold(1.0)
+            return
+        W = max(MOP_M[0], min(MOP_M[1], g.amp(0.55, 0.7)))
+        push, pull = g.amp(0.05, 0.14), g.amp(0.02, 0.05)
+        creep = g.amp(0.01, 0.03)
+        yaw, drag = 15.0 + 15.0 * k, 5.0 + 8.0 * k
+        out0 = g.amp(0.08, 0.2)
+        # strokes as many as the length leaves room for (a stroke's four
+        # legs no quicker than A_DRAW allows them), the way down and up kept
+        g.repeats = True
+        per = max(2.0 * g.tempo * g.beat, 4.0 * math.sqrt(5.77 * (W / 4.0 + 0.03) / A_DRAW))
+        count = max(2, min(6, int((g.left() - 3.7 * g.tempo) * g.beat / per)))
+        ts = g.curve(count)
+        first = rng.choice((1.0, -1.0))
+        shake = 10.0 + 10.0 * k
+        lift_up = g.amp(0.06, 0.14)
+        beta0 = rng.uniform(55.0, 70.0)
+        outward = _flat(p0) or f
+        hs = [f, outward] + headings(f)[1:] + [U._scale(outward, -1.0)]
+
+        def stands(p, s, d):
+            """The tool can stand at p aiming d with the strip along s (either
+            way round: lay's flip), the wrist bent the hub's way (the other
+            way is past its singularity)."""
+            if g.probe is None:
+                return True
+            R0 = C.tool_frame(d, 0.0)
+            R = transport(R0, d, g._turn_to(R0, s))
+            for r in (0.0, 180.0):
+                q = g.probe.pose(g.clamp(p), transport(R, d, r))
+                if q is not None and q[4] * g.probe.hub_q[4] > 0.0:
+                    return True
+            return False
+        designs, used_as = [], []
+        for beta, h in [(b_, h_) for b_ in (beta0, 35.0, -10.0) for h_ in hs]:
+            if len(used_as) >= 12:                               # (three that stand, each laid four ways down)
+                break
+            a = U._normalize(U._cross(UP, h))                   # across the heading
+
+            def head(theta, travel):
+                """(the strip's way, the aim): the head turned theta degrees
+                from across towards ahead, moving `travel` (+1 / -1 along a,
+                0 standing: the face trails it)."""
+                s = _turn(a, h, theta)
+                d = U._sub(U._scale(h, math.cos(_rad(beta))), U._scale(UP, math.sin(_rad(beta))))
+                if travel:
+                    d = _turn(d, U._scale(a, -travel), drag)
+                return s, U._normalize(U._sub(d, U._scale(s, U._dot(d, s))))
+            tilt_z = max(abs(U._normalize(U._sub(s_, U._scale(d_, U._dot(s_, d_))))[2])
+                         for s_, d_ in (head(yaw, 1.0), head(-yaw, -1.0)))
+            z_low = g.strip_z(0.0, off * math.sin(_rad(beta)) + half * tilt_z + 0.03, 0.1)
+            base0 = U._add(g.at(up=z_low - p0[2]), U._scale(h, out0))
+
+            def spot(base, x, y, up=0.0):
+                return U._add(base, U._add(U._scale(a, x), U._add(U._scale(h, y), (0.0, 0.0, up))))
+            # the strokes' ends and middle, each way it moves through them:
+            # moved across and back (away from a wall close by) until they stand
+            base = None
+            for sh, bk in ((0.0, 0.0), (0.15, 0.0), (-0.15, 0.0), (0.0, 0.15), (0.15, 0.15), (-0.15, 0.15), (0.3, 0.0),
+                           (-0.3, 0.0), (0.0, 0.3)):
+                b_ = U._add(base0, U._add(U._scale(a, sh), U._scale(h, -bk)))
+                if all(stands(spot(b_, x, y), *head(th, tr)) for x, y, th, tr in
+                       ((W / 2.0, -pull, yaw, 1.0), (-W / 2.0, -pull, -yaw, -1.0), (0.0, push, yaw, 1.0), (0.0, push, -yaw, -1.0))):
+                    base = b_
+                    break
+            if base is None:
+                continue
+
+            def put(kind, beats, x, y, theta, travel, up=0.0, **kw):
+                p = spot(base, x, y, up)
+                s, d = head(theta, travel)
+                return (kind, beats, p, ahead(p, d), s, kw)
+            # down to the floor turning the head on the way; or lowered first,
+            # the head as it is, then turned (the folded arm's strip clears
+            # it lower down); or turned up here, then down; or the gaze
+            # swung over the top on the way (a hub looking up with its
+            # wrist near level: the straight turn passes its singularity)
+            for entry in ("down", "lower", "turn", "over"):
+                moves = []
+                if entry == "lower":
+                    q_ = g.at(up=min(0.0, z_low + 0.12 - p0[2]))
+                    moves.append(("key", 1.25, q_, U._add(q_, U._sub(g.look0, p0)), None, {"ease": -0.1}))
+                elif entry == "turn":
+                    moves.append(put("key", 1.0, 0.0, -out0, first * yaw, 0.0, up=p0[2] - z_low, ease=-0.1))
+                elif entry == "over":
+                    q_ = g.at(up=0.5 * (z_low - p0[2]))
+                    mid = U._add(U._add(U._normalize(U._sub(g.look0, p0)), head(first * yaw, -first)[1]), (0.0, 0.0, 1.2))
+                    moves.append(("key", 1.0, q_, ahead(q_, mid), None, {"ease": -0.1, "via": True}))
+                moves.append(put("key", 2.0 if entry == "down" else 1.0, first * W / 2.0, -pull, first * yaw, -first,
+                                 ease=-0.15, lag=-g.lag))            # down to the floor
+                x = y = 0.0
+                for i in range(count):
+                    sg = first * (1.0 if i % 2 == 0 else -1.0)  # from sg W/2 to -sg W/2
+                    for uu in (0.25, 0.5, 0.75, 1.0):
+                        x = sg * W / 2.0 * (1.0 - 2.0 * uu)
+                        y = -creep * (i + uu) - pull + (push + pull) * (1.0 - (1.0 - 2.0 * uu) ** 2)   # pushed out through the middle
+                        th = -sg * yaw * max(-1.0, min(1.0, 4.0 * uu - 1.0))                         # swivelling through the turn
+                        moves.append(put("key", 0.5 * ts[i], x, y, th, -sg, via=uu < 1.0, ease=0.0 if uu < 1.0 else -0.1,
+                                         lag=g.lag * 0.5))
+                moves.append(put("arrive", 0.75, x * 0.8, y + 0.03, 0.0, 0.0, up=lift_up, ease=0.4))   # lifts it
+                designs.append(moves)
+                used_as.append((beta, h, a, z_low))
+        if not designs:                                          # no heading, face or place across where it stands
+            g.params["refused"] = "mop: the strokes stand nowhere near the hub"
+            g.hold(1.0)
+            return
+        used = g.perform(designs, flips=(False, True))
+        g.key(0.35, g.p, g.look, g.roll + shake, ease=0.2)                      # wrings it out
+        g.key(0.35, g.p, g.look, g.roll - shake, ease=-0.2)
+        g.hold(0.5)
+        beta, h, a, z_low = used_as[used]
+        g.params.update(face_deg=round(beta, 1), heading=[round(x_, 3) for x_ in h], sweep_axis=[round(x_, 4) for x_ in a],
+                        strokes=count, stroke_m=round(W, 3), low_z=round(z_low, 3), swivel_deg=round(2.0 * yaw, 1))
+    elif family == "spin_sweep":
+        # a sweep with the strip spinning: the tool tip travels a broad arc
+        # across the stage (a rainbow or a swing, SPIN_SWEEP_M across), face
+        # on to someone in the audience, while the wrist swings the strip
+        # back and forth -- a third of the way with each swing, so its ends
+        # trace big loops through the air -- braking at the far end; holds,
+        # unwinds, and home through the middle. Face on, else level ahead,
+        # the hub's aim, aside. The arc as high as the spinning disc
+        # leaves room for (STRIP_FLOOR_M, STRIP_TOP_M), else lower. The
+        # swings stay inside the tool cable's J6 range as twirl's (roll_room
+        # at the arc's ends and middle, CABLE_MARGIN_DEG and SPIN_OVER_DEG
+        # spare, at SPIN_W_DEG_S)
+        e = g.eyes()
+        wide = max(SPIN_SWEEP_M[0], min(SPIN_SWEEP_M[1], 2.0 * g.amp(0.22, 0.34))) / 2.0
+        hgt = g.amp(0.06, 0.2)
+        rainbow = g.room_up > g.room_down * 0.6 if rng.random() < 0.7 else rng.random() < 0.5
+        ends_z, crest = (-0.5 * hgt, 0.5 * hgt) if rainbow else (0.5 * hgt, -0.5 * hgt)
+        sgn = rng.choice((1.0, -1.0))
+        want = g.amp(130.0, 220.0)                              # a swing, end to end
+        fwd_ = g.amp(0.03, 0.1)
+        free = (g.left() - (1.5 + 0.5 + 0.4) * g.tempo - 1.0) * g.beat     # s for the swings
+        designs, used_as = [], []
+        for target, scale, low_ in [(t_, s_, z_) for s_, z_ in ((1.0, 0.0), (1.0, 0.2), (0.8, 0.0)) for t_ in
+                                    (e, g.at(fwd=2.5), U._add(p0, U._scale(g.view.d0, 2.0)), g.at(fwd=1.5, side=1.5),
+                                     g.at(fwd=1.5, side=-1.5))]:
+            w_ = max(SPIN_SWEEP_M[0] / 2.0 * 0.9, wide * scale)
+            d = U._normalize(U._sub(target, g.at(fwd=fwd_)))    # face on, the aim kept: the roll is J6's
+            r = half * math.sqrt(max(0.0, 1.0 - d[2] ** 2)) + 0.03        # the disc's half height
+            zc = g.strip_z(p0[2] - low_, r - off * d[2] + 0.5 * hgt, r + off * d[2] + 0.5 * hgt, 0.5 * hgt)
+
+            def arc(uu):
+                """The arc's point uu of the way across."""
+                return g.clamp(g.at(fwd=fwd_ * math.sin(math.pi * uu), side=sgn * w_ * (1.0 - 2.0 * uu),
+                                    up=zc - p0[2] + ends_z + (crest - ends_z) * math.sin(math.pi * uu)))
+            pts = [arc(uu) for uu in (0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0)]
+            rooms = [g.roll_room(p_, ahead(p_, d), g.roll, step=15.0) for p_ in (pts[0], arc(0.5), pts[3])]
+            room = (min(r_[0] for r_ in rooms), min(r_[1] for r_ in rooms)) if rooms[0] is not None else (110.0, 110.0)
+            if room[0] + room[1] - 2.0 * SPIN_OVER_DEG < TWIRL_MIN_DEG * 0.75:
+                continue                                        # (no room to swing there)
+            _, span, beats = swings(min(want, room[0] + room[1] - 2.0 * SPIN_OVER_DEG), free, 3, least=3)
+            _, ends = swing_ends(room, span)
+            moves = []
+            if not short:                                       # a small dip the other way first
+                q_ = g.at(side=-sgn * (0.03 + 0.03 * k), up=-0.02 - 0.02 * k)
+                moves.append(("key", 0.5, q_, ahead(q_, g.gaze()), None, {"ease": -0.2}))
+            moves += [("key", 1.5, pts[0], ahead(pts[0], d), None, {"lag": -g.lag}),               # out to one end, face on
+                      ("key", beats, pts[1], ahead(pts[1], d), ends[0], {"ease": -0.25}),         # across, swinging
+                      ("key", beats, pts[2], ahead(pts[2], d), ends[1], {"ease": -0.1}),
+                      ("arrive", beats, pts[3], ahead(pts[3], d), ends[0], {"ease": 0.1, "settle": 0.4}),   # brakes at the end
+                      ("hold", 0.5 if short else 1.0),
+                      ("key", 1.0, pts[3], ahead(pts[3], d), g.roll, {"ease": -0.2})]                  # unwinds, then home
+            designs.append(moves)
+            used_as.append((span, 2.0 * w_))
+            if span >= want and scale == 1.0:
+                break
+        if not designs:
+            g.params["refused"] = "spin_sweep: no room to swing the strip on an arc from here"
+            g.hold(1.0)
+            return
+        used = g.perform(designs)
+        span, arc_m = used_as[used]
+        g.params.update(spin_deg=round(span, 1), sweep_axis=[round(x, 4) for x in sd], arc_m=round(arc_m, 3),
+                        arc="rainbow" if rainbow else "swing")
     else:
         raise ValueError("unknown family %r" % family)
 
@@ -1681,6 +2058,7 @@ def shrink(keys, home, size):
 
 
 PROBE_PAD_M = 0.006              # a pose the strip families design with keeps this much beyond every margin
+PROBE_J6_DEG = 10.0              # and J6 this far inside the tool cable's range (the sampled way strays from the probed)
 
 
 class Probe:
@@ -1689,12 +2067,13 @@ class Probe:
     singularity (WRIST_KEY_MIN), PROBE_PAD_M clear of the room (beyond every
     obstacle's margin) and of the arm itself -- the strip included
     (collision.load_model carries the tool); the way between two poses
-    strays a little from both. pose(p, R, near) -> joints, or None
-    (last: why)."""
+    strays a little from both. j6: J6 kept this far inside its range too
+    (make's: PROBE_J6_DEG; a J6 at its stop has the sampler's IK jump
+    branches). pose(p, R, near) -> joints, or None (last: why)."""
 
-    def __init__(self, rig, hub_q, env=None, pad=PROBE_PAD_M):
+    def __init__(self, rig, hub_q, env=None, pad=PROBE_PAD_M, j6=0.0):
         import collision as CL
-        self.rig, self.hub_q, self.env, self.pad = rig, list(hub_q), env, pad
+        self.rig, self.hub_q, self.env, self.pad, self.j6 = rig, list(hub_q), env, pad, j6
         self.model = CL.load_model("fr20")
         self.last = None
 
@@ -1703,6 +2082,10 @@ class Probe:
         q = self.rig.solve(p, None, None, near or self.hub_q, R=R)
         self.last = "out of reach or past a limit" if q is None else "the wrist singularity"
         if q is None or abs(math.sin(math.radians(q[4]))) < WRIST_KEY_MIN:
+            return None
+        lo, hi = self.rig.limits[5]
+        self.last = "J6 near the tool cable's stop"
+        if not lo + self.j6 <= q[5] <= hi - self.j6:
             return None
         self.last = "the room or itself"
         if self.env is not None and CL.pose_clearance(self.model, self.env, q, cap=self.pad)[0] < self.pad:
@@ -2060,34 +2443,61 @@ def home_of(rig, hub_q):
     return tcp, U._add(tcp, U._scale(d, 1.5)), roll_of(R, d)
 
 
-def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None, safety=PLAN_SAFETY):
+def limit_breach(rig, qs, margin=LIMIT_MARGIN, j6_margin=CABLE_MARGIN_DEG):
+    """Why joints qs leave the motion limits (rig.limits: J6 the tool
+    cable's range) less their margins -- `margin` for J1-J5 (the IK's own),
+    j6_margin for J6 -- or None. The IK keeps inside LIMIT_MARGIN already;
+    this is the check every clip passes before it is kept, whatever drew it."""
+    for j, (lo, hi) in enumerate(rig.limits):
+        m = j6_margin if j == 5 else margin
+        vals = [q[j] for q in qs]
+        worst = max(vals, key=lambda v: max(lo - v, v - hi))
+        if worst < lo + m - 1e-6 or worst > hi - m + 1e-6:
+            return "J%d at %.1f deg, outside %.0f..%.0f" % (j + 1, worst, lo + m, hi - m)
+    return None
+
+
+def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, env=None, safety=PLAN_SAFETY, why=None):
     """A gesture clip from hub_q, or None when this draw does not work at
-    any size (unreachable key, branch flip, too violent, too long, hits the
-    room). labels["family"], labels["params"]: what was drawn and fitted."""
+    any size (unreachable key, branch flip, too violent, too long, outside
+    the motion limits and their margins -- limit_breach --, hits the room);
+    why: a list the reason is appended to, then. labels["family"],
+    labels["params"]: what was drawn and fitted."""
     import collision as CL
     import motion_labels
     home = home_of(rig, hub_q)
     beat = 60.0 / bpm
     space = Space(zones, home[0], env)
-    probe = Probe(rig, hub_q, env)
+    probe = Probe(rig, hub_q, env, j6=PROBE_J6_DEG)
     keys, prm = draw_keys(family, home, zones, rng, beat, intensity, space, probe=probe)
     if prm.get("refused"):                              # a strip family found no room for itself
+        if why is not None:
+            why.append("%s: refused (%s)" % (family, prm["refused"]))
         return None
     keys = wrist_safe(rig, hub_q, keys, home)
     style = style_for(rng, beat, intensity)
     vel, acc = [v * safety for v in rig.vel], [a * safety for a in rig.acc]
     nominal = sum(k[0] for k in keys)
     model = CL.load_model("fr20") if env is not None else None
+    fails = []
     for size in SIZES:
         ks = strip_safe(rig, hub_q, keys if size == 1.0 else shrink(keys, home, size), home, probe)
         got = fit(rig, hub_q, ks, home, style, beat, vel, acc, soft_s=prm["length_s"][1])
         if got is None:
+            fails.append("size %g: cannot be sampled or timed" % size)
             continue
         ts, qs, fitted = got
+        breach = limit_breach(rig, qs)
+        if breach:
+            fails.append("size %g: %s" % (size, breach))
+            continue
         rep = room_check(model, env, ts, qs) if env is not None else None
         if rep is None or rep["ok"]:
             break
+        fails.append("size %g: %s" % (size, CL.describe(rep)))
     else:
+        if why is not None:
+            why.append("%s: %s" % (family, "; ".join(fails)))
         return None
     clip = {"schema": M.SCHEMA, "id": clip_id or "gesture_%s" % family, "robot": "fr20",
             "joint_names": ["j%d" % i for i in range(1, 7)], "units": {"angle": "deg", "time": "s", "length": "m"},
@@ -2204,9 +2614,11 @@ SWEEP_K = (0.2, 1.0)
 SYNTHETIC = (("synth_low", 0.55), ("synth_high", 1.5))   # hubs at the greet hub's x, y at these heights
 
 
-def _room(cfg=None):
+def _room(cfg=None, ceiling=None):
     """The lab as the show sees it: envs/volvox_lab.usda (OpenUSD), or the
-    .json it came from, with the show's stage and paper (show.show_env)."""
+    .json it came from, with the show's stage and paper (show.show_env);
+    with ceiling, that margin under the ceiling (the show build's
+    CEILING_MARGIN_M) when its own is less."""
     import collision as CL
     errs = []
     for name in ("volvox_lab.usda", "volvox_lab.json"):
@@ -2221,6 +2633,9 @@ def _room(cfg=None):
         if cfg:
             import show
             env = show.show_env(env, cfg, cfg["margins"]["idle_canvas_m"])
+        if ceiling is not None:
+            env = dict(env, objects=[dict(o, margin_m=max(o.get("margin_m") or 0.0, ceiling)) if o["name"] == "ceiling" else o
+                                     for o in env["objects"]])
         return env
     raise SystemExit("no room to check against: %s" % ("; ".join(errs) or "envs/volvox_lab.* missing"))
 
@@ -2313,7 +2728,7 @@ def _worker_init():
     cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
     env = _room(cfg)
     zones, hubs = _show_hubs(rig, True, env)
-    _W.update(rig=rig, zones=zones, hubs=hubs, env=env, model=CL.load_model("fr20"))
+    _W.update(rig=rig, zones=zones, hubs=hubs, env=env, env_ceiling=_room(cfg, CEILING_MARGIN_M), model=CL.load_model("fr20"))
 
 
 def _still_run(ts, qs, t_from, t_to):
@@ -2331,16 +2746,18 @@ def _still_run(ts, qs, t_from, t_to):
 def _trial(job):
     """One seed of one family from one hub: up to TRIES draws (bpm and
     intensity drawn from SWEEP_BPM, SWEEP_K, or the fixed k given), the first
-    clip checked. A summary, not the clip."""
+    clip checked -- in the room, or with ceiling (job[4]) the room with the
+    show build's CEILING_MARGIN_M. A summary, not the clip."""
     import random
     fam, hub_name, seed = job[:3]
     k_fixed = job[3] if len(job) > 3 else None
+    env = _W["env_ceiling"] if len(job) > 4 and job[4] else _W["env"]
     rig, hub = _W["rig"], _W["hubs"][hub_name]
     rng = random.Random(seed * 7919 + FAMILIES.index(fam) * 131 + sum(map(ord, hub_name)))
     out = {"fam": fam, "hub": hub_name, "seed": seed, "first": False, "made": False, "problems": []}
     for i in range(TRIES):
         bpm, k = rng.randint(*SWEEP_BPM), rng.uniform(*SWEEP_K) if k_fixed is None else k_fixed
-        c = make(rig, hub, fam, _W["zones"], rng, bpm=bpm, intensity=k, env=_W["env"])
+        c = make(rig, hub, fam, _W["zones"], rng, bpm=bpm, intensity=k, env=env)
         if c is None:
             continue
         ts, qs = [p["t"] for p in c["points"]], [p["q"] for p in c["points"]]
@@ -2365,7 +2782,7 @@ def _trial(job):
         lim = P.limiting(ts, qs, RATE_HZ, [v * PLAN_SAFETY for v in rig.vel], [a * PLAN_SAFETY for a in rig.acc])
         if lim["scale_needed"] > 1.0 + 1e-6:
             bad.append("needs slowing x%.3f (J%d %s)" % (lim["scale_needed"], lim["joint"], lim["kind"]))
-        rep = room_check(_W["model"], _W["env"], ts, qs)
+        rep = room_check(_W["model"], env, ts, qs)
         if not rep["ok"]:
             bad.append("hits the room")
         z = [p[2] for p in c["tcp"]]
@@ -2376,8 +2793,15 @@ def _trial(job):
                    still=_still_run(ts, qs, 0.25, ts[-1] - 0.5 * beat), wrist=wrist_share(qs),
                    j5=max(q[4] for q in qs) - min(q[4] for q in qs), clearance=rep["min_env_clearance_m"],
                    labels=c["labels"].get("family") == fam and "form" in c["labels"].get("params", {}), **tcp_stats(c["tcp"]))
+        out["j6"] = (min(q[5] for q in qs), max(q[5] for q in qs))
+        prm = c["labels"]["params"]
+        if prm.get("sweep_axis"):                        # how far the tool tip swept across
+            along = [U._dot(p, prm["sweep_axis"]) for p in c["tcp"]]
+            out["across"] = max(along) - min(along)
         if fam in STRIP_FAMILIES:
+            import show
             out.update(strip_stats(rig, c))
+            out["tip_peak"] = show.motion_stats(ts, qs)["v_peak"]   # the TCP's and the strip's ends', the quickest
         break
     return out
 
@@ -2446,6 +2870,19 @@ def self_test():
     R1, tcp1, _ = rig.tool(q1)
     qt = rig.track(tcp1, R1, hubs["greet"])
     qc = rig.solve(tcp1, None, None, hubs["greet"], R=R1)
+    # the guard every clip passes: J6 CABLE_MARGIN_DEG inside the tool cable's range
+    lo6, hi6 = rig.limits[5]
+    near_stop = [list(stage_home[:5]) + [hi6 - CABLE_MARGIN_DEG + 1.0]]
+    inside = [list(stage_home[:5]) + [lo6 + CABLE_MARGIN_DEG + 1.0]]
+    check("limit_breach names J6 past the cable's range less %g deg, passes one inside" % CABLE_MARGIN_DEG,
+          (limit_breach(rig, near_stop) or "").startswith("J6") and limit_breach(rig, inside) is None,
+          (limit_breach(rig, near_stop), limit_breach(rig, inside)))
+    # a mop from high up is refused, and make says why
+    why = []
+    mop_high = make(rig, hubs["high"], "mop", zones, random.Random(1), env=env, why=why)
+    check("mop from the high hub (tool tip over %g m) is refused, with its reason" % MOP_HUB_TOP_M,
+          mop_high is None and len(why) == 1 and "refused" in why[0], why)
+
     check("tracking IK = the nearest closed-form branch", qt is not None and qc is not None and max(abs(a - b) for a, b in zip(qt, qc)) < 1e-5,
           qt and qc and [round(a - b, 7) for a, b in zip(qt, qc)])
 
@@ -2521,9 +2958,14 @@ def self_test():
     jobs = [(f, h, s) for h in names for f in FAMILIES for s in range(SEEDS)]
     full = ("reach", "stretch", "rise", "dive", "sweep")
     jobs += [(f, "greet", 100 + s, 1.0) for f in full for s in range(5)]
+    # and the families the cable and the big strokes changed, from the
+    # show's hubs, under the show build's ceiling margin
+    party = [n for n in ("rest", "greet", "low", "high") if n in hubs]
+    jobs += [(f, h, 200 + s, None, True) for f in CEILING_FAMILIES for h in party for s in range(SEEDS)]
     allres = _sweep(jobs)
     res = [x for x in allres if x["seed"] < 100]
-    top = [x for x in allres if x["seed"] >= 100]
+    top = [x for x in allres if 100 <= x["seed"] < 200]
+    ceil = [x for x in allres if x["seed"] >= 200]
     print("\n%-8s %-6s %8s %8s  %-11s %6s %6s %6s %6s  %s" % ("family", "hub", "1st draw", "in %d" % TRIES, "length",
                                                           "z m", "ext m", "peak", "mean", "size / slowed"))
     for name in names:
@@ -2591,6 +3033,33 @@ def self_test():
     check("scoop: the strip's lower end goes 0.3 m under the hub's tool tip and comes back",
           sc and all(x["s_drop"] >= 0.3 and x["s_back"] < 1e-3 for x in sc),
           "least %.2f m under, median %.2f" % (min(x["s_drop"] for x in sc), _median([x["s_drop"] for x in sc])) if sc else "none made")
+    # the tool cable: J6 inside its range less CABLE_MARGIN_DEG in every clip,
+    # every family; the twirl swings back and forth inside it, still quick
+    outside = sorted({"%s/%s %.1f..%.1f" % (x["fam"], x["hub"], x["j6"][0], x["j6"][1]) for x in allres if x["made"]
+                      and not (lo6 + CABLE_MARGIN_DEG - 1e-6 <= x["j6"][0] and x["j6"][1] <= hi6 - CABLE_MARGIN_DEG + 1e-6)})
+    check("every clip keeps J6 within %.0f..%.0f deg (the tool cable's range less %g)" % (
+          lo6 + CABLE_MARGIN_DEG, hi6 - CABLE_MARGIN_DEG, CABLE_MARGIN_DEG), not outside, outside[:6])
+    check("twirl: J6 within -145..145 deg, the strip's ends still quick (peak >= 0.8 m/s)",
+          tw and all(-145.0 - 1e-6 <= x["j6"][0] and x["j6"][1] <= 145.0 + 1e-6 for x in tw) and min(x["tip_peak"] for x in tw) >= 0.8,
+          "J6 %.1f..%.1f, peak least %.2f m/s, median %.2f" % (min(x["j6"][0] for x in tw), max(x["j6"][1] for x in tw),
+                                                             min(x["tip_peak"] for x in tw), _median([x["tip_peak"] for x in tw])) if tw else "none made")
+    # the big strip families: the tool tip's sweep across, from the hubs they suit
+    for fam_, hub_, least in (("window", "greet", WINDOW_M[0]), ("window", "low", WINDOW_M[0]), ("mop", "rest", MOP_M[0]),
+                              ("spin_sweep", "greet", SPIN_SWEEP_M[0]), ("spin_sweep", "low", SPIN_SWEEP_M[0])):
+        rs = [x for x in strip if x["fam"] == fam_ and x["hub"] == hub_]
+        whole = [x["across"] for x in rs if x["size"] == 1.0]
+        check("%s from %s: the tool tip sweeps >= %g m across (median; every full-size clip >= %g m)" % (fam_, hub_, least, 0.85 * least),
+              len(rs) >= 0.8 * SEEDS and _median([x["across"] for x in rs]) >= least and all(a >= 0.85 * least for a in whole),
+              "%d/%d made, median %.2f m, full size least %s" % (len(rs), SEEDS, _median([x["across"] for x in rs]),
+                                                                 "%.2f" % min(whole) if whole else "-"))
+    # under the show build's ceiling margin
+    cells = {(f, n): sum(x["made"] for x in ceil if x["fam"] == f and x["hub"] == n) / float(SEEDS)
+             for f in CEILING_FAMILIES for n in party if (f, n) not in STRIP_REFUSED}
+    low_cells = {"%s/%s" % c: v for c, v in cells.items() if v < 0.8}
+    probs = sorted({"%s/%s: %s" % (x["fam"], x["hub"], p) for x in ceil if x["made"] for p in x["problems"]})
+    check("%s from the show's hubs under a %g m ceiling margin: 80%% made, clear, within limits" % (
+          "/".join(CEILING_FAMILIES), CEILING_MARGIN_M), not low_cells and not probs, (low_cells, probs[:4]))
+    check("mop is refused from the high hubs", not [x for x in res if x["fam"] == "mop" and x["hub"] in ("high", "synth_high") and x["made"]])
     under = [min(x["s_hub_low"], STRIP_FLOOR_M) - x["s_low"] for x in strip]
     check("the strip families keep the strip's lower end at STRIP_FLOOR_M (or the hub's own, when lower) but for 5 cm",
           strip and max(under) <= 0.05, "lowest %s m, at most %.3f m under" % (
