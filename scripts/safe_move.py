@@ -106,6 +106,17 @@ def _travel(path):
     return sum(max(abs(x - y) for x, y in zip(a, b)) for a, b in zip(path, path[1:]))
 
 
+def _rank(cands, q_from, model):
+    """Detours in the order to try them: least joint travel first, and of
+    equal travel the one whose elbow stands highest -- an upright arm, not
+    one laid towards the floor (the J1 swing often sets the travel alone)."""
+    import urdf_rig as U
+
+    def elbow_z(path):
+        return min(U.forward_kinematics(model["chain"], w)[2]["position"][2] for w in path[:-1])
+    return sorted(cands, key=lambda p: (round(_travel([q_from] + p), 6), -elbow_z(p)))
+
+
 def _within(q, limits, pad=2.0):
     return all(lo + pad <= x <= hi - pad for x, (lo, hi) in zip(q, limits))
 
@@ -133,7 +144,7 @@ def route(q_from, q_to, env, model=None, limits=None):
         cands.append(lead + [fold, list(q_to)])                                  # fold, then MoveJ to the goal
         if t != round(q_to[0], 3):
             cands.append(lead + [fold, [q_to[0], j2, j3] + list(q_to[3:]), list(q_to)])   # fold, turn, unfold
-    cands.sort(key=lambda p: _travel([q_from] + p))
+    cands = _rank(cands, q_from, model)
     for path in cands:
         if not all(_within(w, limits) for w in path[:-1]):
             continue
@@ -158,6 +169,13 @@ def self_test():
     env = C.load_env(os.path.join(root, "envs", "volvox_lab.usda"))
     model = C.load_model("fr20", tool=False)            # the bare arm: these cases were drawn without a tool
     menv = move_env(env)
+    # a tie in joint travel (the J1 swing sets it) goes to the upright arm,
+    # not the one laid towards the floor (from_scan, 2026-09-28)
+    q0, q1 = [-150.0, -86.0, 90.0, -184.0, -41.0, 0.0], [-60.0, -90.0, 90.0, -90.0, -90.0, -15.0]
+    low, up = [[-150.0, -180.0, 150.0] + q1[3:], q1], [[-150.0, -120.0, 120.0] + q1[3:], q1]
+    ranked = _rank([low, up], q0, model)
+    check("detours of equal joint travel: the upright one first (elbow high)",
+          ranked[0] is up and abs(_travel([q0] + low) - _travel([q0] + up)) < 1e-9, [p[0][:3] for p in ranked])
     ceil = [o for o in menv["objects"] if o["name"] == "ceiling"][0]
     check("the ceiling gets the ceiling margin", ceil["margin_m"] == CEILING_MARGIN_M, ceil["margin_m"])
     plate = [o for o in menv["objects"] if o["name"] == "base_plate"][0]
