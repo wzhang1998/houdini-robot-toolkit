@@ -533,7 +533,6 @@ def build(cfg_path, log=print):
             raise SystemExit("from_scan: %s" % C.describe(rep))
         log("from_scan: %.1f s" % t[-1])
         segs.append(Segment("from_scan", "from_scan", t, q, "scan_end", home))
-        log("from_scan: %.1f s, %s" % (t[-1], why))
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
