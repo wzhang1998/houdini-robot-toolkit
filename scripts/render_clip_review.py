@@ -256,8 +256,17 @@ def setup_scene(w=TILE[0], h=TILE[1], room=ROOM, view=None):
     cut = env_obj.createNode("attribwrangle", "review_room")
     cut.setInput(0, shown)
     cut.parm("class").set(1)                              # primitives
+    # and a face turned away from the camera is not drawn, as with the
+    # viewport's Remove Backfaces: the walls are single faces turned into the
+    # room (cell_sop), so the ones between the camera and the arm vanish
     cut.parm("snippet").set('int closed = primintrinsic(0, "closed", @primnum);\n'
-                            'if (!(%s)) removeprim(0, @primnum, 1);' % ROOMS[room])
+                            'if (!(%s)) removeprim(0, @primnum, 1);\n'
+                            'else if (closed) {\n'
+                            '    matrix m = optransform("/obj/review_cam") * invert(optransform("%s"));\n'
+                            '    vector eye = {0, 0, 0} * m;\n'
+                            '    vector p = point(0, "P", primpoint(0, @primnum, 0));\n'
+                            '    if (dot(prim_normal(0, @primnum, 0.5, 0.5), eye - p) < 0) removeprim(0, @primnum, 1);\n'
+                            '}' % (ROOMS[room], env_obj.path()))
     cut.setDisplayFlag(True)
     cut.setRenderFlag(True)
     # the arm, the subject: drawn once (not the asset's own room), near-white
