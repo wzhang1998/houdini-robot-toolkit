@@ -230,6 +230,38 @@ def review_path(node):
         poly.addVertex(p)
 
 
+def review_fixtures(node, show_cfg=None):
+    """Python SOP: the mounted tool (the profile's, e.g. the LED strip) on the
+    arm at this frame and the show's paper, as show_rig's fixture points
+    (P, orient, scale, Cd) for a unit Box -- the same boxes as the show file."""
+    import hou
+    import cell_sop
+    import collision as C
+    import robot_profile as RP
+    import show_rig as SR
+    geo = node.geometry()
+    for name, default in (("orient", (0.0, 0.0, 0.0, 1.0)), ("scale", (1.0, 1.0, 1.0)), ("Cd", (1.0, 1.0, 1.0))):
+        geo.addAttrib(hou.attribType.Point, name, default)
+    node.evalParm("frame")                                     # cook again when the frame changes
+
+    def add(box, cd):
+        P, orient, scale = SR.box_instance(*box)
+        pt = geo.createPoint()
+        pt.setPosition(P)
+        pt.setAttribValue("orient", orient)
+        pt.setAttribValue("scale", scale)
+        pt.setAttribValue("Cd", cd)
+
+    cfg = json.load(open(show_cfg or ROOT + "/shows/party.json"))
+    if cfg.get("canvas"):
+        add(SR.canvas_box(cfg["canvas"]), SR.CANVAS_RGB)
+    tool = C.tool_def(RP.load("fr20"))
+    if tool:
+        m = C.load_model("fr20")
+        for _, c, R, s in SR.tool_boxes(m["chain"], m["flange_offset"], tool, cell_sop.q_at()):
+            add((c, R, s), SR.TOOL_RGB)
+
+
 def setup_scene(w=TILE[0], h=TILE[1], room=ROOM, view=None):
     """Turn the loaded scenes/FR20_cell.hiplc into the review scene; returns
     the camera. The clip comes from CELL_CTRL's Clip, as always. room: a
@@ -249,6 +281,25 @@ def setup_scene(w=TILE[0], h=TILE[1], room=ROOM, view=None):
     tube.parm("div").set(6)
     tube.setDisplayFlag(True)
     tube.setRenderFlag(True)
+    # the tool on the arm and the show's paper: a unit Box on each fixture point
+    fo = obj.createNode("geo", "review_fixtures", run_init_scripts=False)
+    pts = fo.createNode("python", "fixture_points")
+    g = pts.parmTemplateGroup()
+    g.append(hou.FloatParmTemplate("frame", "Frame", 1))
+    pts.setParmTemplateGroup(g)
+    pts.parm("frame").setExpression("$F")
+    pts.parm("python").set("import sys, hou\nsys.path.insert(0, %r)\nimport render_clip_review as R\n"
+                           "R.review_fixtures(hou.pwd())\n" % (ROOT + "/scripts"))
+    box = fo.createNode("box", "unit_box")
+    fixtures = fo.createNode("copytopoints::2.0", "fixtures")
+    fixtures.setInput(0, box)
+    fixtures.setInput(1, pts)
+    fixtures.parm("targetattribs").set(1)
+    fixtures.parm("applyto1").set(0)
+    fixtures.parm("applymethod1").set(0)
+    fixtures.parm("applyattribs1").set("Cd")
+    fixtures.setDisplayFlag(True)
+    fixtures.setRenderFlag(True)
     # see-through faces (walls, zones, the stage) stacked in front of the
     # camera wash the picture out: never drawn; the rest per ROOMS
     env_obj = hou.node("/obj/cell_env")
