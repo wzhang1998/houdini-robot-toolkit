@@ -234,12 +234,14 @@ the stream by itself (FAULT). None of this replaces the E-stop.
 **The report** (printed, and `logs/stream/stream_<time>.json` with the
 commanded and actual joints as CSV; the joints are written first, so a
 stopped run keeps them):
-- `pacing` should be `controller queue`: the controller's motion queue
-  (GetMotionQueueLength) paces the stream, so its lag cannot grow. The first
-  real runs (2026-09-28, before this) paced by the PC's clock, and the lag
-  grew 104 -> 352 ms in 10 min. `queue` gives its depth (target 6 points,
-  48 ms), `held_ticks` (ticks the controller already had enough), and
-  `ran_empty` (should be 0);
+- `pacing` should be `controller clock`: points are scheduled at the
+  controller's ServoJ playback rate, `clock_ppm`, kept per controller IP in
+  playback.toml `[controller_clock_ppm]`. The real FR20 plays ServoJ ~950
+  ppm slower than the PC sends them (its own clock is only -126 ppm of
+  that, 2026-09-28): paced by the PC's clock the lag grew ~1 ms per s.
+  Start with `"<ip>" = -950.0`; after each run the report's
+  `clock_ppm_suggested` (and a printed line) says what to set it to --
+  `lag_ms_by_window` should then stay flat;
 - `ended` should be `at a hub`;
 - `controller_error` should be null;
 - `skipped` should be 0 (with the queue pacing, a slow send no longer skips);

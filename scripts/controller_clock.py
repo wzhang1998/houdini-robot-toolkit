@@ -9,10 +9,13 @@ cannot be read while streaming: it takes ~300 ms in servo mode).
 Reads the controller's own clock (GetSystemClock, ms, Fairino SDK) twice a
 second, each read stamped at the middle of its round trip on this PC's
 clock, and fits a line: the slope minus one is the drift in ppm (a negative
-drift: the controller's clock is slower, so ServoJ points -- played one per
-cmdT on that clock -- are played slower than this PC sends them, and a
-PC-paced stream piles up in the controller; the real FR20 streams showed
-~ -950 ppm, 2026-09-28). SimMachine: ~ +14 ppm.
+drift: the controller's clock is slower). SimMachine: ~ +14 ppm, and that
+is also how much slower it plays ServoJ. The real FR20 (2026-09-28): its
+clock -126 ppm, but it plays ServoJ ~950 ppm slower than cmdT says, so the
+clock is only part of it. What show_stream needs is the playback rate:
+a run's report measures it (clock_ppm_suggested, from its own lag) --
+put that in playback.toml. This tool gives a first value, or checks the
+clock alone.
 
     python scripts/controller_clock.py --self-test
 """

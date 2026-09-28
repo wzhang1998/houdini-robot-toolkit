@@ -776,8 +776,8 @@ def main(argv=None):
         return 1
     clock_ppm = a.clock_ppm if a.clock_ppm is not None else toml_clock_ppm(ip)
     if clock_ppm is None:
-        print("no clock calibration for %s: the PC's clock paces (the controller's lag may grow). "
-              "Measure it: uv run scripts/controller_clock.py --ip %s --write" % (ip, ip))
+        print("no playback-rate calibration for %s: the PC's clock paces (the controller's lag may grow). After this "
+              "run, put the report's clock_ppm_suggested in playback.toml [controller_clock_ppm] \"%s\"" % (ip, ip))
     cmds = Commands(runner, speed)
     osc = None
     if a.osc:
@@ -808,6 +808,9 @@ def main(argv=None):
                                        "send_ms_p95", "max_late_ms", "controller_error", "pacing", "clock_ppm",
                                        "lag_ms_by_window", "clock_ppm_suggested")}
     print(json.dumps(summary, indent=1))
+    if out.get("clock_ppm_suggested") is not None and abs(out["clock_ppm_suggested"] - (clock_ppm or 0.0)) > 50:
+        print('the lag drifted: set playback.toml [controller_clock_ppm] "%s" = %.1f (was %s)'
+              % (ip, out["clock_ppm_suggested"], clock_ppm))
     print("log:", base + ".json")
     return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
 
