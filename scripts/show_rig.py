@@ -939,7 +939,7 @@ def load_config(node=None):
             node.parm("canvas_facing").set(round(math.degrees(math.atan2(c["normal"][1], c["normal"][0])), 3))
             node.parmTuple("canvas_size").set(c["size"])
             node.parm("canvas_thickness").set(c.get("thickness", 0.02))
-            if node.parm("frame_size") is not None:
+            if node.parmTuple("frame_size") is not None:
                 node.parmTuple("frame_size").set(c.get("frame_size", (0.0, 0.0)))
                 node.parm("frame_depth").set(c.get("frame_depth", 0.0))
     node.parm("zones").set(len(zones))
@@ -1024,7 +1024,7 @@ def scene_parts(node=None):
         canvas = {"center": _r(node.parmTuple("canvas_center").eval()),
                   "normal": [round(math.cos(a), 4), round(math.sin(a), 4), 0.0],
                   "size": _r(node.parmTuple("canvas_size").eval(), 3), "thickness": round(node.evalParm("canvas_thickness"), 4)}
-        if node.parm("frame_size") is not None and max(node.parmTuple("frame_size").eval()) > 0:
+        if node.parmTuple("frame_size") is not None and max(node.parmTuple("frame_size").eval()) > 0:
             canvas["frame_size"] = _r(node.parmTuple("frame_size").eval(), 3)
             canvas["frame_depth"] = round(node.evalParm("frame_depth"), 4)
     return {
