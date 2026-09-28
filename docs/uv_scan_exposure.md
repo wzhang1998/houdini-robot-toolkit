@@ -32,6 +32,37 @@ addressable UV strips exist: GS8208 at 395 nm, 60/m, 12 V, 14.4 W/m
 WS2811 UV strips switch LEDs in groups of 3-6. A 395 nm 5050 LED gives
 ~45-50 mW of UV at 50 mA ([LEDWV](https://www.ledwv.com/uv/uv-leds-c-19/uv-led-smd-5050-395nm-p-757.html)).
 
+### The strip bought: Adafruit 5722
+
+[Adafruit High Density NeoPixel UV LED Strip, 60 LED/m, 1 m](https://www.adafruit.com/product/5722)
+([LED datasheet](https://cdn-shop.adafruit.com/product-files/5722/5722_datasheet.pdf)):
+
+- 60 UV LEDs per metre (pitch 16.7 mm), each a 5050 package of three InGaN dies
+  on a WS2811 driver: individually addressable, NeoPixel protocol; R, G and B
+  drive the three dies -- set all three alike for 0-255 brightness.
+- **395 nm** dominant (390-400), viewing angle 2 theta = 120 deg; 20 mA a die,
+  60 mA an LED: ~3.6 A a metre at full brightness, **5 V only** (over 6 V
+  destroys the strip). Weatherproof sheathing, a 2-pin JST SM at each end, cut
+  lines every LED.
+- Radiant (UV) power is not given (mcd means little at 395 nm); ~50 mW an LED
+  at full current is typical of the class, ~3 W/m -- the figure used below.
+
+For the rig (ours): 3.6 A at 5 V through the arm's cable wants a thick pair
+(or the supply at the tool) and power fed at both ends; the 800 kHz data line
+over the arm's few metres wants a 5 V level shifter at the controller and
+perhaps a differential link; the cable's J6 range is +-150 deg
+(`profiles/fr20.json` tool.cable_j6_deg). 395 nm charges strontium aluminate
+well; it is weak for cyanotype.
+
+**A strip that fits between the rails**: cut at 53 LEDs it is ~0.885 m, under
+the frame's 0.902 m opening, and can pass ~1 cm from the paper (sharp lines,
+neighbours blend at ~1 x pitch) -- but then the scan cannot run up over the
+side rails either: it would come straight in at the opening's left edge and
+leave straight out at the right, its ramps over the paper, with the LEDs'
+brightness following the speed (dose = P/v kept even: a laser cutter's
+"dynamic power", GRBL's M4 mode). The whole 1 m strip passes over the rails
+at 6 cm (now).
+
 ## Distance and dose (ours)
 
 For a line of wide-angle (~120 deg) LEDs with UV power P_L per metre at a
