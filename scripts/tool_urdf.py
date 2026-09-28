@@ -13,7 +13,9 @@ the tool's working point (the LED face of the strip).
     write(tool, path)      one link per box (visual = collision), fixed to the mount; the TCP link
     to_stl(tool, path)     the boxes as one STL in mm, for the controller's tool model (WebApp)
 
-    python scripts/tool_urdf.py --stl assets/tools/led_strip.urdf assets/tools/led_strip.stl
+    python scripts/tool_urdf.py --stl assets/tools/led_strip.urdf assets/tools/led_strip.stl        (mm, CAD)
+    python scripts/tool_urdf.py --stl assets/tools/led_strip.urdf assets/tools/led_strip_m.stl m    (m: the
+        Fairino WebApp's tool model -- in mm it shows 1000x too large)
 
 The robot's profile names its tool file ("tool": {"urdf": ...}); collision.py
 reads it, so every check sees the tool. robot_show's Tool page edits it in
@@ -224,7 +226,8 @@ def self_test():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4 and sys.argv[1] == "--stl":      # python scripts/tool_urdf.py --stl tool.urdf out.stl
-        print("wrote", to_stl(read(sys.argv[2]), sys.argv[3]))
+    if len(sys.argv) >= 4 and sys.argv[1] == "--stl":      # python scripts/tool_urdf.py --stl tool.urdf out.stl [m]
+        m = len(sys.argv) > 4 and sys.argv[4] == "m"         # metres: the controller WebApp's 3D view reads them so
+        print("wrote", to_stl(read(sys.argv[2]), sys.argv[3], scale=1.0 if m else 1000.0), "in", "m" if m else "mm")
         sys.exit(0)
     sys.exit(0 if self_test() else 1)
