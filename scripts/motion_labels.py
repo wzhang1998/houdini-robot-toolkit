@@ -66,16 +66,29 @@ ACTIONS = {
 #
 # Fitted by fit_cal() on choreo.calibration_set() -- single-action phrases,
 # every action, seeds 0-7, from HOME, the rest hub and a low hub, with the
-# animation principles on, at the profile's acceleration limits (J1-J3 300,
-# J4-J6 600 deg/s^2). Refit after changing choreo.py or the limits with
+# animation principles and the dynamics on, at the profile's acceleration
+# limits (J1-J3 300, J4-J6 600 deg/s^2). Refit after changing choreo.py or
+# the limits with
 #   python scripts/motion_labels.py --calibrate
-# and paste the printed CAL here. 2026-09-27: 185/192 phrases agree, 91/96 on
-# held-out seeds, 8/8 actions by majority (wring -> slash the main confusion).
-# History: 2026-09-24 hand-set at 150 deg/s^2 (weight 5, time 3.4, space
-# 0.85, flow 0.4); at 300/600 that read float as flick / slash and slash as
-# punch (109/144 phrases, float 7/18, slash 11/18).
-CAL = {"weight": (1.9532, 1.074), "time": (1.3859, 1.0567, 0.4181), "space": (0.9217, 0.9905, 0.0758),
-       "flow": (0.415, 0.136)}
+# and paste the printed CAL here -- or keep this one when a refit does not
+# read held-out seeds better. 2026-09-27 (b), after choreo's dynamics
+# (levels, sizes, tempo curves, accents), fitted mid-way through them and
+# kept: on the final phrases 179/192 agree, 92/96 held out, 8/8 actions by
+# majority; on seeds 12-27 (384 phrases) 360 agree, every action >= 43/48
+# (punch -> press, slash / wring -> each other, flick -> float the main
+# confusions). A refit then read 365/384 but dab and wring 41/48. The
+# previous CAL read the new phrases 83/96, flick 5/12. The light class's
+# space centre moved up (0.92 -> 0.99): a flick or float now rides a slow
+# level carriage, which straightens its joint path, so only a dab (no
+# level change under it) stays above it; the flow centre moved down
+# (0.42 -> 0.16): fewer still frames. Both shift the labels of clips from
+# other generators (gestures, paths) towards indirect and bound.
+# History: 2026-09-27 (a) 185/192, 91/96 (principles on, no dynamics).
+# 2026-09-24 hand-set at 150 deg/s^2 (weight 5, time 3.4, space 0.85, flow
+# 0.4); at 300/600 that read float as flick / slash and slash as punch
+# (109/144 phrases, float 7/18, slash 11/18).
+CAL = {"weight": (1.8838, 0.871), "time": (1.3705, 1.0661, 0.3751), "space": (0.989, 0.9933, 0.0105),
+       "flow": (0.1551, 0.147)}
 
 
 def _pct(xs, p):

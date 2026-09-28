@@ -58,6 +58,44 @@ With them a phrase is held to PLAN_SAFETY of the speed / acceleration
 limits and LIMIT_MARGIN inside the joint limits; the labels were
 calibrated with them on (motion_labels.CAL, from calibration_set()).
 
+Dynamics (on by default; each switched off by a spec key, and with all
+four off -- levels False, size False, tempo "steady", syncopate False,
+what random_spec(dynamics=False) writes -- a phrase is the one it was
+before them, frame for frame):
+
+    levels     the phrase travels through the kinesphere's levels: each
+               bar has a level (LEVEL_Z: low 0.72, mid 1.1, high 1.45 m TCP
+               height), different from the one before -- a sink to low
+               then a rise to high. A strong bar gets there with the whole
+               arm, riding its travels (kinesphere poses at the level's
+               height; a punch or slash in strikes kept to an arm jab of
+               _jab_max, 20 deg, so they stay sudden); a glide rides its
+               travels too, slowly enough to stay light
+               (LIGHT_LEVEL_DEG_S); a float or flick has it carried under
+               the whole bar (a slow "travel_level", wandering in the
+               wrist); a dab stays where it is (a level change under it
+               read flick or glide). Poses up high reach less far; a
+               phrase whose TCP leaves TCP_Z (0.4-1.58 m: the lab
+               controller's zone ends at 1.6) is planned again.
+    size       each bar's amplitude from its effort (_size): strong and
+               sudden big (~1.5), light and sustained small (~0.5), with
+               a spread -- oscillations, wrist moves and jabs scale by it
+               (a jab only up to _jab_max: a longer strike reads press)
+    tempo      a tempo curve over the moves: steady, accelerando,
+               ritardando, or a freeze (two still beats) then a burst; a
+               sustained move is never quicker than the beat, nor shorter
+               than SUSTAIN_S (3 s a wave, 2 s a travel) -- quicker, a
+               float read flick
+    syncopate  one sudden move pushed off the beat by half a beat
+    accents    a bar with "moves": 1 is one move and home (random_spec
+               makes most one-bar phrases accents: 3-5 s when sudden,
+               half-beat rests at the ends)
+
+A phrase longer than MAX_S (12 s per two bars) is played up to 0.85x
+faster, or planned again -- after two tries with one move in each
+sustained bar, then in every bar; one shorter than MIN_S (3 s) ends in
+stillness; one where no travel found a target is planned again.
+
 Every phrase starts and ends at rest in HOME, so clips chain -- or at the
 pose in spec["start"] (a show's hub pose). A clip must
 play at its designed speed (fairino_player's measure) and clear the cell
@@ -68,6 +106,7 @@ detours, softer attacks, so the beat is kept -- and only then the tempo.
     make_clip(spec, seed, env)    -> motion_clip dict with labels
     random_spec(rng, ...)         -> a phrase spec
     calibration_set(kin, seeds)   -> single-action phrases for motion_labels.fit_cal
+    hub_sweep(kin, env, ...)      -> phrases as show.hub_clips makes them, measured
 
 Pure Python. Tests: python scripts/choreo.py
 """
@@ -101,6 +140,24 @@ LEVELS = {"low": 0.7, "mid": 1.1, "high": 1.6}
 PLAN_SAFETY = 0.85                                    # fraction of the joint limits a plan may use
 AUDIENCE = (-3.0, 0.0, 1.4)
 LIMIT_MARGIN = 3.0                                    # degrees inside the joint limits
+# the level contour's TCP heights: inside the controller's work zone (TCP z
+# 0.1-1.6 m in the lab) and the show's operating range, with room for the
+# moves on top (LEVELS["high"] is a kinesphere point, often past 1.6 m)
+LEVEL_Z = {"low": 0.72, "mid": 1.1, "high": 1.45}
+# how far a bar may change level (m), by the elbow (Kin.level_shift): the
+# whole arm sinks and rises for a strong bar (its kinesphere travels aim at
+# the level's height anyway); a light one does it slowly (sustained) or a
+# little (sudden: a flick; a dab not at all)
+LEVEL_DZ = {"strong": 0.8, "light_sustained": 0.38, "light_sudden": 0.16}
+PROX_MASS = (4.0, 4.0, 2.5)                           # motion_labels.MASS[:3]: its weight measure
+LIGHT_LEVEL_DEG_S = 5.0                               # peak mass-weighted J1-J3 speed of a light level change
+                                                      # (motion_labels reads ~6.5 deg/s as strong)
+TEMPOS = ("steady", "accel", "rit", "freeze")
+TCP_Z = (0.4, 1.58)                                   # m: a phrase with levels stays in this band (spec["tcp_z"])
+MAX_S = 12.0                                          # s per 2 bars: ... played faster (to 0.85x) or re-planned to fit
+                                                      # (spec["max_s"]; the show's window)
+MIN_S = 3.0                                           # s: ... and lasts at least this (a still end)
+SUSTAIN_S = 3.0                                       # s: a sustained wave lasts at least this, a travel 2/3 of it
 
 
 def efforts_of(action, flow=0.0):
@@ -229,12 +286,13 @@ class Kin:
         _, t = CL.capsules(self.col, q)
         return t
 
-    def pose(self, level, direction, reach, aim, near, rng):
+    def pose(self, level, direction, reach, aim, near, rng, z=None):
         """Joint pose putting the TCP at the kinesphere point, tool aimed;
-        the IK branch nearest `near`. None when unreachable."""
+        the IK branch nearest `near`. None when unreachable. z: the TCP
+        height to use instead of the level's (LEVELS)."""
         az = math.radians(DIRECTIONS[direction] + rng.uniform(-10, 10))
         r = reach
-        z = LEVELS[level] + rng.uniform(-0.1, 0.1)
+        z = (LEVELS[level] if z is None else z) + rng.uniform(-0.1, 0.1)
         p = (-r * math.cos(az), -r * math.sin(az), z)       # front = -X, left = -Y
         if aim == "down":
             d = (0.0, 0.0, -1.0)
@@ -255,6 +313,48 @@ class Kin:
             return None
         q = list(best["q"])
         return [b - 360.0 * round((b - a) / 360.0) for a, b in zip(near, q)]
+
+    def level_shift(self, q, dz, keep_reach=True):
+        """q with the TCP raised (dz > 0) or lowered by dz metres: the elbow
+        (J3) sinks or lifts the forearm, the shoulder (J2) keeps the
+        horizontal reach when keep_reach (a whole-arm move; without, the
+        reach drifts a little and the shoulder stays), J4 turns back what
+        J2 + J3 turned so the tool keeps its pitch (the three axes are
+        parallel). Newton steps on the TCP; None when it does not get
+        within 2 cm (out of reach from this pose)."""
+        t0 = self.tcp(q)
+        zg, rg = t0[2] + dz, math.hypot(t0[0], t0[1])
+        q = list(q)
+        h = 0.5
+        for _ in range(5):
+            t = self.tcp(q)
+            r = math.hypot(t[0], t[1])
+            ez, er = zg - t[2], rg - r
+            if abs(ez) < 0.003 and (not keep_reach or abs(er) < 0.01):
+                break
+            cols = []
+            for j in (1, 2):
+                qq = list(q)
+                qq[j] += h
+                qq[3] -= h
+                tt = self.tcp(qq)
+                cols.append(((tt[2] - t[2]) / h, (math.hypot(tt[0], tt[1]) - r) / h))
+            if keep_reach:
+                (a, c), (b, d) = cols
+                det = a * d - b * c
+                if abs(det) < 1e-9:
+                    return None
+                d2, d3 = (d * ez - b * er) / det, (a * er - c * ez) / det
+            else:
+                if abs(cols[1][0]) < 1e-6:
+                    return None
+                d2, d3 = 0.0, ez / cols[1][0]
+            if max(abs(d2), abs(d3)) > 60.0:
+                return None
+            q[1] += d2
+            q[2] += d3
+            q[3] -= d2 + d3
+        return q if abs(self.tcp(q)[2] - zg) < 0.02 else None
 
 
 # --------------------------------------------------------------------------
@@ -278,38 +378,74 @@ AIMS = {"punch": "out", "slash": "out", "press": "down", "wring": "out",
 OSCILLATORS = ("wave_p", "wave_d", "sway", "twist", "bounce", "look")
 
 
-def random_spec(rng, bars=None, actions=None, flow=None, bpm=None):
-    """A phrase: 2-4 bars, one action each (repeats and contrasts), a tempo
-    that suits the actions, a flow."""
-    n = bars or rng.choice((2, 3, 3, 4))
+def random_spec(rng, bars=None, actions=None, flow=None, bpm=None, dynamics=True):
+    """A phrase: bars of one action each (repeats and contrasts), a tempo
+    that suits the actions, a flow. With dynamics (default): 1-3 bars (a
+    one-bar accent as often as a longer phrase), 70-140 bpm (sudden actions
+    faster), a tempo curve (TEMPOS: steady, accelerando, ritardando, a
+    freeze then a burst) and, when a bar is sudden, maybe a syncopated
+    accent; levels and sizes are drawn by the planner (it knows the start
+    pose). dynamics=False: the phrase as before -- 2-4 bars, 60-125 bpm,
+    and the tempo, levels, sizes and syncopation switched off."""
+    n = bars or rng.choice((1, 1, 2, 2, 3) if dynamics else (2, 3, 3, 4))
     names = list(ACTIONS)
     acts = actions or [rng.choice(names) for _ in range(n)]
     sudden = sum(ACTIONS[a][1] > 0 for a in acts) / float(len(acts))
-    return {"bars": [{"action": a} for a in acts],
-            "bpm": bpm or int(round(rng.uniform(60, 80) + 45 * sudden)),
+    lo, hi = (70, 95) if dynamics else (60, 80)
+    spec = {"bars": [{"action": a} for a in acts],
+            "bpm": bpm or int(round(rng.uniform(lo, hi) + 45 * sudden)),
             "flow": flow if flow is not None else round(rng.uniform(-1, 1), 2)}
+    if not dynamics:
+        spec.update(levels=False, size=False, tempo="steady", syncopate=False)
+        return spec
+    # a freeze-and-burst suits a phrase with a sudden bar; the curves any
+    spec["tempo"] = rng.choice(("steady", "accel", "rit", "freeze", "freeze") if sudden
+                               else ("steady", "steady", "accel", "rit"))
+    spec["syncopate"] = bool(sudden) and rng.random() < 0.5
+    if len(acts) == 1 and rng.random() < (0.9 if sudden else 0.5):
+        spec["bars"][0]["moves"] = 1                  # an accent: one move and home, 3-5 s when sudden
+    return spec
 
 
-def _target(kind, eff, act, cur, kin, rng, tries=16, home=None):
+FLOOR = {"schema": CL.ENV_SCHEMA, "margin_m": 0.05, "objects": [
+    {"name": "floor", "type": "halfspace", "normal": [0, 0, 1], "offset": -0.02, "role": "obstacle"},
+    {"name": "base_plate", "type": "box", "center": [0.0, 0.0, -0.01], "size": [1.2, 1.2, 0.02], "role": "obstacle"}]}
+
+
+def _pose_ok(kin, q):
+    """A planned pose alone: inside the joint limits by LIMIT_MARGIN, clear
+    of the wrist singularity, of itself and of the floor."""
+    return (all(lo + LIMIT_MARGIN < x < hi - LIMIT_MARGIN for x, (lo, hi) in zip(q, kin.limits))
+            and abs(math.sin(math.radians(q[4]))) >= 0.25 and CL.check(kin.col, FLOOR, [0.0], [q])["ok"])
+
+
+def _target(kind, eff, act, cur, kin, rng, tries=16, home=None, size=1.0, level_z=None):
     """Where a travel goes. Strong actions (travel_far / travel_curve): a
     kinesphere pose by IK -- the whole arm moves. Light ones (travel_near):
     the wrist leads -- J4-J6 turn, J2/J3 follow a little, J1 hardly. Every
-    candidate is checked alone against self-collision and the floor."""
-    floor = {"schema": CL.ENV_SCHEMA, "margin_m": 0.05, "objects": [
-        {"name": "floor", "type": "halfspace", "normal": [0, 0, 1], "offset": -0.02, "role": "obstacle"},
-        {"name": "base_plate", "type": "box", "center": [0.0, 0.0, -0.01], "size": [1.2, 1.2, 0.02], "role": "obstacle"}]}
-    for _ in range(tries):
+    candidate is checked alone against self-collision and the floor.
+    size scales a light move's span and a strong sudden one's jab (the
+    effort's amplitude); level_z: kinesphere poses at that TCP height (the
+    bar's level) instead of a random level."""
+    for i in range(tries):
         sudden = eff["time"] > 0
         if kind == "travel_near":
             # drift back towards HOME as well, so light phrases stay centred
             span = [3, 6, 10, 30, 25, 45]
             if sudden:
                 span = [x * 0.4 for x in span]
+            span = [x * size for x in span]
             q = [c + 0.25 * (h - c) + rng.uniform(-s_, s_) for c, h, s_ in zip(cur, home or HOME, span)]
         else:
             reach = 1.25 + 0.15 * eff["weight"] + rng.uniform(-0.15, 0.1)
-            q = kin.pose(rng.choice(("low", "mid", "mid", "high")), rng.choice(list(DIRECTIONS)),
-                         reach, AIMS[act], cur, rng)
+            lv = rng.choice(("low", "mid", "mid", "high"))
+            z = None
+            if level_z is not None:
+                # at the bar's level (up high the arm cannot reach as far);
+                # the last tries at the height it is at
+                z = level_z - 0.04 if i < 2 * tries // 3 else kin.tcp(cur)[2]
+                reach = min(reach, 1.1) if z > 1.3 else reach
+            q = kin.pose(lv, rng.choice(list(DIRECTIONS)), reach, AIMS[act], cur, rng, z=z)
             if q is None or max(abs(a - b) for a, b in zip(q, cur)) > 150:
                 continue
             # a strong move is a whole-arm move: skip poses reached mostly by
@@ -322,15 +458,13 @@ def _target(kind, eff, act, cur, kin, rng, tries=16, home=None):
                 # be quick over a big distance, so a sudden move is a short one
                 # in the same time a move covers distance in proportion to the
                 # acceleration: 7-10 deg at FR20's 150 deg/s^2, up to 3x more
+                # size: up to _jab_max (a longer strike reads sustained)
                 jab = (7.0 + 3.0 * eff["weight"]) * min(3.0, max(1.0, min(kin.acc) / 150.0))
+                jab = min(jab * size, max(jab, _jab_max(kin, eff)))
                 d = max(abs(a - b) for a, b in zip(q, cur))
                 if d > jab:
                     q = [c + (x - c) * jab / d for c, x in zip(cur, q)]
-        if not all(lo + LIMIT_MARGIN < x < hi - LIMIT_MARGIN for x, (lo, hi) in zip(q, kin.limits)):
-            continue
-        if abs(math.sin(math.radians(q[4]))) < 0.25:
-            continue
-        if not CL.check(kin.col, floor, [0.0], [q])["ok"]:
+        if not _pose_ok(kin, q):
             continue
         return q
     return None
@@ -371,68 +505,353 @@ def _caps(seg, kin, beat):
     return [0.45 * a / (w * w) for a in kin.acc]
 
 
-def _plan(spec, kin, rng):
-    """Segments: dicts with t0, t1, kind, params. Returns (segments, poses).
+def _level_name(z):
+    return "low" if z < 0.9 else "high" if z > 1.3 else "mid"
+
+
+def _size(eff, rng):
+    """A bar's amplitude from its effort, with a spread: strong and sudden
+    big (punch ~1.5), light and sustained small (float, glide ~0.5)."""
+    base = 1.0 + 0.3 * eff["weight"] + 0.2 * eff["time"]
+    return round(max(0.35, min(1.8, base * rng.uniform(0.75, 1.3))), 3)
+
+
+def _dynamics(spec, kin, home, rng):
+    """The phrase's dynamics, resolved from the spec (drawing from rng only
+    what is switched on and not given):
+
+        levels     spec["levels"]: True (default: a contour, a level per bar
+                   that differs from the one before -- from the start
+                   pose's level, low <-> high jumps preferred), False (off:
+                   the phrase stays at the start's level), or a list of
+                   level names; bar["level"] overrides
+        sizes      spec["size"]: True (default: _size, from the effort),
+                   False (off: 1.0), or a number; bar["size"] overrides
+        tempo      spec["tempo"]: one of TEMPOS, True (default: drawn),
+                   False (steady)
+        syncopate  spec["syncopate"]: True / False, or absent (default:
+                   half the phrases with a sudden bar); one sudden move is
+                   pushed off the beat by half a beat
+    """
+    bars = spec["bars"]
+    n = len(bars)
+    out = {"levels": [None] * n, "sizes": [1.0] * n, "tempo": "steady", "freeze_at": None, "sync_at": None}
+    lv = spec.get("levels", True)
+    if lv is not False:
+        given = list(lv) if isinstance(lv, (list, tuple)) else [None] * n
+        prev = _level_name(kin.tcp(home)[2])
+        for i, bar in enumerate(bars):
+            g = bar.get("level") or (given[i] if i < len(given) else None)
+            if g is None:
+                opts = [x for x in LEVEL_Z if x != prev]
+                far = [x for x in opts if abs(LEVEL_Z[x] - LEVEL_Z[prev]) > 0.5]
+                g = rng.choice(far) if far and rng.random() < 0.7 else rng.choice(opts)
+            out["levels"][i] = prev = g
+    sz = spec.get("size", True)
+    for i, bar in enumerate(bars):
+        if bar.get("size") is not None:
+            out["sizes"][i] = float(bar["size"])
+        elif sz is True:
+            out["sizes"][i] = _size(efforts_of(bar["action"]), rng)
+        elif sz not in (False, None):
+            out["sizes"][i] = float(sz)
+    bar_of = [i for i, bar in enumerate(bars) for _ in range(_n_moves(bar))]
+    moves = len(bar_of)
+    tempo = spec.get("tempo", True)
+    if tempo is True:
+        tempo = rng.choice(TEMPOS)
+    out["tempo"] = tempo if tempo in TEMPOS else "steady"
+    if out["tempo"] == "freeze" and moves > 1:
+        out["freeze_at"] = rng.randrange(1, moves)
+    sync = spec.get("syncopate")
+    if sync is not False:
+        cands = [i for i in range(moves) if ACTIONS[bars[bar_of[i]]["action"]][1] > 0]
+        if cands and (sync is True or rng.random() < 0.5):
+            out["sync_at"] = rng.choice(cands)
+    return out
+
+
+def _n_moves(bar):
+    """Moves in a bar: two, or one for an accent (bar["moves"] = 1)."""
+    return 1 if bar.get("moves") == 1 else 2
+
+
+def _tempo_factor(dyn, i, n, sustained=False):
+    """Beat length of move i of n, as a factor of the phrase's beat:
+    accelerando 1.25 -> 0.8, ritardando 0.8 -> 1.3, a burst (0.75) after a
+    freeze. A sustained move is never quicker than the beat (its waves
+    at 0.8 of it read sudden): an accelerando up to the beat, a
+    ritardando from it."""
+    u = i / float(max(1, n - 1))
+    f = 1.0
+    if dyn["tempo"] == "accel":
+        f = 1.25 - 0.45 * min(1.0, u)
+    elif dyn["tempo"] == "rit":
+        f = 0.8 + 0.5 * min(1.0, u)
+    elif dyn["tempo"] == "freeze" and dyn["freeze_at"] is not None and i >= dyn["freeze_at"]:
+        f = 0.75
+    return max(f, 1.0) if sustained else f
+
+
+def _prox(dq):
+    """Mass-weighted J1-J3 change (motion_labels' weight measure)."""
+    return sum(m * abs(x) for m, x in zip(PROX_MASS, dq[:3])) / sum(PROX_MASS)
+
+
+def _level_delta(kin, cur, level, eff, size, rng):
+    """(joint change, height it reaches, the level's height) taking the
+    TCP from cur towards the level: as far as the effort allows (LEVEL_DZ,
+    scaled by the bar's size against the effort's own), a whole-arm move
+    for a strong bar, the elbow alone for a light one. A zero change when
+    the pose cannot (a kinesphere travel may still get there: the level's
+    height); for a dab, no level at all."""
+    z = kin.tcp(cur)[2]
+    goal = LEVEL_Z[level] + rng.uniform(-0.05, 0.05)
+    strong, sudden = eff["weight"] > 0, eff["time"] > 0
+    if not strong and sudden and eff["space"] > 0:
+        # a dab is a touch where the arm already is: a level change under
+        # it (whole-bar or riding its travels) reads flick or glide
+        return [0.0] * 6, z, None
+    cap = LEVEL_DZ["strong" if strong else "light_sudden" if sudden else "light_sustained"]
+    nominal = 1.0 + 0.3 * eff["weight"] + 0.2 * eff["time"]
+    cap *= max(0.75, min(1.25, size / nominal))
+    dz = max(-cap, min(cap, goal - z))
+    for f in (1.0, 0.6, 0.35):
+        if abs(dz * f) < 0.04:
+            break
+        q = kin.level_shift(cur, dz * f, keep_reach=strong)
+        if q is not None and _pose_ok(kin, q):
+            return [b - a for a, b in zip(cur, q)], z + dz * f, goal
+    return [0.0] * 6, z, goal
+
+
+def _jab_max(kin, eff):
+    """The longest sudden move of the arm (deg, the one of J1-J3 moving
+    most) that still reads sudden: 20 at FR20's 300 deg/s^2 for a strong
+    one (at 28 a punch read press), in proportion to the acceleration up
+    to 3x."""
+    return (7.0 + 3.0 * eff["weight"]) * min(3.0, max(1.0, min(kin.acc) / 150.0))
+
+
+def _jab(kin, cur, target, eff):
+    """A strike carrying the level: target pulled in towards cur until no
+    arm joint (J1-J3) moves more than _jab_max, each wrist joint then
+    clipped to what it does in the same time (sqrt of its faster
+    acceleration). The arm keeps the whole budget: scaled by the joint
+    moving most of all six, a wrist re-aiming the tool shrank the strike
+    to 0.2 m; arm-first it is ~0.4 m and ~1 m/s. None if that pose is not
+    clear."""
+    lim = _jab_max(kin, eff)
+    d = max(abs(a - b) for a, b in zip(target[:3], cur[:3]))
+    f = min(1.0, lim / d) if d > 0 else 1.0
+    wl = lim * math.sqrt(max(kin.acc[3:]) / min(kin.acc))
+    q = [c + (x - c) * f for c, x in zip(cur, target)]
+    q = q[:3] + [c + max(-wl, min(wl, x - c)) for c, x in zip(cur[3:], q[3:])]
+    return q if _pose_ok(kin, q) else None
+
+
+def _hold(t0, t1, eff, act, bi, beat):
+    """A still beat (the breath goes on): a freeze, a syncopation's rest."""
+    return {"t0": t0, "t1": t1, "kind": "hold", "eff": eff, "act": act, "bar": bi, "quiet": True,
+            "phase": 0.0, "beat": beat, "cap": [1e9] * 6, "lag": 0.0}
+
+
+LEVEL_BY_TRAVEL = ("punch", "press", "slash", "glide", "wring")        # the level rides on the travels
+
+
+def _plan(spec, kin, rng, out=None):
+    """Segments: dicts with t0, t1, kind, params. Returns (segments, total);
+    out (a dict) receives the dynamics drawn (_dynamics).
     A travel takes the fewest whole beats its distance allows at the joint
-    limits (and at its attack), so the phrase stays on the beat grid."""
+    limits (and at its attack), so the phrase stays on the beat grid.
+
+    Dynamics (_dynamics; each switchable in the spec): a bar goes to its
+    level -- for a punch, press, slash, wring or glide the change rides on
+    the bar's travels (split between them; a strike stays one straight
+    move, _jab); for a float or flick a slow "travel_level" carries the
+    whole bar, the moves on top; a dab keeps its level. A light bar
+    changes level slowly enough to stay light (LIGHT_LEVEL_DEG_S). Sizes
+    scale the moves; the tempo curve sets each move's beat; a freeze is
+    two still beats before a burst; a syncopated move is framed by
+    half-beat rests; an accent (one move) has half-beat rests at the ends."""
     beat = 60.0 / spec["bpm"]
     flow = spec.get("flow", 0.0)
     p = _principles(spec)
-    t = beat                                                  # a beat of stillness first
     home = list(spec.get("start") or HOME)
+    # a beat of stillness first (half a beat before an accent's one move)
+    accent = sum(_n_moves(bar) for bar in spec["bars"]) == 1
+    rest = 0.5 * beat if accent else beat
+    t = rest
+    dyn = _dynamics(spec, kin, home, rng)
+    if out is not None:
+        out.update(dyn)
+    dyn_on = dyn["levels"][0] is not None
     cur = list(home)
+    anchor = list(home)                                       # home, carried to the current level
     segs = []
+    nmoves = sum(_n_moves(bar) for bar in spec["bars"])
+    mi = 0
     for bi, bar in enumerate(spec["bars"]):
         act = bar["action"]
         eff = efforts_of(act, flow)
+        size = dyn["sizes"][bi]
         moves = list(MENU[act])
         rng.shuffle(moves)
-        for kind in moves[:2]:
+        if _n_moves(bar) == 1:
+            # an accent: one move, a travel when the bar has one
+            moves = [next((m for m in moves if m.startswith("travel")), moves[0])]
+        moves = moves[:2]
+        bar_t0, bar_segs = t, []
+        D, goal = [0.0] * 6, None
+        if dyn["levels"][bi]:
+            D, _, goal = _level_delta(kin, cur, dyn["levels"][bi], eff, size, rng)
+        n_tr = sum(m.startswith("travel") for m in moves)
+        if any(D) and n_tr == 0 and eff["weight"] > 0:
+            # a strong bar going somewhere travels (a wring of two
+            # oscillators over a slow carriage read slash)
+            moves[-1] = next(m for m in MENU[act] if m.startswith("travel"))
+            n_tr = 1
+        ride = any(D) and act in LEVEL_BY_TRAVEL and n_tr > 0
+        carry = any(D) and not ride
+        # kinesphere travels aim at the level's height when the level rides
+        # on them (even if the elbow alone could not get there), else stay
+        # at the height the arm is at (a carriage takes it)
+        goal = goal if goal is not None and act in LEVEL_BY_TRAVEL and n_tr > 0 else None
+        light = eff["weight"] < 0
+        for kind in moves:
+            b = beat * _tempo_factor(dyn, mi, nmoves, eff["time"] < 0)
+            if b != beat:
+                b = min(max(b, 0.4), 1.0)                      # 60-150 bpm
+            if mi == dyn["freeze_at"]:
+                segs.append(_hold(t, t + 2 * beat, eff, act, bi, beat))    # the freeze
+                t += 2 * beat
+            if mi == dyn["sync_at"]:
+                segs.append(_hold(t, t + 0.5 * b, eff, act, bi, b))        # off the beat
+                t += 0.5 * b
             # oscillators: a whole bar when sustained, half when sudden;
             # travels: two beats, more if the distance needs it
             nb = (4 if eff["time"] < 0 else 2) if kind in OSCILLATORS else 2
-            t0, t1 = t, t + nb * beat
-            seg = {"t0": t0, "t1": t1, "kind": kind, "eff": eff, "act": act, "bar": bi}
+            if _n_moves(bar) == 1 and eff["time"] < 0 and light:
+                nb = 4                                         # a light sustained bar of one move takes the whole bar
+            if dyn_on and eff["time"] < 0:
+                # a sustained move stays slow however quick the tempo: under
+                # 3 s at 90+ bpm a float's wave read flick (a travel: 2 s)
+                need_s = SUSTAIN_S if kind in OSCILLATORS else SUSTAIN_S * 2.0 / 3.0
+                nb = max(nb, int(math.ceil(need_s / b - 1e-9)))
+            t0, t1 = t, t + nb * b
+            seg = {"t0": t0, "t1": t1, "kind": kind, "eff": eff, "act": act, "bar": bi, "size": size}
             if kind.startswith("travel"):
-                target = _target(kind, eff, act, cur, kin, rng, home=home)
+                # riding: this travel's share of the level change, and the
+                # home a light move drifts back to, carried with it
+                base = [c + d / n_tr for c, d in zip(cur, D)] if ride else cur
+                anc = [c + d / n_tr for c, d in zip(anchor, D)] if ride else anchor
+                strike = ride and eff["time"] > 0
+                target = _target(kind, eff, act, base, kin, rng, home=anc, size=size,
+                                 level_z=(goal if goal is not None else kin.tcp(cur)[2]) if dyn_on else None)
+                if target is not None and strike:
+                    # a strike carrying the level stays a jab (a longer one
+                    # is slower at the acceleration limits, and reads press)
+                    target = _jab(kin, cur, target, eff)
                 if target is None:
                     seg["kind"] = "hold"
                 else:
+                    anchor = anc
                     seg["from"], seg["to"] = list(cur), target
                     seg["detour"] = [rng.uniform(-1, 1) for _ in range(6)]
-                    a = _attack(eff["time"], 1.0)
+                    if accent and eff["time"] > 0:
+                        seg["attack_min"] = 0.55                 # an accent's strike rests less after
+                    a = max(_attack(eff["time"], 1.0), seg.get("attack_min", 0.0))
                     # + room for detour / overshoot: the principles' wind-up and
                     # overshoot (<= 0.27 of the distance) fit in it, so a strike
                     # stays as quick as a plain travel
                     need = _travel_time(kin, cur, target) * 1.25 / a
+                    if ride and light:
+                        # a light bar's level change stays slow: light
+                        need = max(need, 1.875 * _prox([x - y for x, y in zip(base, cur)]) / LIGHT_LEVEL_DEG_S / a)
                     seg["ant"], seg["over"] = _anticipation(eff, p)
-                    nb = max(nb, int(math.ceil(need / beat - 1e-9)))
-                    seg["t1"] = t1 = t0 + nb * beat
+                    nb = max(nb, int(math.ceil(need / b - 1e-9)))
+                    seg["t1"] = t1 = t0 + nb * b
                     seg["acc_min"] = min(kin.acc)
+                    if dyn_on:
+                        seg["lead_max"] = 0.5 * t0                 # a long move leads, not before the phrase
                     cur = target
             elif kind == "look":
                 seg["dir"] = [rng.uniform(-1, 1), rng.uniform(-1, 1)]
             seg["phase"] = rng.uniform(0, 2 * math.pi)
-            seg["beat"] = beat
-            seg["cap"] = _caps(seg, kin, beat)
+            seg["beat"] = b
+            seg["cap"] = _caps(seg, kin, b)
             seg["lag"] = _lag(eff, p)
             if kind in ("twist", "sway"):
                 seg["succ"] = p * math.pi / 3.0                # phase the hand trails by
             segs.append(seg)
+            bar_segs.append(seg)
             t = t1
+            if mi == dyn["sync_at"]:
+                segs.append(_hold(t, t + 0.5 * b, eff, act, bi, b))        # back on the beat
+                t += 0.5 * b
             if flow < -0.3:                                    # bound: a held beat after every move
-                segs.append({"t0": t, "t1": t + beat, "kind": "hold", "eff": eff, "act": act, "bar": bi,
-                             "phase": 0.0, "beat": beat, "cap": [1e9] * 6, "lag": 0.0})
-                t += beat
+                segs.append({"t0": t, "t1": t + b, "kind": "hold", "eff": eff, "act": act, "bar": bi,
+                             "phase": 0.0, "beat": b, "cap": [1e9] * 6, "lag": 0.0})
+                t += b
+            mi += 1
+        if carry:
+            seg = _carriage(kin, cur, D, bar_segs, bar_t0, t, eff, act, bi, p, rng)
+            if seg:
+                segs.append(seg)
+                anchor = [a + y - x for a, x, y in zip(anchor, seg["from"], seg["to"])]
+                cur = seg["to"]
     # home again, then a beat of stillness
     # bound flow arrives in 0.8 of the travel (see _travel): plan for that
     a_home = 0.8 if flow < -0.3 else 1.0
-    nb = max(2, int(math.ceil(_travel_time(kin, cur, home) * 1.1 / a_home / beat - 1e-9)))
+    b = beat * _tempo_factor(dyn, nmoves - 1, nmoves)
+    if b != beat:
+        b = min(max(b, 0.4), 1.0)
+    need = _travel_time(kin, cur, home) * 1.1 / a_home
+    if dyn_on and all(ACTIONS[x["action"]][0] < 0 for x in spec["bars"]):
+        # a light phrase comes home as lightly as it left
+        need = max(need, 1.875 * _prox([x - y for x, y in zip(home, cur)]) / LIGHT_LEVEL_DEG_S / a_home)
+    nb = max(2, int(math.ceil(need / b - 1e-9)))
     glide = efforts_of("glide", flow)
-    segs.append({"t0": t, "t1": t + nb * beat, "kind": "travel_home", "from": list(cur), "to": list(home),
+    segs.append({"t0": t, "t1": t + nb * b, "kind": "travel_home", "from": list(cur), "to": list(home),
                  "eff": glide, "act": "glide", "detour": [0.0] * 6, "phase": 0.0,
-                 "beat": beat, "cap": [1e9] * 6, "lag": _lag(glide, p)})
-    return segs, t + (nb + 1) * beat
+                 "beat": b, "cap": [1e9] * 6, "lag": _lag(glide, p)})
+    total = t + nb * b + rest
+    if dyn_on:
+        total = max(total, MIN_S)                             # an accent is still a phrase: 3 s at least
+    return segs, total
+
+
+def _carriage(kin, cur, D, bar_segs, t0, t1, eff, act, bi, p, rng):
+    """A slow level change under a whole bar ("travel_level"): sustained
+    over the bar, at most what a light bar may do (LIGHT_LEVEL_DEG_S) and
+    what the joints can in that time, wandering (a detour) when the bar is
+    indirect -- for a light bar in the wrist only; every pose the bar
+    travels to is checked with it added. None when nothing fits."""
+    span = t1 - t0
+    light = eff["weight"] < 0
+    f = 1.0
+    if light:
+        f = min(f, LIGHT_LEVEL_DEG_S * span / 1.875 / max(1e-9, _prox(D)))
+    T = _travel_time(kin, [0.0] * 6, D) * 1.1
+    if T > span:
+        f = min(f, (span / T) ** 2)
+    ends = [s["to"] for s in bar_segs if "to" in s] or [cur]
+    for _ in range(3):
+        d = [x * f for x in D]
+        if max(abs(x) for x in d) < 1.0:
+            return None
+        if all(_pose_ok(kin, [a + x for a, x in zip(q, d)]) for q in ends):
+            sust = dict(eff, time=-1.0)
+            # (half a travel's: under a whole bar the full one lifted the TCP past 2 m)
+            det = [0.0] * 6
+            if eff["space"] < 0:
+                det = [0.5 * rng.uniform(-1, 1) * (j >= 3 or not light) for j in range(6)]
+            return {"t0": t0, "t1": t1, "kind": "travel_level", "from": list(cur),
+                    "to": [a + x for a, x in zip(cur, d)], "eff": sust, "act": act, "bar": bi,
+                    "detour": det, "phase": 0.0, "beat": span, "cap": [1e9] * 6,
+                    "lag": _lag(sust, p), "acc_min": min(kin.acc), "lead_max": 0.5 * t0}
+        f *= 0.5
+    return None
 
 
 def _offsets(seg, tt, k):
@@ -444,7 +863,7 @@ def _offsets(seg, tt, k):
         return None
     e = seg["eff"]
     dur = seg["t1"] - seg["t0"]
-    amp = (0.65 + 0.35 * e["weight"]) * k                     # light 0.3 .. strong 1.0
+    amp = (0.65 + 0.35 * e["weight"]) * k * seg.get("size", 1.0)   # light 0.3 .. strong 1.0, x size
     cap = seg.get("cap", [1e9] * 6)
     A = lambda j, design: min(design * amp, cap[j] * k)
     env = _envelope(u)
@@ -488,7 +907,7 @@ def _offsets(seg, tt, k):
         off[3] += A(3, 25.0) * seg["dir"][0] * s
         off[4] += A(4, 20.0) * seg["dir"][1] * s
     elif kind == "hold":
-        if e["flow"] > 0.2:                                   # free: breathe
+        if e["flow"] > 0.2 and not seg.get("quiet"):          # free: breathe (a freeze does not)
             off[1] += 1.2 * math.sin(2 * math.pi * u) * env
             off[2] -= 1.5 * math.sin(2 * math.pi * u) * env
     else:
@@ -522,8 +941,8 @@ def _travel(seg, tt, k, flow, lags=None):
     e = seg["eff"]
     dur = seg["t1"] - seg["t0"]
     # free flow starts the move a quarter-beat early and lets it overlap
-    lead = 0.12 * dur * max(0.0, flow)
-    a = _attack(e["time"], k)
+    lead = min(0.12 * dur * max(0.0, flow), seg.get("lead_max", 1e9))
+    a = max(_attack(e["time"], k), seg.get("attack_min", 0.0))
     if flow < -0.3:
         a = min(a, 0.8)                                       # bound: arrive, then be still
     if lags is not None:
@@ -617,9 +1036,30 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
     margin = LIMIT_MARGIN if p > 0 else 1.0
     if p > 0:
         safety = min(safety, PLAN_SAFETY)
+    sp = spec
     for attempt in range(max_tries):
-        segs, total = _plan(spec, kin, rng)
+        dyn = {}
+        segs, total = _plan(sp, kin, rng, out=dyn)
+        levels = dyn["levels"][0] is not None
+        if levels and all(s["kind"] in ("hold", "travel_home") for s in segs) and attempt < max_tries - 1:
+            info["tries"].append("nothing moves (no target reached)")
+            continue
+        band = spec.get("tcp_z", TCP_Z if levels else None)
+        max_s = spec.get("max_s", MAX_S * max(1.0, len(spec["bars"]) / 2.0) if levels else None)
         k, bpm_scale = 1.0, 1.0
+        if max_s and total > max_s:
+            if total * 0.85 > max_s and attempt < max_tries - 1:
+                info["tries"].append("%.1f s, longer than %g s" % (total, max_s))
+                # too long twice: one move in each sustained bar (a whole
+                # bar each), then in every bar -- rather than playing a
+                # sustained phrase so fast it reads sudden
+                if attempt >= 1:
+                    sust = attempt < 3
+                    sp = dict(sp, bars=[dict(b, moves=1) if "moves" not in spec["bars"][i]
+                                        and (not sust or ACTIONS[b["action"]][1] < 0) else b
+                                        for i, b in enumerate(sp["bars"])])
+                continue
+            bpm_scale = max(0.85, max_s / total)              # a long phrase, a little faster
         for _ in range(8):
             ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale, spec.get("start"), p)
             if any(not lo + margin < x < hi - margin for q in qs for x, (lo, hi) in zip(q, kin.limits)):
@@ -636,13 +1076,18 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
         else:
             info["tries"].append("could not fit the limits")
             continue
+        if band:
+            z = [c[2] for c in M._tcp_path("fr20", qs[::2])]
+            if min(z) < band[0] or max(z) > band[1]:
+                info["tries"].append("TCP height %.2f..%.2f m outside %g..%g" % (min(z), max(z), band[0], band[1]))
+                continue
         if env is not None:
             rep = CL.check(kin.col, env, ts, qs)
             if not rep["ok"]:
                 info["tries"].append(CL.describe(rep))
                 continue
             info["collision"] = rep
-        info.update(intensity=round(k, 3), tempo_scale=round(bpm_scale, 3),
+        info.update(dynamics=dyn, intensity=round(k, 3), tempo_scale=round(bpm_scale, 3),
                     bpm_played=round(spec["bpm"] / bpm_scale, 1), segments=[
                         {"t0": round(s["t0"] * bpm_scale, 3), "t1": round(s["t1"] * bpm_scale, 3), "kind": s["kind"],
                          "action": s["act"], "bar": s.get("bar")} for s in segs], attempt=attempt)
@@ -669,7 +1114,8 @@ def make_clip(spec, seed=0, env=None, clip_id=None, kin=None, tags=()):
     xs = list(zip(*clip["tcp"]))
     clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
     clip["meta"]["duration_s"] = round(ts[-1], 6)
-    clip["style"].update({k: info[k] for k in ("intensity", "tempo_scale", "bpm_played", "segments", "principles")})
+    clip["style"].update({k: info[k] for k in ("intensity", "tempo_scale", "bpm_played", "segments", "principles",
+                                               "dynamics")})
     clip["style"]["acc_limit"] = kin.acc
     M.measure(clip, acc=kin.acc)
     if env is not None:
@@ -749,6 +1195,64 @@ def dance_wedge(n=48, seed=7):
     return out[:n]
 
 
+REST_HUB = CAL_STARTS["rest"]
+
+
+def hub_sweep(kin, env=None, hubs=None, n=16, seed=11, dynamics=True, bars=(1, 2), duration_s=(3.0, 12.0),
+              tcp_z=(0.35, 1.6), every=3):
+    """Phrases as show.hub_clips makes them for its hubs (default: the
+    party's rest hub and HOME): random_spec (bars 1-2, its own tempo),
+    started at the hub with J1 = 0, then turned by the hub's J1. Kept when
+    made, within duration_s, the TCP within tcp_z (the show's range) and,
+    with env, clear of the room (every `every`-th frame: a cheap check;
+    the show checks every frame). Rows: {"hub", "spec", "ok", "why", "dur",
+    "zspan", "extent" (the TCP's largest box side), "v_mean", "v_peak"
+    (TCP, m/s), "action" (measured), "ts", "qs" (turned), "hub_q", "info"}."""
+    import motion_labels as L
+    rows = []
+    for hi, (name, hub) in enumerate((hubs or {"rest": REST_HUB, "home": HOME}).items()):
+        rng = random.Random(seed + hi)
+        local = [0.0] + list(hub[1:])
+        for _ in range(n):
+            spec = random_spec(rng, bars=rng.choice(bars), dynamics=dynamics)
+            spec["start"] = local
+            ts, qs, info = phrase(spec, seed=rng.randrange(10 ** 9), kin=kin)
+            row = {"hub": name, "hub_q": list(hub), "spec": spec, "info": info, "ok": False, "why": None}
+            rows.append(row)
+            if ts is None:
+                row["why"] = "no phrase: " + "; ".join(info["tries"][-1:])
+                continue
+            qs = [[q[0] + hub[0]] + list(q[1:]) for q in qs]
+            tcp = M._tcp_path("fr20", qs)
+            box = [max(a) - min(a) for a in zip(*tcp)]
+            v = [math.dist(tcp[i + 1], tcp[i]) / (ts[i + 1] - ts[i]) for i in range(len(ts) - 1)]
+            z = [c[2] for c in tcp]
+            row.update(ts=ts, qs=qs, dur=ts[-1], zspan=box[2], extent=max(box), v_mean=sum(v) / len(v), v_peak=max(v),
+                       action=L.efforts(L.raw_measures(ts, qs, tcp))["action"])
+            if not duration_s[0] <= ts[-1] <= duration_s[1]:
+                row["why"] = "%.1f s" % ts[-1]
+            elif min(z) < tcp_z[0] or max(z) > tcp_z[1]:
+                row["why"] = "TCP height %.2f..%.2f m" % (min(z), max(z))
+            elif env is not None:
+                rep = CL.check(kin.col, env, ts[::every] + ts[-1:], qs[::every] + qs[-1:])
+                row["why"] = None if rep["ok"] else CL.describe(rep)[:80]
+            row["ok"] = row["why"] is None
+    return rows
+
+
+def sweep_stats(rows):
+    """Medians and shares of hub_sweep's kept rows."""
+    kept = [r for r in rows if r["ok"]]
+    med = lambda xs: sorted(xs)[len(xs) // 2] if xs else float("nan")  # noqa: E731
+    share = lambda f: sum(1 for r in kept if f(r)) / float(max(1, len(kept)))  # noqa: E731
+    return {"kept": len(kept), "tried": len(rows), "zspan": med([r["zspan"] for r in kept]),
+            "extent": med([r["extent"] for r in kept]), "dur": med([r["dur"] for r in kept]),
+            "short": share(lambda r: r["dur"] <= 5.0), "fast": share(lambda r: r["v_peak"] >= 1.2),
+            "calm": share(lambda r: r["v_peak"] < 0.4), "zspan_03": share(lambda r: r["zspan"] >= 0.3),
+            "dur_range": (min([r["dur"] for r in kept] or [0]), max([r["dur"] for r in kept] or [0])),
+            "bpm_range": (min(r["spec"]["bpm"] for r in rows), max(r["spec"]["bpm"] for r in rows))}
+
+
 if __name__ == "__main__":
     import time
     import motion_labels as L
@@ -804,11 +1308,13 @@ if __name__ == "__main__":
     check("the measured Laban action matches the intended one (8 clips from HOME, at acc %s)" % kin.acc, agree >= 7,
           "%d/8; %s" % (agree, ", ".join("%s->%s" % (a, c["labels"]["measured"]["action"]) for a, c in clips.items()
                                          if c.get("labels") and c["labels"]["measured"]["action"] != a)))
-    rows = calibration_set(kin, seeds=range(20, 24), starts={"rest": CAL_STARTS["rest"]})
+    rows = calibration_set(kin, seeds=range(20, 24))
     conf, n = L.confusion(rows)
     L.print_confusion(conf)
-    check("... and from the party's rest hub, several seeds: >= 7/8 actions by majority",
-          L.majority(conf)[1] >= 7, "%d/8 actions, %d/%d phrases" % (L.majority(conf)[1], n, len(rows)))
+    check("... and single-action phrases (with dynamics) from HOME, the rest hub and a low hub, seeds the "
+          "labels were not fitted on: >= 7/8 actions by majority, >= 85% of phrases",
+          L.majority(conf)[1] >= 7 and n >= 0.85 * len(rows),
+          "%d/8 actions, %d/%d phrases" % (L.majority(conf)[1], n, len(rows)))
     mix = make_clip({"bars": [{"action": "float"}, {"action": "punch"}, {"action": "glide"}], "bpm": 90, "flow": 0.3},
                     seed=4, env=env, kin=kin)
     check("a mixed phrase (float -> punch -> glide) is made and labelled",
@@ -871,8 +1377,10 @@ if __name__ == "__main__":
         segs, total = _plan(spec, kin, random.Random(5))
         ts_a, qs_a = _sample(segs, total, 1.0, 0.0, 1.0, rest, 1.0)
         _, qs_b = _sample(segs, total, 1.0, 0.0, 1.0, rest, 0.0)
+        # (not under a level carriage: that is a second move at the same time)
+        carried = [s for s in segs if s["kind"] == "travel_level"]
         for sg in segs:
-            if "to" in sg:
+            if "to" in sg and not any(c["t0"] - 0.3 < sg["t1"] and sg["t0"] - 0.3 < c["t1"] for c in carried):
                 idx = [i for i, t in enumerate(ts_a) if sg["t0"] - 0.3 <= t <= sg["t1"]]
                 la = L.successive_lag([ts_a[i] for i in idx], [qs_a[i] for i in idx])
                 lb = L.successive_lag([ts_a[i] for i in idx], [qs_b[i] for i in idx])
@@ -901,6 +1409,107 @@ if __name__ == "__main__":
     check("... and the principles keep the labels: the 8 phrases above still measure as intended (>= 7/8)",
           sum(a == b for a, b in labels_on.items()) >= 7,
           ", ".join("%s->%s" % (a, b) for a, b in labels_on.items() if a != b))
+
+    # ---- dynamics: levels, sizes, tempo, accents -------------------------------
+    # a sweep as the show makes a hub's phrases (the rest hub and HOME), in the room
+    t1 = time.time()
+    sw = hub_sweep(kin, env, n=20)
+    st = sweep_stats(sw)
+    print("       sweep: %d/%d kept, z span median %.2f (%.0f%% >= 0.3 m), extent median %.2f, %.1f-%.1f s "
+          "(%.0f%% <= 5 s), peak TCP speed %.0f%% >= 1.2 m/s, %.0f%% < 0.4, %d-%d bpm, %.0f s" % (
+              st["kept"], st["tried"], st["zspan"], 100 * st["zspan_03"], st["extent"], st["dur_range"][0],
+              st["dur_range"][1], 100 * st["short"], 100 * st["fast"], 100 * st["calm"], st["bpm_range"][0],
+              st["bpm_range"][1], time.time() - t1))
+    for r in sw:
+        if not r["ok"]:
+            print("       dropped %s %s: %s" % (r["hub"], "-".join(b["action"] for b in r["spec"]["bars"]), r["why"]))
+    check("hub sweep: >= 80% of the phrases are made, 3-12 s, TCP 0.35-1.6 m high and clear of the room",
+          st["kept"] >= 0.8 * st["tried"], "%d/%d" % (st["kept"], st["tried"]))
+    bad = []
+    for r in sw:
+        if "qs" not in r:
+            continue
+        ts, qs = r["ts"], r["qs"]
+        start = r["hub_q"]
+        lim = P.limiting(ts, qs, 125.0, [v * PLAN_SAFETY for v in kin.vel], [a * PLAN_SAFETY for a in kin.acc])
+        margin = min(min(x - lo, hi - x) for q in qs for x, (lo, hi) in zip(q, kin.limits))
+        pose = max(max(abs(a - b) for a, b in zip(qs[0], start)), max(abs(a - b) for a, b in zip(qs[-1], start)))
+        still = max(max(abs(a - b) for a, b in zip(qs[1], qs[0])), max(abs(a - b) for a, b in zip(qs[-1], qs[-2])))
+        if lim["scale_needed"] > 1.0 or margin < LIMIT_MARGIN or pose > 1e-3 or still > 1e-3:
+            bad.append("%s: x%.3f, %.1f deg inside, %.1e deg from the pose, %.1e deg/frame at an end" % (
+                "-".join(b["action"] for b in r["spec"]["bars"]), lim["scale_needed"], margin, pose, still))
+    check("... every one within the limits at PLAN_SAFETY, LIMIT_MARGIN inside, at rest at its hub at both ends "
+          "(1e-3 deg)", not bad, "; ".join(bad[:4]))
+    check("levels: the TCP height changes >= 0.2 m in the median phrase, >= 0.3 m in >= 30% of them",
+          st["zspan"] >= 0.2 and st["zspan_03"] >= 0.3, "median %.2f m, %.0f%%" % (st["zspan"], 100 * st["zspan_03"]))
+    check("size: the median phrase spans >= 0.35 m", st["extent"] >= 0.35, "%.2f m" % st["extent"])
+    check("rhythm: durations spread over 3-12 s, >= 20% of them accents of <= 5 s, 70-140 bpm",
+          st["dur_range"][0] >= 3.0 - 1e-9 and st["dur_range"][1] <= 12.0 + 1e-9 and st["short"] >= 0.2
+          and st["bpm_range"][0] <= 80 and st["bpm_range"][1] >= 125,
+          "%.1f-%.1f s, %.0f%% <= 5 s, %d-%d bpm" % (st["dur_range"] + (100 * st["short"],) + st["bpm_range"]))
+    check("energy: >= 10% of the phrases peak >= 1.2 m/s at the tool, >= 10% stay under 0.4 m/s",
+          st["fast"] >= 0.1 and st["calm"] >= 0.1, "%.0f%% / %.0f%%" % (100 * st["fast"], 100 * st["calm"]))
+    kept = [r for r in sw if r["ok"]]
+    strong_sudden = [r["v_peak"] for r in kept if all(ACTIONS[b["action"]][:2] == (1, 1) for b in r["spec"]["bars"])]
+    light_sust = [r["v_peak"] for r in kept if all(ACTIONS[b["action"]][:2] == (-1, -1) for b in r["spec"]["bars"])]
+    mid = lambda xs: sorted(xs)[len(xs) // 2] if xs else float("nan")  # noqa: E731
+    check("amplitude follows the effort: strong sudden phrases peak >= 2x faster than light sustained ones",
+          strong_sudden and light_sust and mid(strong_sudden) >= 2.0 * mid(light_sust),
+          "median %.2f vs %.2f m/s (%d / %d phrases)" % (mid(strong_sudden), mid(light_sust), len(strong_sudden),
+                                                        len(light_sust)))
+    single = [r for r in kept if len(set(b["action"] for b in r["spec"]["bars"])) == 1]
+    agree = sum(r["action"] == r["spec"]["bars"][0]["action"] for r in single)
+    check("... and the sweep's single-action phrases measure as intended (>= 75%)",
+          single and agree >= 0.75 * len(single), "%d/%d" % (agree, len(single)))
+    off = sweep_stats(hub_sweep(kin, None, n=12, dynamics=False))
+    check("dynamics=False: the phrases as before -- they change level half as much or less",
+          off["zspan"] <= 0.5 * st["zspan"], "z span median %.2f vs %.2f m" % (off["zspan"], st["zspan"]))
+
+    # a level contour: press sinks low then rises high; a glide sinks and stays light
+    rest_l = [0.0] + REST_HUB[1:]
+    ts, qs, info = phrase({"bars": [{"action": "press"}, {"action": "press"}], "bpm": 90, "flow": 0.0, "start": rest_l,
+                           "levels": ["low", "high"], "tempo": "steady", "syncopate": False}, seed=2, kin=kin)
+    z = [c[2] for c in M._tcp_path("fr20", qs)] if qs else [1.1]
+    check("levels: press low -> high goes below 0.85 m and above 1.3 m", min(z) < 0.85 and max(z) > 1.3,
+          "TCP %.2f..%.2f m" % (min(z), max(z)))
+    ts, qs, info = phrase({"bars": [{"action": "glide"}], "bpm": 80, "flow": 0.0, "start": rest_l, "levels": ["low"]},
+                          seed=2, kin=kin)
+    tcp = M._tcp_path("fr20", qs) if qs else [[0, 0, 1.1]]
+    z = [c[2] for c in tcp]
+    act = L.efforts(L.raw_measures(ts, qs, tcp))["action"] if qs else None
+    check("... a glide sinks >= 0.2 m and still reads glide", max(z) - min(z) >= 0.2 and act == "glide",
+          "%.2f m, %s" % (max(z) - min(z), act))
+    # tempo curves, the freeze, syncopation (plans only)
+    beats = {}
+    for tempo in ("accel", "rit"):
+        segs, _ = _plan({"bars": [{"action": "dab"}] * 2, "bpm": 90, "flow": 0.0, "tempo": tempo, "syncopate": False},
+                        kin, random.Random(1))
+        mv = [s["beat"] for s in segs if s["kind"] not in ("travel_level", "travel_home", "hold")]
+        beats[tempo] = mv
+    check("tempo: an accelerando's beats shorten, a ritardando's lengthen",
+          beats["accel"][0] > beats["accel"][-1] * 1.3 and beats["rit"][0] * 1.3 < beats["rit"][-1],
+          "accel %s, rit %s" % ([round(b, 2) for b in beats["accel"]], [round(b, 2) for b in beats["rit"]]))
+    beat = 60.0 / 110
+    segs, total = _plan({"bars": [{"action": "punch"}] * 2, "bpm": 110, "flow": 0.0, "tempo": "freeze",
+                         "syncopate": False, "start": rest_l}, kin, random.Random(4))
+    frz = [s for s in segs if s.get("quiet")]
+    after = [s for s in segs if frz and s["t0"] >= frz[0]["t1"] - 1e-9 and s["kind"] not in ("travel_level", "hold")]
+    ts, qs = _sample(segs, total, 1.0, 0.0, 1.0, rest_l, 1.0)
+    tcp = M._tcp_path("fr20", qs)
+    held = [math.dist(tcp[i + 1], tcp[i]) * FPS for i, t in enumerate(ts[:-1])
+            if frz and frz[0]["t0"] + 0.3 <= t <= frz[0]["t1"] - 0.05]
+    check("... a freeze holds two beats (the TCP under 2 cm/s) and the moves after it burst at 0.75 of the beat",
+          frz and abs(frz[0]["t1"] - frz[0]["t0"] - 2 * beat) < 1e-9 and held and max(held) < 0.02
+          and after and all(abs(s["beat"] - 0.75 * beat) < 1e-9 for s in after),
+          "hold %.2f s, TCP up to %.3f m/s, %d moves after" % (frz[0]["t1"] - frz[0]["t0"] if frz else 0,
+                                                              max(held) if held else -1, len(after)))
+    segs, _ = _plan({"bars": [{"action": "punch"}] * 2, "bpm": 110, "flow": 0.0, "tempo": "steady", "syncopate": True},
+                    kin, random.Random(4))
+    moves = [s for s in segs if s["kind"] not in ("travel_level", "hold", "travel_home")]
+    off_beat = [s for s in moves if abs(((s["t0"] / beat) % 1.0) - 0.5) < 1e-6]
+    check("... syncopation puts one move on the off-beat (half a beat late), the others on the beat",
+          len(off_beat) == 1 and all(abs(((s["t0"] / beat) + 1e-9) % 1.0) < 1e-6 for s in moves if s not in off_beat),
+          "%d off-beat of %d" % (len(off_beat), len(moves)))
     print("\n%.0f s" % (time.time() - t0))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     sys.exit(1 if fails else 0)
