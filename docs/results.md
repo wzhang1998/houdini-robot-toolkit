@@ -27,6 +27,10 @@ Only **real FR20** rows describe something the arm has actually done.
 | 2026-09-25 | Acceleration probe (`accel_ui.py`), every joint to 900 deg/s^2 with no controller error; tracking 150 -> 900: J1 0.20 -> 0.38, J2 0.24 -> 0.49, J3 0.26 -> 0.63, J4 0.30 -> 0.69, J5 0.29 -> 0.67, J6 0.38 -> 1.34 deg. J1-J3 visibly shake (arm + plywood base) | planned at 150 on every joint | 074bdd0, 0087660 |
 | 2026-09-25 | Planning limits set from it: J1-J3 300, J4-J6 600 deg/s^2 (J1-J3 kept low until the base is bolted to spec) | 150 all joints | 7435161 |
 | 2026-09-25 | Controller interference zone (cube, "work area") stops the arm when the TCP leaves it -- tested with PTP in auto mode (jog ignores it) | -- | (WebApp setting, no code) |
+| 2026-09-28 | **The show (v5 library, 4 hubs) streamed on the real arm** from `show_ui` (Real FR20): 10 min at speed 0.6 and 10 min at speed 1.0, both ended at a hub, no controller error; largest step 78 / 84 % of the velocity limit | SimMachine only before | 4125c7d, 8b1f974 |
+| 2026-09-28 | Skipped ticks: 42 (0.6) and 78 (1.0) single ticks in 10 min, each after one slow ServoJ call (16-31 ms; median send 2.9 ms) -- the controller's XML-RPC, not this PC waking late | SimMachine: 0 | 701d19a (the reasons logged) |
+| 2026-09-28 | Latency grows: the arm's lag behind the commands rises steadily, 104 -> 352 ms over 10 min at 0.6 (~+0.4 ms per s: the controller consumes ServoJ ~400 ppm slower than the PC sends); at 1.0 it rises the same way and drops back where skips cluster (each skipped tick shortens the controller's queue) | SimMachine: ~15 ppm | -- |
+| 2026-09-28 | Path shape, each 20 s window aligned by its own lag: max error 0.43-0.94 deg per joint, RMS <= 0.10 deg (0.6); max 1.3-3.7 deg, RMS <= 0.28 deg (1.0). One constant lag for the whole run showed up to 8 deg -- the drifting lag, not the arm | -- | -- |
 
 Not yet run on the real arm: any dance clip, `--goto-home`, a clip refused by
 the cell check. Dance clips so far: dry-run and SimMachine only.
