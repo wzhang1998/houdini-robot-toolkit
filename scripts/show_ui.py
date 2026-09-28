@@ -24,7 +24,7 @@ Target: SimMachine, or the real FR20. For the real arm the window turns red
 and asks more:
 - a checklist before anything moves: the work area clear, a hand on the
   E-stop, the controller without alarms (ticked again for every run);
-- the speed at most HARDWARE_MAX (0.6; the test plan goes 0.3, then 0.6);
+- the speed starts at 0.3 (the test plan goes 0.3, 0.6, then 1.0);
 - "Move to start": only the checked MoveJ from where the arm is to the
   start hub, at the Move speed (%) set beside it (slow: 3..30 %), then it
   ends -- so Start can begin from the hub;
@@ -54,9 +54,10 @@ DEFAULT_CONFIG = os.path.join(ROOT, "shows", "party.json")
 MOODS = ["", "float", "glide", "wring", "press", "punch", "slash", "dab", "flick"]   # Laban actions
 
 
-HARDWARE_MAX = 0.6                         # the show speed the window allows on the real arm
+HARDWARE_MAX = 1.0                         # the show speed the window allows on the real arm (0.3 first, then up)
 MOVE_VEL = (3.0, 30.0)                     # MoveJ % to the start hub the window allows
 MOVE_VEL_DEFAULT = {"sim": 20.0, "hardware": 10.0}
+REPORT_WAIT_S = 60.0                       # after STOP, the arm stopped: time for the show to write its report
 
 
 def default_ip(target="sim"):
@@ -120,7 +121,7 @@ class ShowLink:
                        "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0}
         self.log = queue.Queue()
         self.asks = queue.Queue()                   # show_stream's questions before the real arm moves
-        self.proc, self.ip, self.target = None, None, None
+        self.proc, self.ip, self.target, self.goto_start = None, None, None, False
         d = dispatcher.Dispatcher()
         for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
                     "time_left", "fault", "skipped", "energy_now", "clip_energy"):
@@ -146,7 +147,7 @@ class ShowLink:
             return
         argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
                            goto_start=goto_start)
-        self.ip, self.target = ip, target
+        self.ip, self.target, self.goto_start = ip, target, goto_start
         self.spawn(argv)
 
     def spawn(self, argv):
@@ -194,15 +195,22 @@ class ShowLink:
     def energy(self, value):
         self.send("/robot/energy", float(value))
 
-    def stop(self, wait_s=5.0):
+    def stop(self, wait_s=None):
         """/robot/stop, and StopMotion straight to the controller on its own
         connection (the show's OSC is not up during the move to the start
-        hub); then wait for the process to end."""
+        hub); then wait for the process to end. The arm is stopped at once;
+        a show run then writes its report (joints first, then seconds of
+        tracking analysis), so it gets up to REPORT_WAIT_S before it is
+        ended -- a Move to start writes none and gets 5 s."""
         if not self.running:
             return
         self.send("/robot/stop", 1)
         if self.ip:
             threading.Thread(target=self._stop_motion, args=(self.ip,), daemon=True).start()
+        if wait_s is None:
+            wait_s = 5.0 if self.goto_start else REPORT_WAIT_S
+        if not self.goto_start:
+            self.log.put("stopping; waiting for the show to write its report (up to %d s)" % wait_s)
         try:
             self.proc.wait(timeout=wait_s)
         except subprocess.TimeoutExpired:
@@ -521,7 +529,7 @@ def self_test():
     go = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", move_vel=5, goto_start=True)
     check("Move to start: only the move, at the speed set, no show",
           "--goto-start" in go and "--osc" not in go and go[go.index("--move-vel") + 1] == "5", go)
-    for show_speed, vel, label in ((0.8, None, "a show speed over %.1f on the real arm is refused" % HARDWARE_MAX),
+    for show_speed, vel, label in ((1.2, None, "a show speed over %.1f on the real arm is refused" % HARDWARE_MAX),
                                    (0.3, 50.0, "a move speed over %g %% is refused" % MOVE_VEL[1])):
         try:
             stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, show_speed, target="hardware", move_vel=vel)

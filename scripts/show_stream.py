@@ -236,7 +236,7 @@ def realtime_priority():
     return "process high, stream thread time-critical" if ok_p and ok_t else "not set (%s, %s)" % (ok_p, ok_t)
 
 
-def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print):
+def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print, analyse=True):
     """The stream loop. The arm must already be at the Runner's start pose.
     Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
     report, not raised."""
@@ -317,7 +317,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
         gc.unfreeze()
     if fault:
         log("STOPPED: %s" % fault)
-    rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed)
+    rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse)
     return rep, ticks_cmd, start
 
 
@@ -367,7 +367,7 @@ def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(
     return out
 
 
-def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed):
+def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse=True):
     ended = "at a hub" if not fault else ("stopped" if fault in OPERATOR_STOPS else "fault")
     rep = {"ended": ended, "fault": fault, "speed": speed,
            "sends": len(ticks_cmd), "skipped": skipped,
@@ -380,17 +380,25 @@ def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard
         rep.update(send_ms_p50=round(st[len(st) // 2], 2), send_ms_p95=round(st[int(len(st) * 0.95)], 2),
                    send_ms_max=round(st[-1], 2), late_over_2ms=sum(1 for x in late_ms if x > 2.0),
                    max_late_ms=round(max(late_ms), 2))
+    rep["feedback_samples"] = len(link.rows)
+    rep["feedback_slow_reads_dropped"] = link.slow_reads
+    rep["controller_error"] = link.error
+    if analyse:
+        add_tracking(rep, start, dt, ticks_cmd, link.samples)
+    return rep
+
+
+def add_tracking(rep, start, dt, ticks_cmd, fb):
+    """Actual vs commanded, after the best lag, and the lag per window, into
+    rep. Seconds of work on a long run (a few million interpolations), so
+    main() writes the raw log first and adds this after."""
     if len(ticks_cmd) > 1:
-        fb = link.samples
         every = max(1, len(fb) // TRACKING_MAX_SAMPLES)
         t0, dense = start + ticks_cmd.row(0)[0] * dt, _dense(ticks_cmd)
         rep.update(P.tracking(t0, dense, dt, fb[::every]))
         rep["tracking_samples_used"] = len(fb[::every])
         rep["lag_ms_by_window"] = lag_by_window(t0, dense, dt, fb)
         rep["lag_window_s"] = LAG_WINDOW_S
-    rep["feedback_samples"] = len(link.rows)
-    rep["feedback_slow_reads_dropped"] = link.slow_reads
-    rep["controller_error"] = link.error
     return rep
 
 
@@ -658,13 +666,19 @@ def main(argv=None):
     guard = Guard(RP.velocity_limits(prof), [tuple(x) for x in prof["robot"]["limits_deg"]], dt, speed)
     link = Link(ip)
     try:
-        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc)
+        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False)
     finally:
         if osc is not None:
             osc.close()
     out.update(rep)
     stamp = time.strftime("%Y%m%d-%H%M%S")
+    # the data first: a report that is interrupted while it analyses still leaves the run behind
     base = write_log(a.log, stamp, out, ticks_cmd, dt, link.samples, start)
+    print("log written: %s (the joints; tracking follows)" % (base + ".json"))
+    sys.stdout.flush()
+    add_tracking(out, start, dt, ticks_cmd, link.samples)
+    with open(base + ".json", "w", newline="\n") as f:
+        json.dump(out, f, indent=1)
     summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
                                        "speed",
                                        "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
