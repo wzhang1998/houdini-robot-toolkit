@@ -199,8 +199,26 @@ triggers and `/robot/stop` were tested too.
 changed (it writes `shows/party.compiled.json`). Film it (see the top of
 this file). Hand on the E-stop.
 
-**Runs, in order** (each asks for `yes` on hardware; the first move to the
-start hub goes through the checked route):
+**With the window** (`uv run scripts/show_ui.py`), the easiest way:
+1. Target **Real FR20** (the window turns red), the controller's IP.
+2. Tick the checklist: area clear, hand on the E-stop, no alarm.
+3. **Move to start**, at Move speed 10 % (3..30 %): a dialog shows where
+   the arm is, the route (checked against the room) and the speed; Yes
+   moves it, nothing else. STOP stops it mid-way (StopMotion straight to
+   the controller).
+4. Show speed 0.3 (the window allows up to 0.6), Minutes 3, tick the
+   checklist again, **Start**. Two dialogs: the (now tiny) move to the
+   start hub, then the plan. Trigger greet / scan, pause / resume from the
+   window; STOP at the end.
+5. Again at 0.6 for 5 min. TouchDesigner can join: it sends to the same
+   port, and "Status also to" sends it the state.
+Tried end to end on SimMachine through the same `--hardware` path
+(2026-09-28): the move to the start hub at 8 %, the show at 0.3, STOP
+during the show and during the move (the arm stopped at once, 115 deg
+short of the hub).
+
+**Or on the command line, in order** (each asks for `yes` on hardware; the
+first move to the start hub goes through the checked route):
 1. `uv run scripts/show_stream.py shows/party.json --hardware --ip <IP> --speed 0.3 --minutes 3`
 2. The same at `--speed 0.6 --minutes 5`.
 3. With TouchDesigner: add `--osc`.

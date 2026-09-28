@@ -201,6 +201,22 @@ class Guard:
                 raise StreamFault("J%d at %.2f deg, outside its limits %g..%g" % (j + 1, x, lo, hi))
 
 
+ASK = "[ask] "                       # a question to a window that started this process (show_ui)
+
+
+def confirm(text, stdin=None, stdout=None):
+    """Ask before moving the real arm. At a terminal: type yes. Started by a
+    window (stdin a pipe): one line `[ask] <text as JSON>` out, one answer
+    line in -- the window shows the text and says yes or no. No answer (end
+    of input) is a no."""
+    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    if stdin.isatty():
+        return input(text + "\nType yes to go on: ").strip().lower() == "yes"
+    stdout.write(ASK + json.dumps(text) + "\n")
+    stdout.flush()
+    return stdin.readline().strip().lower() == "yes"
+
+
 def realtime_priority():
     """Windows: this process at HIGH priority and the calling (stream) thread
     at TIME_CRITICAL, so other programs on the PC -- Houdini, TouchDesigner,
@@ -523,6 +539,18 @@ def self_test():
           any(e.startswith("priority: " + ("process high" if os.name == "nt" else "")) for e in rep["events"]),
           [e for e in rep["events"] if e.startswith("priority")])
 
+    import io
+
+    class Pipe(io.StringIO):
+        def isatty(self):
+            return False
+    out = io.StringIO()
+    said = confirm("MoveJ to rest\nat 10 %", Pipe("yes\n"), out)
+    check("started by a window, a question goes out as one [ask] line and 'yes' comes back",
+          said and out.getvalue() == ASK + json.dumps("MoveJ to rest\nat 10 %") + "\n", out.getvalue())
+    check("... anything but yes, or no answer at all, is a no",
+          not confirm("go?", Pipe("no\n"), io.StringIO()) and not confirm("go?", Pipe(""), io.StringIO()))
+
     r = S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
     check("the speed cannot be changed while streaming (no live speed command)",
           not hasattr(Commands(r), "set_speed"))
@@ -576,6 +604,8 @@ def main(argv=None):
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
+    ap.add_argument("--goto-start", action="store_true",
+                    help="only move to the start hub (checked against the room, --move-vel %%), then end")
     a = ap.parse_args(argv)
     speed = a.speed if a.speed is not None else (HARDWARE_SPEED if a.hardware else 1.0)
     if not MIN_SPEED <= speed <= 1.0:
@@ -598,7 +628,7 @@ def main(argv=None):
     def ask(text):
         if not a.hardware or a.yes:
             return True
-        return input(text + "\nType yes to go on: ").strip().lower() == "yes"
+        return confirm(text)
 
     ctrl = P.Controller(ip)
     print("%s at %s: %s" % ("HARDWARE" if a.hardware else "SimMachine", ip, ctrl.model()))
@@ -609,6 +639,9 @@ def main(argv=None):
     if off is None:
         print(json.dumps(rep, indent=1))
         return 1
+    if a.goto_start:
+        print("at the start hub (%s), %.2f deg off. Not streaming (--goto-start)." % (runner.hub, off))
+        return 0
     plan = ("Stream %s: %.1f min at speed %.2f (fixed for the run) from hub %s, ServoJ %g Hz%s."
             "\nStop: Ctrl+C or OSC /robot/stop "
             "(software stop). Keep a hand on the E-stop." % (cfg.get("name", "show"), a.minutes, speed, runner.hub,

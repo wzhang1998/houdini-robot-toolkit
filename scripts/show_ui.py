@@ -20,10 +20,21 @@ Speed is the global show speed, set before Start and fixed for the run
 clip and its time left, what is next, the queue, waiting triggers, and the
 ticks skipped so far (a stall shows at once).
 
-SimMachine only. The IP is shown and must be SimMachine's: --sim does not
-check what is at that address. Hardware runs stay on the command line
-(`show_stream.py --hardware`, which asks before moving). STOP sends
-/robot/stop: StopMotion, a software stop.
+Target: SimMachine, or the real FR20. For the real arm the window turns red
+and asks more:
+- a checklist before anything moves: the work area clear, a hand on the
+  E-stop, the controller without alarms (ticked again for every run);
+- the speed at most HARDWARE_MAX (0.6; the test plan goes 0.3, then 0.6);
+- "Move to start": only the checked MoveJ from where the arm is to the
+  start hub, at the Move speed (%) set beside it (slow: 3..30 %), then it
+  ends -- so Start can begin from the hub;
+- every move is shown and confirmed in a dialog first: show_stream's own
+  hardware questions (the route, the plan), passed through as `[ask]`
+  lines, answered by the window.
+STOP sends /robot/stop and also StopMotion straight to the controller on
+its own connection, so it stops the arm during the move to the start hub
+too (before the show's OSC is up). A software stop: the E-stop is the
+safety.
 """
 
 import json
@@ -43,17 +54,25 @@ DEFAULT_CONFIG = os.path.join(ROOT, "shows", "party.json")
 MOODS = ["", "float", "glide", "wring", "press", "punch", "slash", "dab", "flick"]   # Laban actions
 
 
-def default_sim_ip():
-    """playback.toml's IP when its target is SimMachine, else '' (the user
-    types it: never guess a robot's address)."""
-    target, ip = None, ""
-    for line in open(os.path.join(ROOT, "playback.toml")):
+HARDWARE_MAX = 0.6                         # the show speed the window allows on the real arm
+MOVE_VEL = (3.0, 30.0)                     # MoveJ % to the start hub the window allows
+MOVE_VEL_DEFAULT = {"sim": 20.0, "hardware": 10.0}
+
+
+def default_ip(target="sim"):
+    """playback.toml's IP when its target is this one ("sim" / "hardware"),
+    else '' (the user types it: never guess a robot's address)."""
+    toml_target, ip = None, ""
+    path = os.path.join(ROOT, "playback.toml")
+    if not os.path.exists(path):
+        return ""
+    for line in open(path):
         s = line.split("#")[0].strip()
         if s.startswith("target") and "=" in s:
-            target = s.split("=", 1)[1].strip().strip('"')
+            toml_target = s.split("=", 1)[1].strip().strip('"')
         if s.startswith("ip") and "=" in s:
             ip = s.split("=", 1)[1].strip().strip('"')
-    return ip if target == "sim" else ""
+    return ip if toml_target == target else ""
 
 
 REQUIRED = ("pxr", "pythonosc")            # what show_stream needs in this Python: the room (OpenUSD), OSC
@@ -65,15 +84,27 @@ def missing_packages(names=REQUIRED):
     return [n for n in names if importlib.util.find_spec(n) is None]
 
 
-def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable):
-    """The show_stream.py command: SimMachine, OSC on, the IP given; status
-    also to each HOST:PORT in `also` (TouchDesigner)."""
+def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
+                goto_start=False):
+    """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
+    given; status also to each HOST:PORT in `also` (TouchDesigner).
+    goto_start: only the move to the start hub. Refuses what the window does
+    not allow on the real arm (ValueError)."""
+    if target not in ("sim", "hardware"):
+        raise ValueError("target is sim or hardware, not %r" % target)
     if not ip:
-        raise ValueError("no SimMachine IP")
-    argv = [python, STREAM, config, "--sim", "--ip", ip, "--osc", "--minutes", "%g" % minutes,
-            "--speed", "%g" % speed]
-    for target in also:
-        argv += ["--osc-out", target]
+        raise ValueError("no IP")
+    if target == "hardware" and speed > HARDWARE_MAX + 1e-9:
+        raise ValueError("speed %.2f: the window allows at most %.1f on the real arm" % (speed, HARDWARE_MAX))
+    move_vel = MOVE_VEL_DEFAULT[target] if move_vel is None else move_vel
+    if not MOVE_VEL[0] <= move_vel <= MOVE_VEL[1]:
+        raise ValueError("move speed %g %%: %g..%g %%" % (move_vel, MOVE_VEL[0], MOVE_VEL[1]))
+    argv = [python, STREAM, config, "--" + target, "--ip", ip, "--move-vel", "%g" % move_vel]
+    if goto_start:
+        return argv + ["--goto-start"]
+    argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed]
+    for t in also:
+        argv += ["--osc-out", t]
     return argv
 
 
@@ -88,7 +119,8 @@ class ShowLink:
                        "sequence": "", "next": "", "queue": "", "pending": "", "time_left": 0.0, "fault": "",
                        "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0}
         self.log = queue.Queue()
-        self.proc = None
+        self.asks = queue.Queue()                   # show_stream's questions before the real arm moves
+        self.proc, self.ip, self.target = None, None, None
         d = dispatcher.Dispatcher()
         for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
                     "time_left", "fault", "skipped", "energy_now", "clip_energy"):
@@ -109,19 +141,37 @@ class ShowLink:
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, ip, minutes, speed, also=()):
+    def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False):
         if self.running:
             return
-        argv = stream_argv(self.config, ip, minutes, speed, also)
+        argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
+                           goto_start=goto_start)
+        self.ip, self.target = ip, target
+        self.spawn(argv)
+
+    def spawn(self, argv):
+        """Run argv; its output to the log, its [ask] lines to self.asks
+        (answered with answer())."""
+        from show_stream import ASK
         self.log.put("$ " + " ".join(os.path.basename(a) if a == STREAM else a for a in argv[1:]))
         self.proc = subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     stdin=subprocess.DEVNULL, text=True, bufsize=1)
+                                     stdin=subprocess.PIPE, text=True, bufsize=1)
 
         def pump(p):
             for line in p.stdout:
-                self.log.put(line.rstrip())
+                if line.startswith(ASK):
+                    self.asks.put(json.loads(line[len(ASK):]))
+                else:
+                    self.log.put(line.rstrip())
             self.log.put("(show process ended, code %s)" % p.wait())
         threading.Thread(target=pump, args=(self.proc,), daemon=True).start()
+
+    def answer(self, yes):
+        """The answer to the question show_stream asked: yes goes on, no ends it."""
+        if self.running:
+            self.log.put("   -> %s" % ("confirmed" if yes else "not confirmed: nothing moves"))
+            self.proc.stdin.write("yes\n" if yes else "no\n")
+            self.proc.stdin.flush()
 
     def send(self, address, *args):
         self.client.send_message(address, list(args) if args else [])
@@ -145,15 +195,27 @@ class ShowLink:
         self.send("/robot/energy", float(value))
 
     def stop(self, wait_s=5.0):
-        """/robot/stop, then wait for the process to end (it sends StopMotion)."""
+        """/robot/stop, and StopMotion straight to the controller on its own
+        connection (the show's OSC is not up during the move to the start
+        hub); then wait for the process to end."""
         if not self.running:
             return
         self.send("/robot/stop", 1)
+        if self.ip:
+            threading.Thread(target=self._stop_motion, args=(self.ip,), daemon=True).start()
         try:
             self.proc.wait(timeout=wait_s)
         except subprocess.TimeoutExpired:
             self.log.put("the show process did not end after /robot/stop; terminating it")
             self.proc.terminate()
+
+    def _stop_motion(self, ip):
+        try:
+            import fairino_player as P
+            ret = P.Controller(ip).stop()
+            self.log.put("StopMotion sent to %s: %s" % (ip, ret))
+        except Exception as e:                       # the show's own stop (OSC) still went
+            self.log.put("StopMotion to %s failed: %s" % (ip, e))
 
     def close(self):
         self.stop()
@@ -173,51 +235,109 @@ def run_window(config):
     link = ShowLink(config)
     cfg = json.load(open(config))
     root = tk.Tk()
-    root.title("Show on SimMachine -- %s" % cfg.get("name", os.path.basename(config)))
+    name = cfg.get("name", os.path.basename(config))
+    root.title("Show -- %s" % name)
     pad = {"padx": 8, "pady": 4}
 
     # --- run: set before Start, locked while it runs -------------------------
-    top = ttk.LabelFrame(root, text="Run  (SimMachine only; set before Start)")
+    target = tk.StringVar(value="sim")
+    banner = tk.Label(root, text="", fg="white", bg="#c0392b", font=("Segoe UI", 11, "bold"))
+    top = ttk.LabelFrame(root, text="Run  (set before Start)")
     top.pack(fill="x", **pad)
-    ip = tk.StringVar(value=default_sim_ip())
+    ip = tk.StringVar(value=default_ip("sim"))
     minutes = tk.DoubleVar(value=10.0)
     speed = tk.DoubleVar(value=0.5)
+    move_vel = tk.DoubleVar(value=MOVE_VEL_DEFAULT["sim"])
     td_on = tk.BooleanVar(value=True)
     td_target = tk.StringVar(value="127.0.0.1:9002")
     before_start = []
 
-    def field(label, widget, col):
-        ttk.Label(top, text=label).grid(row=0, column=col, sticky="e", padx=(8, 2))
-        widget.grid(row=0, column=col + 1, sticky="w")
+    tg = ttk.Frame(top)
+    tg.grid(row=0, column=0, columnspan=8, sticky="w", padx=6)
+    ttk.Label(tg, text="Target").pack(side="left")
+    for value, label in (("sim", "SimMachine"), ("hardware", "Real FR20")):
+        rb = ttk.Radiobutton(tg, text=label, value=value, variable=target, command=lambda: target_changed())
+        rb.pack(side="left", padx=4)
+        before_start.append(rb)
+
+    def field(label, widget, row, col):
+        ttk.Label(top, text=label).grid(row=row, column=col, sticky="e", padx=(8, 2))
+        widget.grid(row=row, column=col + 1, sticky="w")
         before_start.append(widget)
-    field("SimMachine IP", ttk.Entry(top, textvariable=ip, width=16), 0)
-    field("Minutes", ttk.Spinbox(top, from_=0.5, to=240, increment=0.5, textvariable=minutes, width=6), 2)
-    field("Speed", ttk.Spinbox(top, from_=0.05, to=1.0, increment=0.05, textvariable=speed, width=5), 4)
+    field("Controller IP", ttk.Entry(top, textvariable=ip, width=16), 1, 0)
+    field("Minutes", ttk.Spinbox(top, from_=0.5, to=240, increment=0.5, textvariable=minutes, width=6), 1, 2)
+    speed_box = ttk.Spinbox(top, from_=0.05, to=1.0, increment=0.05, textvariable=speed, width=5)
+    field("Show speed", speed_box, 1, 4)
+    field("Move speed %", ttk.Spinbox(top, from_=MOVE_VEL[0], to=MOVE_VEL[1], increment=1, textvariable=move_vel,
+                                      width=5), 2, 4)
     td_check = ttk.Checkbutton(top, text="Status also to TD at", variable=td_on)
-    td_check.grid(row=1, column=0, columnspan=2, sticky="w", padx=8)
+    td_check.grid(row=2, column=0, columnspan=2, sticky="w", padx=8)
     td_entry = ttk.Entry(top, textvariable=td_target, width=16)
-    td_entry.grid(row=1, column=2, columnspan=2, sticky="w")
+    td_entry.grid(row=2, column=2, columnspan=2, sticky="w")
     before_start += [td_check, td_entry]
 
-    def start():
+    # the real arm: a checklist, ticked again for every run
+    checks = ttk.LabelFrame(root, text="Before the real arm moves")
+    ticks = [tk.BooleanVar(value=False) for _ in range(3)]
+    for k, text_ in enumerate(("The work area is clear: nobody inside the barrier",
+                               "A hand is on the E-stop",
+                               "The controller shows no alarm (WebApp)")):
+        cb = ttk.Checkbutton(checks, text=text_, variable=ticks[k])
+        cb.pack(anchor="w", padx=8)
+        before_start.append(cb)
+
+    def target_changed():
+        hw = target.get() == "hardware"
+        ip.set(default_ip(target.get()))
+        speed.set(0.3 if hw else 0.5)
+        move_vel.set(MOVE_VEL_DEFAULT[target.get()])
+        speed_box.configure(to=HARDWARE_MAX if hw else 1.0)
+        for v in ticks:
+            v.set(False)
+        if hw:
+            banner.config(text="REAL FR20 -- the arm moves. Hand on the E-stop. STOP is a software stop.")
+            banner.pack(fill="x", before=top)
+            checks.pack(fill="x", after=top, **pad)
+            root.title("Show on the REAL FR20 -- %s" % name)
+        else:
+            banner.pack_forget()
+            checks.pack_forget()
+            root.title("Show on SimMachine -- %s" % name)
+
+    def ready(what):
+        """Why the run cannot start, or None."""
+        hw = target.get() == "hardware"
         if not ip.get().strip():
-            messagebox.showerror("No IP", "Type SimMachine's IP (this window never drives the real arm).")
-            return
-        if not 0.05 <= speed.get() <= 1.0:
-            messagebox.showerror("Speed", "Speed is 0.05 .. 1.0.")
-            return
+            return "Type the controller's IP."
+        if not 0.05 <= speed.get() <= (HARDWARE_MAX if hw else 1.0):
+            return "Show speed is 0.05 .. %.1f%s." % (HARDWARE_MAX if hw else 1.0, " on the real arm" if hw else "")
+        if not MOVE_VEL[0] <= move_vel.get() <= MOVE_VEL[1]:
+            return "Move speed is %g .. %g %%." % MOVE_VEL
+        if hw and not all(v.get() for v in ticks):
+            return "Tick every line of the checklist before the real arm moves (%s)." % what
         miss = missing_packages()
         if miss:
-            messagebox.showerror("Missing packages", "This Python (%s) has no %s.\n\nRun the window in the toolkit's "
-                                 "environment:\nuv sync\nuv run scripts/show_ui.py" % (sys.executable, ", ".join(miss)))
+            return ("This Python (%s) has no %s.\n\nRun the window in the toolkit's environment:\nuv sync\n"
+                    "uv run scripts/show_ui.py" % (sys.executable, ", ".join(miss)))
+        return None
+
+    def launch(goto_start):
+        why = ready("Move to start" if goto_start else "Start")
+        if why:
+            messagebox.showerror("Not yet", why)
             return
         link.start(ip.get().strip(), minutes.get(), speed.get(),
-                   [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [])
+                   [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [],
+                   target=target.get(), move_vel=move_vel.get(), goto_start=goto_start)
+        for v in ticks:                              # the checklist again next time
+            v.set(False)
 
-    start_b = ttk.Button(top, text="Start", command=start)
-    start_b.grid(row=0, column=6, padx=10)
+    goto_b = ttk.Button(top, text="Move to start", command=lambda: launch(True))
+    goto_b.grid(row=2, column=6, padx=10)
+    start_b = ttk.Button(top, text="Start", command=lambda: launch(False))
+    start_b.grid(row=1, column=6, padx=10)
     tk.Button(top, text="STOP", bg="#c0392b", fg="white", width=8, font=("Segoe UI", 10, "bold"),
-              command=lambda: threading.Thread(target=link.stop, daemon=True).start()).grid(row=0, column=7, rowspan=2)
+              command=lambda: threading.Thread(target=link.stop, daemon=True).start()).grid(row=1, column=7, rowspan=2)
 
     # --- now --------------------------------------------------------------------
     now = ttk.LabelFrame(root, text="Now")
@@ -289,6 +409,15 @@ def run_window(config):
         for w in before_start:
             w.configure(state="disabled" if running else "normal")
         start_b.configure(state="disabled" if running else "normal")
+        goto_b.configure(state="disabled" if running else "normal")
+        try:
+            question = link.asks.get_nowait()          # show_stream asks before the real arm moves
+        except queue.Empty:
+            question = None
+        if question is not None:
+            yes = messagebox.askyesno("Confirm -- the REAL arm will move", question + "\n\nGo on?", icon="warning",
+                                      default="no")
+            link.answer(yes)
         age = time.time() - link.last_status if link.last_status else None
         live = running and age is not None and age < 1.0
         state = str(s["state"]) if live else ("STARTING" if running else "NOT RUNNING")
@@ -386,6 +515,37 @@ def self_test():
         check("no IP is refused", False)
     except ValueError:
         check("no IP is refused", True)
+    hw = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware")
+    check("the real arm: --hardware (never --sim), its slow move to the start hub (10 %)",
+          "--hardware" in hw and "--sim" not in hw and hw[hw.index("--move-vel") + 1] == "10", hw)
+    go = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", move_vel=5, goto_start=True)
+    check("Move to start: only the move, at the speed set, no show",
+          "--goto-start" in go and "--osc" not in go and go[go.index("--move-vel") + 1] == "5", go)
+    for show_speed, vel, label in ((0.8, None, "a show speed over %.1f on the real arm is refused" % HARDWARE_MAX),
+                                   (0.3, 50.0, "a move speed over %g %% is refused" % MOVE_VEL[1])):
+        try:
+            stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, show_speed, target="hardware", move_vel=vel)
+            check(label, False)
+        except ValueError:
+            check(label, True)
+    # a question from the show process reaches the window, the answer goes back
+    from show_stream import ASK
+    child = ("import json, sys; print(%r + json.dumps('MoveJ to rest\\nat 10 %%'), flush=True); "
+             "print('got ' + sys.stdin.readline().strip(), flush=True)" % ASK)
+    link.spawn([sys.executable, "-c", child])
+    q = None
+    try:
+        q = link.asks.get(timeout=10)
+    except queue.Empty:
+        pass
+    link.answer(True)
+    link.proc.wait(timeout=10)
+    time.sleep(0.2)
+    lines = []
+    while not link.log.empty():
+        lines.append(link.log.get())
+    check("show_stream's question reaches the window whole, and the yes goes back",
+          q == "MoveJ to rest\nat 10 %" and "got yes" in lines, (q, lines))
     link.close()
     fake.shutdown()
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
