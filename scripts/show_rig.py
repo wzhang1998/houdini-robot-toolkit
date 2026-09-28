@@ -149,15 +149,18 @@ def tool_boxes(chain, flange_offset, tool, q):
     return out
 
 
-def canvas_box(c):
-    """The show's paper {center, normal, size [w, h], thickness} as (centre,
-    R, size): upright, its x along the normal (as room_usd.show_extras)."""
-    n = c["normal"]
-    yaw = math.atan2(n[1], n[0])
-    cy, sy = math.cos(yaw), math.sin(yaw)
-    R = ((cy, -sy, 0.0), (sy, cy, 0.0), (0.0, 0.0, 1.0))
+def canvas_boxes(c):
+    """The show's paper in its frame (show.canvas_parts: the canvas and the
+    wooden rails) as [(name, kind, (centre, R, size))]: each upright, its x
+    along the normal (as room_usd.show_extras)."""
     import show
-    return c["center"], R, show.canvas_extent(c)
+    out = []
+    for p in show.canvas_parts(c):
+        a = math.radians(p["yaw_deg"])
+        cy, sy = math.cos(a), math.sin(a)
+        R = ((cy, -sy, 0.0), (sy, cy, 0.0), (0.0, 0.0, 1.0))
+        out.append((p["name"], p["kind"], (p["center"], R, p["size"])))
+    return out
 
 
 def zx_arc_angle(j1_deg):
@@ -197,6 +200,8 @@ def merge_config(cfg, scene):
     if scene.get("canvas") != "keep" and "canvas" in scene:
         if scene["canvas"]:
             out["canvas"] = dict(cfg.get("canvas") or {}, **scene["canvas"])
+            for k in ("frame_size", "frame_depth"):          # the old one-box frame, now canvas.frame
+                out["canvas"].pop(k, None)
         else:
             out.pop("canvas", None)
     out["range"] = dict(cfg.get("range", {}), **scene["range"])
@@ -443,9 +448,14 @@ def _parms(node, config, env):
                                               min=0.001, max=0.2, disable_when="{ canvas_on == 0 }"))
     zones.addParmTemplate(T.FloatParmTemplate("frame_size", "Frame Outer Width, Height (m)", 2, default_value=(0.0, 0.0),
                                               min=0.0, max=4.0, disable_when="{ canvas_on == 0 }",
-                                              help="The frame around the paper (0: none). It is the obstacle when larger"))
-    zones.addParmTemplate(T.FloatParmTemplate("frame_depth", "Frame Depth (m)", 1, default_value=(0.0,), min=0.0,
-                                              max=0.5, disable_when="{ canvas_on == 0 }"))
+                                              help="The wooden frame round the paper (0: none): four rails over "
+                                                   "its edges, in front of it (show.canvas_parts)"))
+    zones.addParmTemplate(T.FloatParmTemplate("frame_face_width", "Frame Rail Width (m)", 1, default_value=(0.1334,),
+                                              min=0.0, max=0.5, disable_when="{ canvas_on == 0 }",
+                                              help="Each rail's width on the face (5.25 in = 0.1334 m)"))
+    zones.addParmTemplate(T.FloatParmTemplate("frame_depth", "Frame Rail Depth (m)", 1, default_value=(0.02,), min=0.0,
+                                              max=0.5, disable_when="{ canvas_on == 0 }",
+                                              help="How far the rails stand in front of the canvas's face"))
     g.append(zones)
 
     hubs = T.FolderParmTemplate("hubs_f", "Hubs", folder_type=T.folderType.Tabs)
@@ -940,9 +950,12 @@ def load_config(node=None):
             node.parm("canvas_facing").set(round(math.degrees(math.atan2(c["normal"][1], c["normal"][0])), 3))
             node.parmTuple("canvas_size").set(c["size"])
             node.parm("canvas_thickness").set(c.get("thickness", 0.02))
+            f = c.get("frame") or {}
             if node.parmTuple("frame_size") is not None:
-                node.parmTuple("frame_size").set(c.get("frame_size", (0.0, 0.0)))
-                node.parm("frame_depth").set(c.get("frame_depth", 0.0))
+                node.parmTuple("frame_size").set(f.get("outer", (0.0, 0.0)))
+                node.parm("frame_depth").set(f.get("depth", 0.0))
+            if node.parm("frame_face_width") is not None:
+                node.parm("frame_face_width").set(f.get("face_width", 0.0))
     node.parm("zones").set(len(zones))
     for i, (name, z) in enumerate(zones.items(), start=1):
         node.parm("zone_name%d" % i).set(name)
@@ -1026,8 +1039,10 @@ def scene_parts(node=None):
                   "normal": [round(math.cos(a), 4), round(math.sin(a), 4), 0.0],
                   "size": _r(node.parmTuple("canvas_size").eval(), 3), "thickness": round(node.evalParm("canvas_thickness"), 4)}
         if node.parmTuple("frame_size") is not None and max(node.parmTuple("frame_size").eval()) > 0:
-            canvas["frame_size"] = _r(node.parmTuple("frame_size").eval(), 3)
-            canvas["frame_depth"] = round(node.evalParm("frame_depth"), 4)
+            fw = node.parm("frame_face_width")
+            canvas["frame"] = {"outer": _r(node.parmTuple("frame_size").eval(), 3),
+                               "face_width": round(fw.eval() if fw is not None else 0.0, 4),
+                               "depth": round(node.evalParm("frame_depth"), 4)}
     return {
         "canvas": canvas if node.parm("canvas_on") is not None else "keep",
         "zones": zones, "stage": stage, "hubs": hubs, "start_hub": node.evalParm("start_hub"),
@@ -1330,6 +1345,7 @@ def zone_points(sop):
 
 TOOL_RGB = (1.0, 0.82, 0.3)
 CANVAS_RGB = (0.93, 0.93, 0.9)
+WOOD_RGB = (0.62, 0.43, 0.24)
 
 
 def fixture_points(sop):
@@ -1357,7 +1373,8 @@ def fixture_points(sop):
     node = tool(sop)
     cfg = scene_config(sop)
     if cfg.get("canvas"):
-        add("canvas", canvas_box(cfg["canvas"]), CANVAS_RGB)
+        for name, kind, box in canvas_boxes(cfg["canvas"]):
+            add(name, box, WOOD_RGB if kind == "wood" else CANVAS_RGB)
     tool_def = tool_from_parms(node)                            # the Tool page, live as it is edited
     if tool_def is None:
         import collision as C

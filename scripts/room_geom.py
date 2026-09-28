@@ -49,6 +49,7 @@ LOOKS = {
     "plant": ((0.2, 0.42, 0.18), 0.8, 0.0, 1.0),
     "base_plate": ((0.78, 0.64, 0.45), 0.7, 0.0, 1.0),
     "canvas": ((0.96, 0.96, 0.93), 0.9, 0.0, 1.0),
+    "wood": ((0.62, 0.43, 0.24), 0.65, 0.0, 1.0),
     "obstacle": ((0.6, 0.6, 0.62), 0.7, 0.0, 1.0),
 }
 ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1.0, 0.65, 0.1),
@@ -58,6 +59,8 @@ ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1
 def look_key(name):
     """The LOOKS entry for an object, by its name."""
     n = name.lower()
+    if n.startswith("frame"):                     # the paper's frame (show.canvas_parts)
+        return "wood"
     for k in ("glass", "canvas", "base_plate", "cart", "tv", "shelves", "furniture", "plant", "floor"):
         if k in n:
             return k

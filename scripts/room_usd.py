@@ -458,12 +458,12 @@ def show_extras(cfg):
     out = []
     c = cfg.get("canvas")
     if c:
-        n = c["normal"]
         import show
-        out.append({"name": "canvas", "type": "box", "center": c["center"], "role": "obstacle",
-                    "size": list(show.canvas_extent(c)),
-                    "yaw_deg": math.degrees(math.atan2(n[1], n[0])),
-                    "note": "the show's paper (placeholder)" if c.get("placeholder") else "the show's paper"})
+        for p in show.canvas_parts(c):                  # the canvas and its frame's wooden rails
+            note = "the show's paper" if p["kind"] == "canvas" else "the paper's frame (wood)"
+            out.append({"name": p["name"], "type": "box", "center": p["center"], "role": "obstacle",
+                        "size": p["size"], "yaw_deg": p["yaw_deg"],
+                        "note": note + (" (placeholder)" if c.get("placeholder") else "")})
     st = cfg.get("stage")
     if st:
         out.append({"name": "show_stage", "type": "box", "center": st["center"], "size": st["size"],

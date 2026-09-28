@@ -165,34 +165,57 @@ class Graph:
 # build: make and check every motion (heavy imports only here)
 # --------------------------------------------------------------------------
 
-def canvas_extent(c):
-    """(depth, width, height) of what stands there: the paper, or the frame
-    around it when larger (frame_size [w, h], frame_depth), centred on the
-    paper's centre -- the frame's depth half in front of the paper, which is
-    conservative until the frame is measured."""
-    fw, fh = c.get("frame_size") or (0.0, 0.0)
-    return (max(c.get("thickness", 0.02), c.get("frame_depth", 0.0)), max(c["size"][0], fw), max(c["size"][1], fh))
-
-
-def canvas_box(c):
-    """The paper (in its frame) as a box for collision.py (yaw from its normal)."""
+def canvas_parts(c):
+    """What stands at the paper, as boxes: [{name, kind ("canvas" / "wood"),
+    center, size (depth along the normal, width, height), yaw_deg}]. The
+    canvas c["size"] x c["thickness"] at c["center"]; its frame c["frame"]
+    {outer [w, h], face_width, depth}: four rails centred on the canvas, in
+    front of it (towards the robot) and over its edges -- the user's frame,
+    2026-09-28: 67 x 46 in, 5.25 in rails, the canvas behind them. Left and
+    right as seen from the robot's side, facing the paper."""
     n = c["normal"]
     yaw = math.degrees(math.atan2(n[1], n[0]))
-    return {"name": "canvas", "type": "box", "center": list(c["center"]), "role": "obstacle",
-            "size": list(canvas_extent(c)), "yaw_deg": yaw}
+    u = (-n[1], n[0], 0.0)                                    # along the width, to the left
+    t = c.get("thickness", 0.02)
+
+    def box(name, kind, dx, dy, dz, size):
+        at = [c["center"][i] + n[i] * dx + u[i] * dy for i in range(3)]
+        at[2] += dz
+        return {"name": name, "kind": kind, "center": at, "size": list(size), "yaw_deg": yaw}
+    out = [box("canvas", "canvas", 0.0, 0.0, 0.0, (t, c["size"][0], c["size"][1]))]
+    f = c.get("frame")
+    if f:
+        (w, h), fw, d = f["outer"], f["face_width"], f["depth"]
+        dx = -t / 2.0 - d / 2.0                               # the rails' backs on the canvas's face
+        out += [box("frame_top", "wood", dx, 0.0, h / 2.0 - fw / 2.0, (d, w, fw)),
+                box("frame_bottom", "wood", dx, 0.0, -(h / 2.0 - fw / 2.0), (d, w, fw)),
+                box("frame_left", "wood", dx, w / 2.0 - fw / 2.0, 0.0, (d, fw, h - 2 * fw)),
+                box("frame_right", "wood", dx, -(w / 2.0 - fw / 2.0), 0.0, (d, fw, h - 2 * fw))]
+    return out
+
+
+def canvas_boxes(c):
+    """The paper in its frame as box obstacles for collision.py."""
+    return [{"name": p["name"], "type": "box", "center": p["center"], "role": "obstacle", "size": p["size"],
+             "yaw_deg": p["yaw_deg"]} for p in canvas_parts(c)]
 
 
 def show_env(env, cfg, canvas_margin):
     """The room for this show: the config's stage replaces the env's work zone
-    of that name; the paper is an obstacle with canvas_margin."""
+    of that name; the paper is an obstacle with canvas_margin; the ceiling
+    keeps margins.ceiling_m from every motion (a sprinkler hangs from its
+    centre, 2026-09-28)."""
     objs = []
     stage = cfg.get("stage")
+    ceiling_m = (cfg.get("margins") or {}).get("ceiling_m")
     for o in env["objects"]:
         if stage and o["name"] == stage.get("name", "stage"):
             o = dict(o, center=list(stage["center"]), size=list(stage["size"]), yaw_deg=stage.get("yaw_deg", 0.0))
+        if ceiling_m and o["type"] == "halfspace" and o["normal"][2] < -0.9:
+            o = dict(o, margin_m=max(ceiling_m, o.get("margin_m") or 0.0))
         objs.append(o)
     if cfg.get("canvas"):
-        objs.append(dict(canvas_box(cfg["canvas"]), margin_m=canvas_margin))
+        objs += [dict(o, margin_m=canvas_margin) for o in canvas_boxes(cfg["canvas"])]
     return dict(env, objects=objs)
 
 
@@ -1148,6 +1171,24 @@ def self_test():
     check("... until it is cleared", sel.target_energy(170.0) == 1.0)
     moving = [Segment("e%d" % k, "idle", [0.0, 1.0, 2.0], [A, [A[0] + 5.0 * k] + list(A[1:]), A], "a", "a", {})
               for k in range(1, 5)]
+    cv = {"center": [0.0, 1.0, 1.3], "normal": [0.0, 1.0, 0.0], "size": [1.5, 1.0], "thickness": 0.02,
+          "frame": {"outer": [1.702, 1.168], "face_width": 0.1334, "depth": 0.02}}
+    parts = {p["name"]: p for p in canvas_parts(cv)}
+    rail = parts.get("frame_left", {})
+    check("the frame is four wooden rails over the canvas's edges (opening 1.435 m < the 1.5 m canvas), in front "
+          "of it; left as seen from the robot's side",
+          sorted(parts) == ["canvas", "frame_bottom", "frame_left", "frame_right", "frame_top"]
+          and abs(parts["frame_top"]["size"][1] - 1.702) < 1e-9 and abs(rail["size"][1] - 0.1334) < 1e-9
+          and abs(rail["center"][0] + (0.851 - 0.0667)) < 1e-9 and abs(rail["center"][1] - 0.98) < 1e-9
+          and all(p["kind"] == "wood" for n, p in parts.items() if n != "canvas") and parts["canvas"]["kind"] == "canvas",
+          {n: (p["center"], p["size"]) for n, p in parts.items()})
+    room = {"objects": [{"name": "ceiling", "type": "halfspace", "normal": [0.0, 0.0, -1.0], "offset": -2.155,
+                         "role": "obstacle"},
+                        {"name": "floor", "type": "halfspace", "normal": [0.0, 0.0, 1.0], "offset": 0.0, "role": "obstacle"}]}
+    se = {o["name"]: o for o in show_env(room, {"margins": {"ceiling_m": 0.3}}, 0.15)["objects"]}
+    check("the ceiling keeps margins.ceiling_m from every motion (the sprinkler), the floor its own",
+          se["ceiling"].get("margin_m") == 0.3 and "margin_m" not in se["floor"], se)
+    check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
     check("a clip that turns J6 past the tool cable's range is named, with how far",

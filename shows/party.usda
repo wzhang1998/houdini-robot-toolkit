@@ -21,8 +21,64 @@ over "Room"
             custom string motionlab:role = "obstacle"
             double size = 1
             double xformOp:rotateZ = 78.87210096490882
-            double3 xformOp:scale = (0.05, 1.702, 1.168)
-            double3 xformOp:translate = (0.0121, 1.1157, 1.5)
+            double3 xformOp:scale = (0.02, 1.5, 1)
+            double3 xformOp:translate = (0.0121, 1.1157, 1.3)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "frame_top" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the paper's frame (wood) (placeholder)"
+        )
+        {
+            rel material:binding = </Room/Looks/wood>
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.87210096490882
+            double3 xformOp:scale = (0.02, 1.702, 0.1334)
+            double3 xformOp:translate = (0.008239999999999999, 1.0960759999999998, 1.8173)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "frame_bottom" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the paper's frame (wood) (placeholder)"
+        )
+        {
+            rel material:binding = </Room/Looks/wood>
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.87210096490882
+            double3 xformOp:scale = (0.02, 1.702, 0.1334)
+            double3 xformOp:translate = (0.008239999999999999, 1.0960759999999998, 0.7827000000000001)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "frame_left" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the paper's frame (wood) (placeholder)"
+        )
+        {
+            rel material:binding = </Room/Looks/wood>
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.87210096490882
+            double3 xformOp:scale = (0.02, 0.1334, 0.9012)
+            double3 xformOp:translate = (-0.76131516, 1.2474458999999998, 1.3)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "frame_right" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the paper's frame (wood) (placeholder)"
+        )
+        {
+            rel material:binding = </Room/Looks/wood>
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.87210096490882
+            double3 xformOp:scale = (0.02, 0.1334, 0.9012)
+            double3 xformOp:translate = (0.77779516, 0.9447060999999999, 1.3)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
         }
     }
@@ -40,6 +96,21 @@ over "Room"
                 float inputs:metallic = 0
                 float inputs:opacity = 1
                 float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "wood"
+        {
+            token outputs:surface.connect = </Room/Looks/wood/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.62, 0.43, 0.24)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.65
                 token outputs:surface
             }
         }

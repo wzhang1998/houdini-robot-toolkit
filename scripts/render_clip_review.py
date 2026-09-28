@@ -254,7 +254,8 @@ def review_fixtures(node, show_cfg=None):
 
     cfg = json.load(open(show_cfg or ROOT + "/shows/party.json"))
     if cfg.get("canvas"):
-        add(SR.canvas_box(cfg["canvas"]), SR.CANVAS_RGB)
+        for _, kind, box in SR.canvas_boxes(cfg["canvas"]):
+            add(box, SR.WOOD_RGB if kind == "wood" else SR.CANVAS_RGB)
     tool = C.tool_def(RP.load("fr20"))
     if tool:
         m = C.load_model("fr20")
