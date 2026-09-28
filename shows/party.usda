@@ -20,9 +20,9 @@ over "Room"
             rel material:binding = </Room/Looks/canvas>
             custom string motionlab:role = "obstacle"
             double size = 1
-            double xformOp:rotateZ = 78.86988891912624
-            double3 xformOp:scale = (0.02, 1, 0.6)
-            double3 xformOp:translate = (0.07, 1.41, 0.88)
+            double xformOp:rotateZ = 78.87210096490882
+            double3 xformOp:scale = (0.05, 1.702, 1.168)
+            double3 xformOp:translate = (0.0121, 1.1157, 1.5)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
         }
     }

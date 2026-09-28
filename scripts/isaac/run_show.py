@@ -36,6 +36,7 @@ ap.add_argument("--headless", action="store_true")
 ap.add_argument("--minutes", type=float, default=0.0, help="stop after this long (0: run until the window closes)")
 ap.add_argument("--auto-trigger", type=float, default=0.0, help="a scan trigger every ~S s")
 ap.add_argument("--no-osc", action="store_true")
+ap.add_argument("--no-tool", action="store_true", help="the bare arm (the profile's tool left off)")
 ap.add_argument("--seed", type=int, default=None)
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
 ap.add_argument("--snapshot", default="", help="render ~3 s, save the viewport to this PNG, stop")
@@ -128,6 +129,40 @@ def import_robot():
     return root
 
 
+def attach_tool(stage, robot_root="/World/fr20", profile="fr20"):
+    """The profile's mounted tool (its URDF, read by tool_urdf as the
+    collision checks read it) as colliders under the last link: in USD Physics
+    a collider under a rigid body is part of that body, so the tool moves,
+    weighs and touches with the flange. None when the profile has no tool."""
+    import collision as CL
+    import robot_profile as RP
+    prof = RP.load(profile)
+    tool = CL.tool_def(prof)
+    if not tool:
+        return None
+    last = CL.U.parse_urdf(os.path.join(ROOT, prof["rig"]["urdf"]))["chain"][-1]["child"]
+    link = next((p for p in stage.Traverse()
+                 if p.GetName() == last and p.GetPath().pathString.startswith(robot_root)), None)
+    if link is None:
+        raise SystemExit("no %s under %s: cannot mount the tool" % (last, robot_root))
+    fo = float(prof["rig"].get("flange_offset_m", 0.0))           # the mount is the flange's face
+    base = link.GetPath().AppendChild(tool["name"])
+    UsdGeom.Xform.Define(stage, base)
+    for b in tool["boxes"]:
+        cube = UsdGeom.Cube.Define(stage, base.AppendChild(b["name"]))
+        cube.CreateSizeAttr(1.0)
+        cube.CreateDisplayColorAttr([Gf.Vec3f(0.95, 0.95, 0.9)])
+        R = b["R"]
+        rot = Gf.Matrix3d(*[R[j][i] for i in range(3) for j in range(3)]).ExtractRotation()   # Gf is row-vector
+        cube.AddTranslateOp().Set(Gf.Vec3d(b["xyz"][0], b["xyz"][1], b["xyz"][2] + fo))
+        cube.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(rot.GetQuat()))
+        cube.AddScaleOp().Set(Gf.Vec3d(*b["size"]))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        PhysxSchema.PhysxContactReportAPI.Apply(cube.GetPrim()).CreateThresholdAttr().Set(0.0)
+    print("[show] tool %s on %s: %s" % (tool["name"], link.GetPath(), ", ".join(b["name"] for b in tool["boxes"])))
+    return base.pathString
+
+
 def main():
     cfg_path = os.path.abspath(args.config)
     cfg = json.load(open(cfg_path))
@@ -146,7 +181,9 @@ def main():
     key.CreateAngleAttr(8.0)
     UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
     prim_path = import_robot()
-    robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
+    if not args.no_tool:
+        attach_tool(stage)
+    robot =world.scene.add(SingleArticulation(prim_path, name="fr20"))
     world.reset()
     names = list(robot.dof_names)
     idx = [names.index("j%d" % i) for i in range(1, 7)]
