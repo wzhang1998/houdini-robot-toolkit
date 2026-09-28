@@ -158,6 +158,7 @@ def route(q_from, q_to, env, model=None, limits=None):
         pts = [list(q_from)] + path
         legs = list(zip(pts, pts[1:]))
         if all(segment_clear(model, menv, a, b, SEARCH_STEP_DEG) is None for a, b in legs) and                 all(segment_clear(model, menv, a, b) is None for a, b in legs):
+            path = [w for k, w in enumerate(path) if k == 0 or max(abs(x - y) for x, y in zip(w, path[k - 1])) > 1e-6]
             return path, why + "; detour through %d waypoint(s), %.0f deg of joint travel" % (len(path) - 1, _travel(pts))
     return None, why + "; no detour found -- move it by hand (WebApp jog) first"
 
