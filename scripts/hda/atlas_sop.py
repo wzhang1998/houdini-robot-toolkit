@@ -76,8 +76,9 @@ def cook(node):
     model, chain, fo, vel = C.load_fr20(root)
     envp = node.parm("env_file").eval().strip() if node.parm("env_file") else ""
     cell = None
+    import collision
+    envp = collision.env_path(envp) if envp else envp        # an old envs/*.json path opens its .usda
     if envp and os.path.exists(envp):
-        import collision
         cell = (collision.load_model("fr20", tool_len=round(tool_len, 3)), collision.load_env(envp))
     reach_max = 1.854 + fo + tool_len + voxel          # FR20 datasheet reach + tool
     n_xz, j0, j1 = grid(voxel, radius, ymin, ymax)

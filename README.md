@@ -22,7 +22,7 @@ names — see [Profiles drive the asset](#profiles-drive-the-asset).
 | `tests/csv/` | Reference fixtures for export/import validation |
 | `tests/clips/` | Sample clips (JSON) from the dance factory |
 | `tests/keypoints/` | A keypoint take (the retargeting input format) |
-| `envs/` | Cells the robot works in: obstacles, keep-out / slow / work zones |
+| `envs/` | Rooms the robot works in, as OpenUSD (`.usda`): obstacles with collision, keep-out / slow / work zones |
 | `docs/images/` | Pictures the README shows |
 | `docs/` | Design notes |
 | `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
@@ -389,10 +389,13 @@ variant's path around the robot, and a sheet of the ok clips.
 
 ## The cell: collision and safety zones (real2sim)
 
-The robot works in a room, so every clip is checked against it.
-`envs/volvox_lab.json` (schema `motionlab.env/1`) lists the room's shapes
-in the robot base frame (URDF, Z up; the arm's working front is -X), each
-with a role:
+The robot works in a room, so every clip is checked against it. The room
+is an OpenUSD file, `envs/volvox_lab.usda`, in the robot base frame (URDF,
+Z up, metres; the arm's working front is -X). Houdini Solaris, Isaac Sim,
+usdview and a text editor open it as it is; `scripts/room_usd.py` reads it
+into the shapes the checks use. Each shape has a role, stored as the
+attribute `motionlab:role` (a prim with collision and no role is an
+obstacle):
 
 | Role | Rule |
 |---|---|
@@ -408,6 +411,36 @@ link pairs MoveIt's SRDF rules would keep. The capsules are conservative:
 round the wrist the real flange-to-forearm gap is ~3 cm larger than they
 say, and a quarter of the configurations they flag there are within 1 cm
 on the real meshes -- the wrist folding back is a real hazard.
+
+**The file** (`python scripts/room_usd.py` for its self-test):
+
+| Prim | What it is |
+|---|---|
+| `/Room` | `motionlab:margin_m`, the clearance obstacles keep unless they set their own; the frame in its documentation |
+| `/Room/Structure/<name>` | floor, ceiling, walls: an Xform holding a `slab` (a Cube with UsdPhysics collision). The slab's face towards the robot base is the measured plane, and the checks treat the slab as the halfspace behind it, so the result does not depend on how long the slab is. A wall's `face` is one single-sided quad turned into the room: the cutaway you see |
+| `/Room/Objects/<name>` | obstacles: Cube, Cylinder or Sphere with collision and a UsdPreviewSurface look |
+| `/Room/Zones/<name>` | work / keep-out / slow: a `volume` with purpose guide (drawn as a helper, never rendered, no collision) and its `outline` |
+
+Also on a shape: `motionlab:margin_m`, `motionlab:tcp_speed_mps` (a slow
+zone), `motionlab:measured`, and its note as USD documentation.
+
+**Editing the room.** In Houdini Solaris (tried in H22):
+Sublayer LOP (`envs/volvox_lab.usda`) -> Cube LOP (Primitive Path
+`/Room/Objects/<name>`, placed and scaled) -> Configure Primitive (that
+path, API Schemas `PhysicsCollisionAPI`): a new obstacle -> Transform LOP
+on `/Room/Structure/ceiling` (or Edit): the ceiling moved -> USD ROP (Save
+Style: Flatten Layer Stack) to a new file, then replace the room with it.
+Deactivate a prim to drop it. Or edit the text: every value is a plain `xformOp` or attribute.
+Objects and zones may turn about Z only (the checks' boxes), and a mesh
+with collision is refused. After moving walls,
+`python scripts/room_usd.py --rewrite envs/volvox_lab.usda` re-fits the
+slabs' lengths, the wall faces and the zone outlines. A show's own objects
+(its paper, its stage) are a layer over the room, not a copy:
+`python scripts/room_usd.py --show shows/party.json` writes
+`shows/party.usda`, which Isaac opens.
+
+Until 2026-09-27 the room was JSON (`envs/*.json`); an old path in a saved
+scene opens the `.usda` beside it, with a note.
 
 **The room file is an estimate from one photo.** Measure it with the arm
 itself: hand-guide the tool tip onto points and record them (read-only,
@@ -433,7 +466,7 @@ circle); an existing object keeps its role and note, and the change is
 printed.
 
 Where it is used: **Pre-Flight's Cell check** (the asset's Setup > Cell
-Environment, default `$HIP/../envs/volvox_lab.json`; UF850: not applicable,
+Environment, default `$HIP/../envs/volvox_lab.usda`; UF850: not applicable,
 no URDF), both clip factories, the dance generator and retargeting, and
 `scenes/FR20_cell.hiplc` (`hython scripts/build_cell_scene.py`): the room
 by role, the FR20 playing any clip CSV / JSON (`/obj/CELL_CTRL`), its
@@ -708,6 +741,13 @@ different clip from the one about to ship.
 deadlocks scripted and bridge-driven runs.
 
 ## Installing the assets
+
+The system Python needs two packages from PyPI: `usd-core` (Pixar's OpenUSD, for the room) and `ruckig`
+(jerk-limited moves). Houdini's hython has its own OpenUSD.
+
+```
+python -m pip install usd-core ruckig
+```
 
 The toolkit is a Houdini package, `houdini/houdini_robot_toolkit.json` (paths relative to itself via
 `$HOUDINI_PACKAGE_PATH`): it puts this repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O

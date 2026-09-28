@@ -41,7 +41,7 @@ import env_from_points as EFP  # noqa: E402
 import probe_env  # noqa: E402
 
 POINTS = os.path.join(ROOT, "envs", "volvox_lab_points.json")
-ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
+ENV = os.path.join(ROOT, "envs", "volvox_lab.usda")
 NEED = {"plane": 3, "wall": 2, "level": 1, "box": 3, "cylinder": 3, "point": 1, "bottom": 1, "top": 1}
 PRESETS = ["floor:level", "wall_tv:wall", "partition_left:wall", "control_cart:box",
            "control_cart:bottom", "operator:cylinder", "stage:point"]
@@ -186,7 +186,8 @@ class App:
     # -- file ----------------------------------------------------------------
     def _browse(self, key):
         p = filedialog.askopenfilename(initialdir=os.path.dirname(self.v[key].get()) or ROOT,
-                                       filetypes=[("JSON", "*.json"), ("All", "*.*")])
+                                       filetypes=[("OpenUSD", "*.usda") if key == "env" else ("JSON", "*.json"),
+                                                  ("All", "*.*")])
         if p:
             self.v[key].set(p)
             if key == "points":
@@ -297,8 +298,7 @@ class App:
 
     # -- fit -----------------------------------------------------------------
     def _env(self):
-        with open(self.v["env"].get()) as fh:
-            return json.load(fh)
+        return CL.load_env(self.v["env"].get())
 
     def preview(self):
         if not self._set_ceiling():
@@ -333,10 +333,7 @@ class App:
         if not messagebox.askyesno("Write env", "Update %s?\n\n%s\n\nThe old file is kept as .bak."
                                    % (os.path.basename(path), "\n".join(lines))):
             return
-        import shutil
-        shutil.copyfile(path, path + ".bak")
-        with open(path, "w") as fh:
-            json.dump(env, fh, indent=1)
+        CL.save_env(env, path)
         self._say("-- wrote %s (previous: .bak):" % path)
         for line in lines:
             self._say("   " + line)

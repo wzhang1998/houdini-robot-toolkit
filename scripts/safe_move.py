@@ -153,7 +153,7 @@ def self_test():
             fails.append(label)
 
     root = os.path.dirname(HERE)
-    env = C.load_env(os.path.join(root, "envs", "volvox_lab.json"))
+    env = C.load_env(os.path.join(root, "envs", "volvox_lab.usda"))
     model = C.load_model("fr20")
     menv = move_env(env)
     ceil = [o for o in menv["objects"] if o["name"] == "ceiling"][0]

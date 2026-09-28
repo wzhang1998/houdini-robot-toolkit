@@ -539,7 +539,7 @@ def main(argv=None):
     ap.add_argument("--minutes", type=float, default=5.0)
     ap.add_argument("--osc", action="store_true", help="TouchDesigner in and out (the config's osc ports)")
     ap.add_argument("--move-vel", type=float, default=None, help="MoveJ %% to the start hub (default 20 sim, 10 hardware)")
-    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.json"), help="the room, for the start move")
+    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"), help="the room, for the start move")
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")

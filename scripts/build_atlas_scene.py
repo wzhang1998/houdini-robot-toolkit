@@ -88,7 +88,7 @@ def build(slabs=8, voxel=0.1):
         hou.IntParmTemplate("slab", "Slab", 1, default_value=(-1,),
                             help="-1: the whole grid. The TOP network sets 0..Slabs-1, one work item each"),
         hou.IntParmTemplate("slabs", "Slabs", 1, default_value=(slabs,), min=1, max=64),
-        hou.StringParmTemplate("env_file", "Cell Environment", 1, default_value=("$HIP/../envs/volvox_lab.json",),
+        hou.StringParmTemplate("env_file", "Cell Environment", 1, default_value=("$HIP/../envs/volvox_lab.usda",),
                                string_type=hou.stringParmType.FileReference,
                                help="The room: adds clear / clearance (reachable without touching it). Empty: off"),
     ])

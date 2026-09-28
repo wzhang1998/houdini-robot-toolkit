@@ -118,7 +118,7 @@ def render(csv, frames_dir, frame=None, res=(1280, 720), view="phone", span=None
         sop = env.createNode("python", "room")
         sop.parm("python").set("import sys\nsys.path.insert(0, %r)\nimport cell_sop, collision\n"
                                "cell_sop.env_geometry(hou.pwd().geometry(), collision.load_env(%r), walls=False)\n"
-                               % (ROOT + "/scripts", ROOT + "/envs/volvox_lab.json"))
+                               % (ROOT + "/scripts", ROOT + "/envs/volvox_lab.usda"))
         cut = env.createNode("attribwrangle", "outlines")
         cut.setInput(0, sop)
         cut.parm("class").set(1)

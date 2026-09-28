@@ -8,7 +8,7 @@
   -90.0,
   0.0
  ],
- "env": "envs/volvox_lab.json",
+ "env": "envs/volvox_lab.usda",
  "clips": [
   "s_d00_punch-punch",
   "s_d01_punch-punch",

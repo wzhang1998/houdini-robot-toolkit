@@ -12,7 +12,7 @@
                geo/clips/manifest.json (ok clips, rejected ones and why)
 
 /obj/dance (TOP network): the same shape for choreo.dance_wedge(48) --
-    Laban phrases, checked against envs/volvox_lab.json, labelled ->
+    Laban phrases, checked against envs/volvox_lab.usda, labelled ->
     geo/dance/<id>.json + manifest.json
 
     hython scripts/build_factory_scene.py --cook-dance    # only the dance net
@@ -35,7 +35,7 @@ import clip_factory as F
 # out of process, neither `backticks` nor @attributes expand in the script:
 # read the work item's attributes
 v = F.wedge(work_item.intAttribValue("wedgetotal"))[work_item.intAttribValue("variant")]
-clip = F.make(v, r"%(root)s/geo/clips", env=r"%(root)s/envs/volvox_lab.json")
+clip = F.make(v, r"%(root)s/geo/clips", env=r"%(root)s/envs/volvox_lab.usda")
 print(v["id"], "ok" if clip["safety"]["ok"] else "rejected: " + clip["safety"]["reasons"][0])
 '''
 
@@ -51,7 +51,7 @@ DANCE = '''import sys
 sys.path.insert(0, r"%(root)s/scripts")
 import choreo as C, collision as CL, motion_clip as M
 v = C.dance_wedge(work_item.intAttribValue("wedgetotal"))[work_item.intAttribValue("variant")]
-env = CL.load_env(r"%(root)s/envs/volvox_lab.json")
+env = CL.load_env(r"%(root)s/envs/volvox_lab.usda")
 clip = C.make_clip(v["spec"], v["seed"], env, clip_id=v["id"], tags=v["tags"])
 M.save(clip, r"%(root)s/geo/dance/" + v["id"] + ".json")
 print(v["id"], "ok" if clip["safety"]["ok"] else "rejected: " + clip["safety"]["reasons"][0])

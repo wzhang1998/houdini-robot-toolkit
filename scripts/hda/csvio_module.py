@@ -652,6 +652,7 @@ def _cell_check(node, angles, dt, f0):
         prof = _profile(node)
         if not prof["rig"].get("urdf"):
             return {"na": "profile %s has no URDF (capsules come from its link meshes)" % prof.get("id")}
+        path = collision.env_path(path)               # an old envs/*.json path opens its .usda
         if not os.path.exists(path):
             return {"error": "no environment file at %s" % path}
         model = collision.load_model(prof["id"], tool_len=round(_tool_len(node), 3))

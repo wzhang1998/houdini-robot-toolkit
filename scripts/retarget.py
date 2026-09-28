@@ -477,7 +477,7 @@ if __name__ == "__main__":
         if not ok:
             fails.append(label)
 
-    env = CL.load_env(os.path.join(ROOT, "envs", "volvox_lab.json"))
+    env = CL.load_env(os.path.join(ROOT, "envs", "volvox_lab.usda"))
     kin = CH.Kin()
     waves = synthetic_take(parts=(("float", 8.0),))
     c = direct(waves, env, kin)

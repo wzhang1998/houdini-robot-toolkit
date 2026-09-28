@@ -46,7 +46,7 @@ import fairino_player as P  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
 LEVELS = (150, 225, 300, 450, 600, 900)
-ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
+ENV = os.path.join(ROOT, "envs", "volvox_lab.usda")
 
 
 def precheck(q0, joint, amp, limits, env_path=ENV, profile="fr20"):

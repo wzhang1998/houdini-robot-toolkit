@@ -13,7 +13,7 @@ same way: going from one clip to the next needs no move at all.
     python scripts/stage_set.py --self-test
 
 FACING_DEG -60 points the front at the centre of the work zone ("stage" in
-envs/volvox_lab.json, 120 deg round from -X). First time: go to the start
+envs/volvox_lab.usda, 120 deg round from -X). First time: go to the start
 of any stage clip (play_ui: Go to start); the player checks the move and
 takes a detour if the straight one is not clear.
 """
@@ -36,7 +36,7 @@ FACING_DEG = -60.0
 SOURCE = os.path.join(ROOT, "geo", "dance")
 OUT_CLIPS = os.path.join(ROOT, "geo", "stage")
 OUT_CSV = os.path.join(ROOT, "tests", "csv", "stage")
-ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
+ENV = os.path.join(ROOT, "envs", "volvox_lab.usda")
 LIMIT_PAD_DEG = 3.0
 ZONE_INSET_M = 0.03                 # the TCP this far inside the controller's work area (as moves keep it)
 

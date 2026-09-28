@@ -75,6 +75,7 @@ def generate(node):
     acc = node.evalParm("acc")
     kin = choreo.Kin(acc=acc if acc > 0 else None)
     envp = node.evalParm("env_file").strip()
+    envp = collision.env_path(envp) if envp else envp        # an old envs/*.json path opens its .usda
     env = collision.load_env(envp) if envp and os.path.exists(envp) else None
     with hou.InterruptableOperation("Generating phrase", open_interrupt_dialog=True):
         c = choreo.make_clip(sp, seed=int(node.evalParm("seed")), env=env, kin=kin,

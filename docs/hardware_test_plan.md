@@ -84,7 +84,7 @@ The whole arm will sway gently side to side. The log will show `wiggle: J1 moved
 
 ## 4. Measure the room 🟡 (drag-teach)
 
-`envs/volvox_lab.json` is currently estimated from photos, and the orientation is also assumed: it assumes the arm's straight-ahead direction (the direction the arm extends when J1=0) faces the TV wall. The Cell check in Houdini's Pre-Flight and the room shown by Show Cell are both based on this estimate.
+The room (`envs/volvox_lab.json` then; now `envs/volvox_lab.usda`) was estimated from photos, and the orientation is also assumed: it assumes the arm's straight-ahead direction (the direction the arm extends when J1=0) faces the TV wall. The Cell check in Houdini's Pre-Flight and the room shown by Show Cell are both based on this estimate.
 
 1. Open drag-teach in the WebUI.
 2. Open the point-probing window (read-only, will not move the arm):
@@ -185,7 +185,7 @@ Preview: `geo/review/overview_stage_*.mp4`, `contact_sheet_stage.png`.
 
 **For every clip after that**: select CSV → **2 Dry run** → **5 Play** (the start point is the current position, no large move). Speed 0.3 → 0.6 → 1.0. Film video before starting, per the requirements in `docs/results.md`.
 
-**All moves check the room**: before Go to start / Go HOME, the player checks the whole MoveJ path against `playback.toml`'s `robot.env` (default `envs/volvox_lab.json`), keeping 0.30 m clearance from the ceiling and 0.10 m from other obstacles; if that's not enough it routes around, and if it can't route around it refuses.
+**All moves check the room**: before Go to start / Go HOME, the player checks the whole MoveJ path against `playback.toml`'s `robot.env` (default `envs/volvox_lab.usda`), keeping 0.30 m clearance from the ceiling and 0.10 m from other obstacles; if that's not enough it routes around, and if it can't route around it refuses.
 
 ## 6c. The show as one stream (show_stream.py) 🔴
 

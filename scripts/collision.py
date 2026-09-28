@@ -2,8 +2,9 @@
 
 The robot is a chain of capsules, one per link, fitted to the URDF link meshes
 so that every vertex is inside (conservative), plus an optional tool capsule.
-The cell is an environment file (envs/*.json, schema motionlab.env/1) in the
-robot base frame -- URDF, Z up, metres -- listing shapes with a role:
+The cell is the room, an OpenUSD file (envs/*.usda, read by room_usd.py) in
+the robot base frame -- URDF, Z up, metres. In memory it is a dict listing
+shapes with a role:
 
     obstacle   no link within the env's margin_m of it (walls, cart, floor);
                an object may set its own margin_m (the base plate: 0)
@@ -23,7 +24,7 @@ does not already touch at the zero pose (as MoveIt's SRDF "Adjacent" /
 "Default" disables).
 
     model = load_model("fr20")                 capsules from the URDF meshes
-    env = load_env("envs/volvox_lab.json")
+    env = load_env("envs/volvox_lab.usda")
     check(model, env, times, joints)  -> report {ok, min_clearance, closest,
                                                  violations[...]}
     capsules(model, q)                -> [(name, a, b, r)] in the base frame
@@ -224,13 +225,47 @@ def _self_pairs(model):
 # environment
 # --------------------------------------------------------------------------
 
+USD_EXT = (".usda", ".usd", ".usdc", ".usdz")
+_MOVED = set()
+
+
+def env_path(path):
+    """The room file for path. The rooms were JSON (envs/*.json) until
+    2026-09-27; an old path that is gone is taken as its .usda, once noted,
+    so scenes saved before still open."""
+    stem, ext = os.path.splitext(path)
+    if ext.lower() == ".json" and not os.path.exists(path) and os.path.exists(stem + ".usda"):
+        if path not in _MOVED:
+            _MOVED.add(path)
+            print("note: the room %s is %s now (OpenUSD)" % (path, stem + ".usda"))
+        return stem + ".usda"
+    return path
+
+
 def load_env(path):
-    with open(path) as f:
-        env = json.load(f)
+    """The room (a dict, below) from an OpenUSD file (room_usd.py)."""
+    path = env_path(path)
+    if os.path.splitext(path)[1].lower() not in USD_EXT:
+        raise ValueError("%s: a room is an OpenUSD file (envs/<room>.usda); JSON rooms are retired" % path)
+    import room_usd
+    env = room_usd.read(path)
     errs = validate_env(env)
     if errs:
         raise ValueError("%s: %s" % (path, "; ".join(errs)))
     return env
+
+
+def save_env(env, path, backup=True):
+    """Write the room (a dict) to its OpenUSD file, the old one kept as .bak."""
+    import shutil
+    import room_usd
+    errs = validate_env(env)
+    if errs:
+        raise ValueError("%s: not written: %s" % (path, "; ".join(errs)))
+    if backup and os.path.exists(path):
+        shutil.copyfile(path, path + ".bak")
+    room_usd.write(env, path)
+    return path
 
 
 def validate_env(env):
@@ -472,11 +507,12 @@ if __name__ == "__main__":
     workz = dict(floor, objects=floor["objects"] + [{"name": "stage", "type": "box", "center": [3, 0, 1], "size": [1, 1, 1], "role": "work"}])
     r = check(m, workz, [0.0], [READY])
     ok("TCP outside the work zone is flagged", not r["ok"] and r["violations"][0]["kind"] == "work", describe(r))
-    env_path = os.path.join(ROOT, "envs", "volvox_lab.json")
-    if os.path.exists(env_path):
-        env = load_env(env_path)
+    room = os.path.join(ROOT, "envs", "volvox_lab.usda")
+    if os.path.exists(room):
+        env = load_env(room)
         r = check(m, env, [0.0], [READY])
-        ok("envs/volvox_lab.json loads, and the ready pose is clear in it", r["ok"], describe(r))
+        ok("envs/volvox_lab.usda loads, and the ready pose is clear in it", r["ok"], describe(r))
+        ok("an old JSON room path opens its .usda", load_env(room[:-5] + ".json")["name"] == env["name"])
 
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     sys.exit(1 if fails else 0)

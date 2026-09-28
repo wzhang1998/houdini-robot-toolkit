@@ -152,7 +152,7 @@ the tool into any open scene with `import show_rig; show_rig.install()`.
 
 | Tab | What is there |
 |---|---|
-| Setup | Robot Profile (profiles/*.json), Environment (envs/*.json), Show Config (shows/*.json); Load / Write / Check; **Edit in Viewport**: pick a zone or hub, press Handles On |
+| Setup | Robot Profile (profiles/*.json), Environment (envs/*.usda), Show Config (shows/*.json); Load / Write / Check; **Edit in Viewport**: pick a zone or hub, press Handles On |
 | Zones | Zones as a multiparm: name, centre, size, yaw (robot frame, metres). "Use Zone 'stage' as the Stage" replaces the environment's work zone |
 | Hubs | Start hub; hubs as a multiparm: name, mode (Tool Tip + Look At, or Joint Angles), tool tip, look target, seed pose, clips, generator, zone, gesture families; Keep the Solved Pose as Seed |
 | Operating Range | J1 sector, tool tip height band, speed |
@@ -184,7 +184,7 @@ own nodes:
 - **rays and paths**: PolyWire.
 
 **The room** is drawn the same way as in the Isaac scene (`room_geom`
-looks, shared with `env_to_usd`):
+looks, shared with `room_usd`, which writes the room's USD):
 - the floor and the objects are solid, facing outward;
 - each wall is one face turned into the room, so with the viewport's
   Remove Backfaces on (set on load), the near walls vanish;
@@ -220,13 +220,14 @@ same Python, so nothing is written twice.
   controller's tool load (WebApp), and its shape goes into the URDF as a
   tool link, so collision checks and the sim see it. Not modelled yet: the
   next safety item once the strip is chosen.
-- **Environment: USD is the target.** Isaac, Omniverse, Houdini Solaris and
-  RoomPlan (USDZ) all speak it.
-  - Today the JSON room (`envs/volvox_lab.json`) is the source and
-    `scripts/env_to_usd.py` writes `envs/volvox_lab.usda`.
-  - Every prim carries its role and margin (`motionlab:role`,
-    `motionlab:margin_m`); obstacles carry UsdPhysics collision.
-  - Later: author the room in Solaris and derive the JSON for the checker.
+- **Environment: OpenUSD is the source** (since 2026-09-27). Isaac,
+  Omniverse, Houdini Solaris and RoomPlan (USDZ) all speak it.
+  - `envs/volvox_lab.usda` is the room; `scripts/room_usd.py` reads it for
+    the checks (README, "The cell").
+  - Shapes carry their role and margin (`motionlab:role`,
+    `motionlab:margin_m`); obstacles and the room's slabs carry UsdPhysics
+    collision; zones are guide-purpose volumes.
+  - A show's paper and stage are a layer over the room (`shows/party.usda`).
 - **Materials:**
   - visual: UsdPreviewSurface (MDL in Isaac if needed);
   - physical: link masses and inertias from the URDF.

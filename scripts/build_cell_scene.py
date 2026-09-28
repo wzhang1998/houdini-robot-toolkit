@@ -3,7 +3,7 @@
     hython scripts/build_cell_scene.py [clip]      (default tests/csv/fr20_test.csv)
 
     /obj/CELL_CTRL   Clip (a joint CSV or a factory clip JSON), Environment
-                     (envs/*.json), Tool Length; Fit Range to the clip
+                     (envs/*.usda), Tool Length; Fit Range to the clip
     /obj/cell_env    the environment, coloured by role (scripts/cell_sop.py)
     /obj/fr20        wenyi::robot_arm, FK, its joints read from the clip at
                      the current frame (hou.session.joint(n)); Pre-Flight's
@@ -55,7 +55,7 @@ def build(clip=None):
                                     default_value=(clip or "$HIP/../tests/csv/fr20_test.csv",),
                                     help="A joint CSV (the asset's export) or a clip JSON (geo/clips, geo/dance, tests/clips)"))
     g.append(hou.StringParmTemplate("env", "Environment", 1, string_type=hou.stringParmType.FileReference,
-                                    default_value=("$HIP/../envs/volvox_lab.json",)))
+                                    default_value=("$HIP/../envs/volvox_lab.usda",)))
     g.append(hou.FloatParmTemplate("tool_len", "Tool Length (m)", 1, default_value=(0.15,), min=0.0, max=0.5,
                                    help="A capsule this long past the flange stands in for the tool"))
     g.append(hou.ButtonParmTemplate("fit_range", "Fit Range to Clip", script_callback="hou.session.cell_sop.fit_range()",

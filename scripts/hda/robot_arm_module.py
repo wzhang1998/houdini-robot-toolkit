@@ -430,18 +430,22 @@ def _ur_model(node):
 def cook_cell_env(node):
     """cell_env (Python SOP): the room from Setup > Cell Environment, drawn by
     scripts/cell_sop.py -- obstacles grey, keep-out red, slow orange, the
-    stage green, tall walls see-through. Empty when no file is set."""
+    stage green, walls a cutaway. The room is envs/<room>.usda (room_usd.py).
+    Empty when no file is set."""
     geo = node.geometry()
     geo.clear()
     p = asset_of(node).parm("env_file")
     path = p.eval().strip() if p is not None else ""
-    if not path or not os.path.exists(path):
+    if not path:
         return
     scripts = _root() + "/scripts"
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     import cell_sop
     import collision
+    path = collision.env_path(path)                   # an old envs/*.json path opens its .usda
+    if not os.path.exists(path):
+        return
     cell_sop.env_geometry(geo, collision.load_env(path))
 
 

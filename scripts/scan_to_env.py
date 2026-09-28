@@ -26,14 +26,13 @@ import argparse
 import json
 import math
 import os
-import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
-ENV = os.path.join(ROOT, "envs", "volvox_lab.json")
+ENV = os.path.join(ROOT, "envs", "volvox_lab.usda")
 
 
 def read_roomplan(path):
@@ -216,7 +215,7 @@ def main(argv=None):
         print("\nname the two measured walls: --front <wall_tv> --left <partition_left>")
         return 0
     import collision as CL
-    env = json.load(open(a.env))
+    env = CL.load_env(a.env)
     al = align(scan, env, a.front, a.left)
     print("aligned: yaw %.2f deg, t (%.3f, %.3f, %.3f) m; the two walls agree to %.2f deg"
           % (al["yaw_deg"], *al["t"], al["yaw_disagreement_deg"]))
@@ -231,8 +230,7 @@ def main(argv=None):
         print("env would be invalid:", errs)
         return 1
     if a.write:
-        shutil.copyfile(a.env, a.env + ".bak")
-        json.dump(env, open(a.env, "w"), indent=1)
+        CL.save_env(env, a.env)
         print("wrote", a.env, "(previous: .bak)")
     return 0
 

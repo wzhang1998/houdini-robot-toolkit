@@ -1,6 +1,6 @@
 """The room as closed, finite geometry, from the env's measured planes.
 
-The env (envs/*.json, collision.py) stores walls, floor and ceiling as
+The room (envs/*.usda, read by room_usd.py into collision.py's dict) stores walls, floor and ceiling as
 halfspaces: infinite planes, which is right for collision checks and wrong
 for pictures (drawn as planes they cut through each other). Here they are
 turned into the room itself:
@@ -21,7 +21,7 @@ Houdini draw it alike: floor and objects solid, each wall one face turned
 into the room (hidden from outside: a cutaway), zones as outlines.
 
 Used by the Houdini cell display (cell_sop.py) and the USD export
-(env_to_usd.py), so both show the same room. Pure Python.
+(room_usd.py), so both show the same room. Pure Python.
 
     python scripts/room_geom.py        self-test
 """
@@ -215,7 +215,8 @@ def self_test():
           all(min(xs) - 1e-9 <= p[0] <= max(xs) + 1e-9 and min(ys) - 1e-9 <= p[1] <= max(ys) + 1e-9
               for _, c, _ in walls(box) for p in c))
     import json
-    env = json.load(open(os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json")))
+    import collision as CL
+    env = CL.load_env(os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.usda"))
     fp = footprint(env)
     check("the lab: four walls make a closed quad", len(fp) == 4 and len(walls(env)) == 4, (len(fp), [w[0] for w in walls(env)]))
     area = 0.5 * abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(fp, fp[1:] + fp[:1])))

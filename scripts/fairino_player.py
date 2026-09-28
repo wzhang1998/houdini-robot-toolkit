@@ -691,7 +691,7 @@ def self_test():
     snapped = _snap_uniform(rounded)
     check("24 fps times written with 4 decimals are read back exact",
           max(abs(a - b) for a, b in zip(snapped, t30)) < 1e-12, "0.0417 -> %.6f" % snapped[1])
-    envp = os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.json")
+    envp = os.path.join(os.path.dirname(HERE), "envs", "volvox_lab.usda")
     if os.path.exists(envp):
         path_a, line_a = move_plan([-10.6, -78.1, 97.3, -12.2, 83.3, -0.8], [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], envp)
         path_b, line_b = move_plan([102.869, -125.575, -29.215, -209.768, -63.033, 2.070],
@@ -801,7 +801,7 @@ def main(argv=None):
     ap.add_argument("--goto-home", action="store_true",
                     help="only MoveJ to the profile's HOME pose (robot.home_deg), path checked against --env first")
     ap.add_argument("--env", default="",
-                    help="cell file (envs/*.json): every MoveJ (to a clip's start, to HOME) is checked against it "
+                    help="room file (envs/*.usda): every MoveJ (to a clip's start, to HOME) is checked against it "
                          "with move margins (safe_move.py) and detoured or refused; play.py passes the lab's. "
                          "Empty: moves unchecked")
     ap.add_argument("--wiggle", nargs=4, metavar=("JOINT", "AMP_DEG", "PERIOD_S", "CYCLES"),

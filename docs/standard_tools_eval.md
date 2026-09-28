@@ -101,7 +101,7 @@ Houdini's Python 3.13 is standard CPython. A cp313-win_amd64 wheel installed wit
 
 **Recommendation: Replace the player's responsibility with the controller's.**
 
-1. Set soft limits, collision level and strategy, the TCP speed cap, and cuboid interference zones for the keep-out boxes and walls in `envs/volvox_lab.json`. Do this in the WebApp.
+1. Set soft limits, collision level and strategy, the TCP speed cap, and cuboid interference zones for the keep-out boxes and walls in `envs/volvox_lab.usda`. Do this in the WebApp.
 2. At startup, the player **reads** them (`GetJointSoftLimitDeg`, `GetSafetyParamsCheckSum`) and refuses to stream if the checksum differs from the one recorded in the robot profile. The player should not *write* safety settings.
 3. Test on SimMachine: stream a ServoJ clip into a soft limit and into a zone, and confirm the controller stops it.
 4. Retire `home_path_check`, or keep it advisory only. Once the room is measured, the clip-start and HOME transitions can go through the same Pre-Flight in Houdini. Leave SingularAvoid off for ServoJ until tested: Pre-Flight already flags wrist-singularity proximity.

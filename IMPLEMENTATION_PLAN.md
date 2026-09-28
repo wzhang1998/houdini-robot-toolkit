@@ -391,7 +391,7 @@ state's onEnter runs only once the viewer is used.
 the demo's speed cap; the studio day.
 **Status**: Proposed, waiting for the user's go.
 
-## Stage 7: The environment in OpenUSD (2026-09-27, PROPOSED -- to discuss)
+## Stage 7: The environment in OpenUSD (2026-09-27, user's go the same night)
 **Goal**: The room is one OpenUSD file, envs/<room>.usda, with UsdPhysics
 collision. It is edited in Houdini (Solaris), by hand in text, or by an
 AI. Isaac Sim uses it as is; MuJoCo and Newton read USD. The toolkit's
@@ -438,8 +438,27 @@ read USD (URDF / SDF / MJCF only) and is not a target.
 - **7.4 Versions**: git on the text .usda. Per-show changes (the paper, a
   stage override) are a layer over the measured room, not a copy.
 
-**Order**: after the studio day (the test there uses the current JSON).
-**Status**: Proposed, waiting for the user's go.
+**Status (2026-09-27)**: 7.1-7.3 done, 7.4 started.
+- `scripts/room_usd.py` reads and writes the room; `collision.load_env`
+  reads `.usda` (usd-core from PyPI in the system Python, installed with
+  the user's OK; hython has its own pxr). Walls, floor and ceiling are
+  finite Cube slabs (the user's pick); the checks treat each as the
+  halfspace behind its face towards the base, so they are unchanged:
+  JSON -> USD -> read gives the same objects, and the 23 segments of the
+  compiled show have the same clearances (difference 0).
+- `envs/volvox_lab.json` and `env_to_usd.py` are gone. Every default, the
+  show config, probe_ui / env_from_points / scan_to_env (write USD through
+  `collision.save_env`), the robot_arm / dance_phrase / robot_show assets
+  (Environment default, file filter, PythonModule) take the `.usda`. An
+  old `.json` path in a saved scene opens the `.usda` beside it, with a
+  note.
+- Solaris edit tried in hython: Sublayer -> Cube -> Configure Primitive
+  (PhysicsCollisionAPI) -> Transform on the ceiling -> USD ROP. The new
+  box reads as an obstacle, the ceiling moves, nothing else changes.
+- 7.4: the show's paper is a layer over the room, `shows/party.usda`
+  (`room_usd.py --show`), which Isaac opens.
+- Not yet: seeing the edit in Isaac (needs Isaac running); a
+  collision-checked edit loop inside the robot_show tool.
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard

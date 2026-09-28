@@ -46,7 +46,7 @@ def parm_group():
         help="0: the profile's (FR20 150). Put what scripts/accel_probe.py measured on the real arm -- "
              "a higher limit lets sudden moves be bigger."))
     ph.addParmTemplate(hou.StringParmTemplate("env_file", "Cell Environment", 1,
-                                              default_value=("$HIP/../envs/volvox_lab.json",),
+                                              default_value=("$HIP/../envs/volvox_lab.usda",),
                                               string_type=hou.stringParmType.FileReference,
                                               help="The room the phrase must clear (empty: not checked)"))
     ph.addParmTemplate(hou.ButtonParmTemplate("generate_btn", "Generate", script_callback=_cb("generate"),

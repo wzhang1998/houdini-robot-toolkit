@@ -1,5 +1,6 @@
 """The show (scripts/show.py's state machine and clip graph) in Isaac Sim:
-the FR20 from its URDF, the room from envs/volvox_lab.usda, physics on.
+the FR20 from its URDF, the room from the show's layer (shows/<show>.usda: the
+room, envs/<room>.usda, with the show's paper and stage over it), physics on.
 
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
@@ -135,10 +136,9 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    room_usd = os.path.join(ROOT, os.path.splitext(cfg["env"])[0] + ".usda")
+    room_usd = os.path.splitext(cfg_path)[0] + ".usda"                   # the show's layer over the room
     if not os.path.exists(room_usd):
-        raise SystemExit("no %s: export it first (hython scripts/env_to_usd.py %s %s --show %s)"
-                         % (room_usd, cfg["env"], room_usd, args.config))
+        raise SystemExit("no %s: write it first (python scripts/room_usd.py --show %s)" % (room_usd, args.config))
     add_reference_to_stage(room_usd, "/World/Room")
     UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
     key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))       # a soft key from above

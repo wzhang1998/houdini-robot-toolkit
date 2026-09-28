@@ -16,7 +16,7 @@ Needs the atlas baked (build_atlas_scene.py --bake) and the factory run
                          clips coloured by TCP speed, rejected ones red
     clips_sheet.png      the ok clips one per cell, drawn in their own plane,
                          coloured by TCP speed, with id / duration / peak speed
-    cell_overview.png    the cell (envs/volvox_lab.json), the robot mid-phrase
+    cell_overview.png    the cell (envs/volvox_lab.usda), the robot mid-phrase
                          and its capsules coloured by clearance
     cell_ghosts.png      onion skin of a sample dance phrase in the cell
     dance_sheet.png      every dance phrase's TCP path seen from the front,

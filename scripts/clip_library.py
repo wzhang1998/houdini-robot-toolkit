@@ -147,7 +147,7 @@ def self_test():
     punch = search(lib, action="punch")
     check("search by action finds the punch phrases", punch and all("punch" in [e["action"]] + e["sequence"] for e in punch),
           ", ".join(e["id"] for e in punch))
-    env = collision.load_env(os.path.join(ROOT, "envs", "volvox_lab.json"))
+    env = collision.load_env(os.path.join(ROOT, "envs", "volvox_lab.usda"))
     a, b = (M.load(e["file"]) for e in lib[:2])
     s = sequence([a, b], env)
     check("two HOME-to-HOME phrases join without a transition",
@@ -177,7 +177,7 @@ def main(argv=None):
     ap.add_argument("--tag")
     ap.add_argument("--min-s", type=float)
     ap.add_argument("--max-s", type=float)
-    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.json"))
+    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"))
     ap.add_argument("--out", default=os.path.join(ROOT, "geo", "show.csv"))
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)

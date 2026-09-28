@@ -78,7 +78,7 @@ class App:
         self.v = {"target": tk.StringVar(value=r.get("target", "sim")), "ip": tk.StringVar(value=r.get("ip", "")),
                   "joint": tk.IntVar(value=6), "amp": tk.DoubleVar(value=3.0), "direction": tk.StringVar(value="+"),
                   "levels": tk.StringVar(value="150 225 300 450 600 900"), "max_error": tk.DoubleVar(value=0.5),
-                  "env": tk.StringVar(value=os.path.join(ROOT, "envs", "volvox_lab.json"))}
+                  "env": tk.StringVar(value=os.path.join(ROOT, "envs", "volvox_lab.usda"))}
         f = ttk.Frame(root, padding=10)
         f.grid(sticky="nsew")
         root.columnconfigure(0, weight=1)
@@ -307,7 +307,7 @@ def self_test():
             fails.append(label)
 
     g = {"target": "hardware", "ip": "192.168.58.2", "joint": 2, "amp": 2.0, "direction": "-", "max_error": 0.5,
-         "env": "envs/volvox_lab.json"}
+         "env": "envs/volvox_lab.usda"}
     a = argv_for(g, level=300)
     check("a level runs one probe process: that level, confirmed here, the other way",
           a[:2] == ["--hardware", "--ip"] and a[a.index("--levels") + 1] == "300" and "--yes" in a

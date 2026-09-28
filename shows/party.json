@@ -2,7 +2,7 @@
  "schema": "motionlab.show/3",
  "name": "party",
  "note": "Volvox party piece: the arm idles through a library generated for this stage and, on a trigger (TouchDesigner, OSC), plays a sequence or sweeps an LED strip across UV paper. Edited by hand or by the Houdini show scene. The canvas and the scan are PLACEHOLDERS until the paper and strip are decided (the canvas is the plane of the user's cat curve).",
- "env": "envs/volvox_lab.json",
+ "env": "envs/volvox_lab.usda",
  "start_hub": "rest",
  "hubs": {
   "rest": {

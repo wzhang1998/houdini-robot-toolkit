@@ -1,6 +1,6 @@
 """Touch-off points (probe_env.py) -> shapes in the env file.
 
-    python scripts/env_from_points.py envs/volvox_lab_points.json [--env envs/volvox_lab.json] [--dry-run]
+    python scripts/env_from_points.py envs/volvox_lab_points.json [--env envs/volvox_lab.usda] [--dry-run]
 
 Points are grouped by name "object:kind" (probe_env.py's prompt):
 
@@ -32,7 +32,6 @@ import argparse
 import json
 import math
 import os
-import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -271,13 +270,14 @@ def update_env(env, points, ceiling_height_m=None):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("points", nargs="?")
-    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.json"))
+    ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"))
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test()
-    env = json.load(open(a.env))
+    import collision as CL
+    env = CL.load_env(a.env)
     data = json.load(open(a.points))
     lines, errs = update_env(env, data["points"], data.get("ceiling_height_m"))
     if errs:
@@ -287,8 +287,7 @@ def main(argv=None):
         print(" ", line)
     if a.dry_run:
         return 0
-    shutil.copyfile(a.env, a.env + ".bak")
-    json.dump(env, open(a.env, "w"), indent=1)
+    CL.save_env(env, a.env)
     print("wrote", a.env, "(previous: .bak)")
     return 0
 

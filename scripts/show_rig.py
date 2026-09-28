@@ -312,7 +312,7 @@ def _parms(node, config, env):
     setup.addParmTemplate(T.StringParmTemplate(
         "env_file", "Environment", 1, default_value=(env,), string_type=T.stringParmType.FileReference,
         file_type=T.fileType.Any, tags={"filechooser_pattern": "*.json"},
-        help="envs/<room>.json: the measured room the clips are checked against"))
+        help="envs/<room>.usda: the measured room the clips are checked against"))
     setup.addParmTemplate(T.StringParmTemplate(
         "config", "Show Config", 1, default_value=(config,), string_type=T.stringParmType.FileReference,
         file_type=T.fileType.Any, tags={"filechooser_pattern": "*.json"},
@@ -725,8 +725,9 @@ def on_load():
 def load_config(node=None):
     """The config file -> the tool's parameters."""
     node = tool(node)
+    import collision as C
     cfg = json.load(open(cfg_path(node)))
-    env = json.load(open(env_path(node)))
+    env = C.load_env(env_path(node))
     zones = dict(cfg.get("zones", {}))
     stage = cfg.get("stage") or next((o for o in env["objects"] if o["name"] == "stage"), None)
     if stage:
@@ -1054,7 +1055,7 @@ def _move_env(cfg):
     import collision as C
     import safe_move
     import show as S
-    path = os.path.join(ROOT, cfg["env"])
+    path = C.env_path(os.path.join(ROOT, cfg["env"]))
     key = ("env", json.dumps([cfg["env"], os.path.getmtime(path), cfg.get("stage"), cfg.get("canvas"),
                               cfg["margins"]["idle_canvas_m"]]))
     if key not in _CACHE:
@@ -1353,7 +1354,7 @@ def self_test():
         check_("the range arc at J1 %g points where the arm faces" % j1,
                all(abs(x - y) < 1e-9 for x, y in zip(circle, to_h((math.cos(phi), math.sin(phi), 0.0)))))
 
-    cfg = {"env": "e.json", "osc": {"listen_port": 9000}, "sequences": {"greet": {"hub": "greet"}},
+    cfg = {"env": "e.usda", "osc": {"listen_port": 9000}, "sequences": {"greet": {"hub": "greet"}},
            "hubs": {"rest": {"q": REST_Q, "note": "home"},
                     "greet": {"tcp": [0, -0.6, 1.2], "look": [0, -2, 1.5], "near": REST_Q, "clips": 10}},
            "zones": {"greet": {"center": [0, 0, 0], "size": [1, 1, 1], "note": "for them"}},

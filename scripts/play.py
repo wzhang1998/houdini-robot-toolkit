@@ -18,7 +18,7 @@ import tomllib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CONFIG = os.path.join(ROOT, "playback.toml")
-DEFAULT_ENV = "envs/volvox_lab.json"        # robot.env in playback.toml; "" = moves unchecked
+DEFAULT_ENV = "envs/volvox_lab.usda"        # robot.env in playback.toml; "" = moves unchecked
 sys.path.insert(0, HERE)
 
 STEPS = [
@@ -174,7 +174,7 @@ def self_test():
     check("acc_limit 300 is passed (the player caps with it)", "--acc-limit" in a and a[a.index("--acc-limit") + 1] == "300", a)
     check("moving steps check their MoveJ against the lab's room by default",
           all("--env" in build_argv(cfg, st) for st in ("goto-start", "play", "home", "wiggle"))
-          and build_argv(cfg, "play")[build_argv(cfg, "play").index("--env") + 1].endswith("volvox_lab.json"), a)
+          and build_argv(cfg, "play")[build_argv(cfg, "play").index("--env") + 1].endswith("volvox_lab.usda"), a)
     check("robot.env = \"\" turns the move check off",
           "--env" not in build_argv(dict(cfg, robot=dict(cfg["robot"], env="")), "play"), "")
     bad = dict(cfg, robot=dict(cfg["robot"], target="real"))
