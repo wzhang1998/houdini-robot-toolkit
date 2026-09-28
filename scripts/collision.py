@@ -183,6 +183,12 @@ def load_model(robot="fr20", tool_len=0.0, tool_radius=0.04, tool=True):
         pts = _stl_vertices(U.resolve_mesh(mesh, pkg))
         for a, b, r in fit_capsules(pts):
             caps.append({"name": name, "joint": idx, "a": a, "b": b, "r": r})
+    # the upper arm's root turns in place about J2, a few cm over the plate and
+    # the floor whatever J2 is: for that capsule only contact counts there
+    # (safe_move and check agree); the rest of the upper arm keeps its margin
+    ups = [c for c in caps if c["name"] == ROOT_LINK]
+    if ups:
+        min(ups, key=lambda c: math.dist(((c["a"][i] + c["b"][i]) / 2.0 for i in range(3)), (0.0, 0.0, 0.0)))["root"] = True
     fo = float(prof["rig"].get("flange_offset_m", 0.0))
     if tool_len > 0:
         caps.append({"name": "tool", "joint": len(parsed["chain"]) - 1,
@@ -381,13 +387,15 @@ def check(model, env, times, joints, max_violations=20):
     for f, (t, q) in enumerate(zip(times, joints)):
         caps, tcp = capsules(model, q)
         for o in hard:
-            for name, a, b, r in caps:
+            for k, (name, a, b, r) in enumerate(caps):
                 if name in FIXED_LINKS:
                     continue                # bolted down, or turning only about the base axis
                 d = capsule_distance(o, a, b, r)
                 if d < best_env[0]:
                     best_env = (d, {"frame": f, "t": round(t, 4), "link": name, "with": o["name"]})
                 limit = o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
+                if contact_only(model, k, o["name"]):
+                    limit = 0.0
                 if d < limit and len(viol) < max_violations:
                     viol.append({"frame": f, "t": round(t, 4), "kind": o["role"], "link": name,
                                  "with": o["name"], "clearance_m": round(d, 4)})
@@ -422,6 +430,14 @@ U_BASE = "base_link"
 # links whose distance to the room never changes enough to matter: the base,
 # and the shoulder, which only turns about the base's own vertical axis
 FIXED_LINKS = ("base_link", "shoulder_link")
+ROOT_LINK = "upperarm_link"        # its capsule next to J2 turns in place: contact only with ROOT_NEAR
+ROOT_NEAR = ("floor", "base_plate")
+
+
+def contact_only(model, k, obj_name):
+    """Whether capsule k of the model only has to avoid contact with obj_name
+    (the upper arm's root, turning in place over the floor and the plate)."""
+    return bool(model["caps"][k].get("root")) and obj_name in ROOT_NEAR
 
 
 def pose_clearance(model, env, q, cap=0.5):
@@ -494,6 +510,10 @@ if __name__ == "__main__":
         mine = [c for c in m["caps"] if c["name"] == name]
         worst = max(worst, max(min(_seg_point_dist(c["a"], c["b"], p) - c["r"] for c in mine) for p in pts))
     ok("every mesh vertex lies inside its capsule", worst <= 1e-9, "worst %.2e m outside" % worst)
+    roots = [c for c in m["caps"] if c.get("root")]
+    ok("the upper arm's capsule at J2 (only it) is contact-only with the floor and the plate",
+       len(roots) == 1 and roots[0]["name"] == ROOT_LINK
+       and sum(1 for c in m["caps"] if c["name"] == ROOT_LINK) > 1, str([(c["name"], round(c["r"], 3)) for c in roots]))
     mt = load_model("fr20")
     tb = [c for c in mt["caps"] if c["name"].startswith("tool_")]
     ok("the profile's tool rides on the last link, each capsule containing its box",

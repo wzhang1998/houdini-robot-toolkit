@@ -77,12 +77,12 @@ def blocked(model, menv, q):
                 return "tcp", o["name"] + " (outside)", -out
             continue
         limit = o.get("margin_m", base) if o["role"] == "obstacle" else 0.0
-        for name, a, b, r in caps:
+        for k, (name, a, b, r) in enumerate(caps):
             if name in C.FIXED_LINKS:
                 continue
             d = C.capsule_distance(o, a, b, r)
-            if name == ROOT_LINK and o["name"] in KEEP_OWN:
-                d += limit
+            if C.contact_only(model, k, o["name"]):
+                d += limit                               # the upper arm's root: contact only (collision.check agrees)
             if d < limit:
                 return name, o["name"], d
     for i, j in model["pairs"]:
@@ -154,7 +154,7 @@ def self_test():
 
     root = os.path.dirname(HERE)
     env = C.load_env(os.path.join(root, "envs", "volvox_lab.usda"))
-    model = C.load_model("fr20")
+    model = C.load_model("fr20", tool=False)            # the bare arm: these cases were drawn without a tool
     menv = move_env(env)
     ceil = [o for o in menv["objects"] if o["name"] == "ceiling"][0]
     check("the ceiling gets the ceiling margin", ceil["margin_m"] == CEILING_MARGIN_M, ceil["margin_m"])
