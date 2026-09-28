@@ -11,6 +11,9 @@ the tool's working point (the LED face of the strip).
         {"name", "boxes": [{"name", "xyz", "rpy", "size", "R"}], "tcp": {"xyz", "rpy", "R"} or None}
         (xyz / R: each collision box's centre and axes in the mount frame, joints and origins composed)
     write(tool, path)      one link per box (visual = collision), fixed to the mount; the TCP link
+    to_stl(tool, path)     the boxes as one STL in mm, for the controller's tool model (WebApp)
+
+    python scripts/tool_urdf.py --stl assets/tools/led_strip.urdf assets/tools/led_strip.stl
 
 The robot's profile names its tool file ("tool": {"urdf": ...}); collision.py
 reads it, so every check sees the tool. robot_show's Tool page edits it in
@@ -142,6 +145,38 @@ def write(tool, path, note=None):
     return path
 
 
+def to_stl(tool, path, scale=1000.0):
+    """The tool's boxes as one binary STL, in the mount frame (origin at the
+    flange's mounting face, z out of it), scaled (1000: millimetres, what a
+    controller's tool-model import and CAD expect). Outward normals."""
+    import struct
+    tris = []
+    for b in tool["boxes"]:
+        hx, hy, hz = (s / 2.0 for s in b["size"])
+        R, c = b["R"], b["xyz"]
+        corner = lambda sx, sy, sz: tuple(scale * (c[i] + R[i][0] * sx * hx + R[i][1] * sy * hy + R[i][2] * sz * hz)
+                                          for i in range(3))
+        # each face: its outward axis (local), and its 4 corners counter-clockwise seen from outside
+        for ax, sgn in ((0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)):
+            u, v = (ax + 1) % 3, (ax + 2) % 3             # u x v = +ax (right-handed)
+            if sgn < 0:
+                u, v = v, u
+            quad = []
+            for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                s = [0, 0, 0]
+                s[ax], s[u], s[v] = sgn, su, sv
+                quad.append(corner(*s))
+            n = tuple(R[i][ax] * sgn for i in range(3))
+            tris += [(n, quad[0], quad[1], quad[2]), (n, quad[0], quad[2], quad[3])]
+    with open(path, "wb") as f:
+        f.write(("%s tool, units %s, origin: flange mounting face, z out of it"
+                 % (tool.get("name", "tool"), "mm" if scale == 1000.0 else "x%g m" % scale)).encode()[:80].ljust(80, b" "))
+        f.write(struct.pack("<I", len(tris)))
+        for n, a, b_, c_ in tris:
+            f.write(struct.pack("<12fH", *n, *a, *b_, *c_, 0))
+    return path
+
+
 def self_test():
     import tempfile
     fails = []
@@ -170,9 +205,26 @@ def self_test():
           all(abs(x - y) < 1e-6 for x, y in zip(b["xyz"], [0.1, 0.0, 0.2]))
           and abs(b["R"][1][0] - 1.0) < 1e-6 and b["size"] == [0.5, 0.02, 0.02]
           and abs(r["tcp"]["xyz"][2] - 0.3) < 1e-9, (b, r["tcp"]))
+    import struct
+    stl = os.path.join(tempfile.mkdtemp(), "t.stl")
+    to_stl(t, stl)
+    data = open(stl, "rb").read()
+    n = struct.unpack_from("<I", data, 80)[0]
+    vol = 0.0
+    for k in range(n):
+        f = struct.unpack_from("<12f", data, 84 + 50 * k)
+        a, b_, c_ = f[3:6], f[6:9], f[9:12]
+        vol += (a[0] * (b_[1] * c_[2] - b_[2] * c_[1]) - a[1] * (b_[0] * c_[2] - b_[2] * c_[0])
+                + a[2] * (b_[0] * c_[1] - b_[1] * c_[0])) / 6.0
+    want = sum(b["size"][0] * b["size"][1] * b["size"][2] for b in t["boxes"]) * 1e9
+    check("the STL (mm) closes around every box, faces outward: its volume is the boxes'",
+          n == 12 * len(t["boxes"]) and abs(vol - want) < 1e-3 * want, (n, round(vol), round(want)))
     print("tool_urdf self-test: %s" % ("PASS" if not fails else "FAIL: %s" % fails))
     return not fails
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "--stl":      # python scripts/tool_urdf.py --stl tool.urdf out.stl
+        print("wrote", to_stl(read(sys.argv[2]), sys.argv[3]))
+        sys.exit(0)
     sys.exit(0 if self_test() else 1)
