@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!-- The LED strip for the scan painting, mounted on the FR20's flange.
+     A tool description: its root link is the flange's mounting face (z out
+     of the face, x and y as joint_6's link), every other link hangs from it
+     by a fixed joint, the way an end effector is attached in ROS / MoveIt /
+     Isaac Sim. Edited in Houdini (robot_show > Tool) or by hand; read by
+     scripts/tool_urdf.py for the collision checks and the display.
+     Sizes: the user's, 2026-09-28, before the hardware is built (a ~1 m
+     strip, 1 in wide, centred on the flange as a T on a ~5 cm bracket, the
+     LEDs facing out along z, its length along y). Measure and update. -->
+<robot name="led_strip">
+  <link name="tool_mount"/>
+  <link name="bracket">
+    <visual>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry><box size="0.04 0.04 0.05"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry><box size="0.04 0.04 0.05"/></geometry>
+    </collision>
+  </link>
+  <joint name="tool_mount_to_bracket" type="fixed">
+    <parent link="tool_mount"/>
+    <child link="bracket"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="strip">
+    <visual>
+      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <geometry><box size="0.0254 1.0 0.02"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <geometry><box size="0.0254 1.0 0.02"/></geometry>
+    </collision>
+  </link>
+  <joint name="tool_mount_to_strip" type="fixed">
+    <parent link="tool_mount"/>
+    <child link="strip"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="led_tcp"/>
+  <joint name="tool_mount_to_led_tcp" type="fixed">
+    <parent link="tool_mount"/>
+    <child link="led_tcp"/>
+    <origin xyz="0 0 0.07" rpy="0 0 0"/>
+  </joint>
+</robot>

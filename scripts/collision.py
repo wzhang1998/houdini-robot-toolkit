@@ -133,9 +133,38 @@ def fit_capsules(pts, max_k=3):
     return best[1]
 
 
-def load_model(robot="fr20", tool_len=0.0, tool_radius=0.04):
-    """Capsules per link (link frame) + the chain, cached per robot."""
-    key = (robot, tool_len, tool_radius)
+def tool_def(prof):
+    """The profile's mounted tool, read from its URDF (tool_urdf.read), or None."""
+    t = prof.get("tool") or {}
+    if not t.get("urdf"):
+        return None
+    import tool_urdf
+    return tool_urdf.read(os.path.join(ROOT, t["urdf"]))
+
+
+def tool_capsules(tool, flange_offset):
+    """The tool's boxes (tool_urdf.read: centre and axes in the mount frame)
+    as capsules in the last link's frame, each containing its box: the
+    segment along the box's longest side, the radius half the diagonal of
+    the other two -- conservative, as the links' are."""
+    out = []
+    for b in (tool or {}).get("boxes", []):
+        s, R = b["size"], b["R"]
+        c = (b["xyz"][0], b["xyz"][1], b["xyz"][2] + flange_offset)      # the mount is the flange's face
+        k = max(range(3), key=lambda i: s[i])
+        axis = (R[0][k], R[1][k], R[2][k])
+        r = 0.5 * math.hypot(*[s[i] for i in range(3) if i != k])
+        h = s[k] / 2.0
+        out.append({"name": "tool_" + b["name"], "a": tuple(c[i] - axis[i] * h for i in range(3)),
+                    "b": tuple(c[i] + axis[i] * h for i in range(3)), "r": r})
+    return out
+
+
+def load_model(robot="fr20", tool_len=0.0, tool_radius=0.04, tool=True):
+    """Capsules per link (link frame) + the chain, cached per robot. tool:
+    the profile's mounted tool (its "tool" block) rides on the last link;
+    False leaves it off (the bare arm)."""
+    key = (robot, tool_len, tool_radius, tool)
     if key in _MODELS:
         return _MODELS[key]
     import robot_profile as RP
@@ -158,6 +187,9 @@ def load_model(robot="fr20", tool_len=0.0, tool_radius=0.04):
     if tool_len > 0:
         caps.append({"name": "tool", "joint": len(parsed["chain"]) - 1,
                      "a": (0.0, 0.0, fo), "b": (0.0, 0.0, fo + tool_len), "r": tool_radius})
+    if tool and prof.get("tool"):
+        for c in tool_capsules(tool_def(prof), fo):
+            caps.append(dict(c, joint=len(parsed["chain"]) - 1))
     model = {"robot": robot, "chain": parsed["chain"], "caps": caps, "flange_offset": fo,
              "tcp_local": (0.0, 0.0, fo + tool_len)}
     model["pairs"] = _self_pairs(model)
@@ -450,7 +482,7 @@ if __name__ == "__main__":
             fails.append(label)
 
     t0 = time.time()
-    m = load_model("fr20")
+    m = load_model("fr20", tool=False)                # the bare arm: its capsules against its meshes
     ok("FR20 capsules fitted from the URDF meshes", len({c["name"] for c in m["caps"]}) == 7,
        ", ".join("%s r=%.3f L=%.3f" % (c["name"], c["r"], math.dist(c["a"], c["b"])) for c in m["caps"])
        + "  (%.1f s)" % (time.time() - t0))
@@ -462,6 +494,14 @@ if __name__ == "__main__":
         mine = [c for c in m["caps"] if c["name"] == name]
         worst = max(worst, max(min(_seg_point_dist(c["a"], c["b"], p) - c["r"] for c in mine) for p in pts))
     ok("every mesh vertex lies inside its capsule", worst <= 1e-9, "worst %.2e m outside" % worst)
+    mt = load_model("fr20")
+    tb = [c for c in mt["caps"] if c["name"].startswith("tool_")]
+    ok("the profile's tool rides on the last link, each capsule containing its box",
+       tb and all(c["joint"] == len(mt["chain"]) - 1 for c in tb)
+       and any(abs(math.dist(c["a"], c["b"]) - 1.0) < 1e-9 for c in tb), str([c["name"] for c in tb]))
+    ok("... and is checked against the arm's links but its own wrist",
+       any("tool_strip" in (mt["caps"][i]["name"], mt["caps"][j]["name"]) and "forearm_link" in
+           (mt["caps"][i]["name"], mt["caps"][j]["name"]) for i, j in mt["pairs"]))
     ok("self-collision pairs exclude neighbours", all(abs(m["caps"][i]["joint"] - m["caps"][j]["joint"]) > 1
                                                       for i, j in m["pairs"]), "%d pairs" % len(m["pairs"]))
 

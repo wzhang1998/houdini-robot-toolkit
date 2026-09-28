@@ -43,6 +43,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE).replace("\\", "/")
@@ -105,6 +106,58 @@ def zone_instance(z):
     return tuple(to_h(z["center"])), (0.0, math.sin(half), 0.0, math.cos(half)), (s[0], s[2], s[1])
 
 
+ROBOT_TO_H = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))     # to_h as a matrix (a rotation)
+
+
+def _quat(m):
+    """(x, y, z, w) of a rotation matrix (columns: where the axes go)."""
+    tr = m[0][0] + m[1][1] + m[2][2]
+    if tr > 0:
+        s = math.sqrt(tr + 1.0) * 2.0
+        return ((m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s, 0.25 * s)
+    i = max(range(3), key=lambda k: m[k][k])
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = math.sqrt(1.0 + m[i][i] - m[j][j] - m[k][k]) * 2.0
+    q = [0.0, 0.0, 0.0, (m[k][j] - m[j][k]) / s]
+    q[i] = 0.25 * s
+    q[j] = (m[j][i] + m[i][j]) / s
+    q[k] = (m[k][i] + m[i][k]) / s
+    return tuple(q)
+
+
+def box_instance(center, R, size):
+    """A box in the robot frame -- centre, rotation R (columns: its axes),
+    size along its own axes -> (P, orient, scale) of the point a unit Box is
+    copied onto in Houdini (Copy to Points scales, then turns)."""
+    A = [[sum(ROBOT_TO_H[r][k] * R[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
+    return tuple(to_h(center)), _quat(A), tuple(size)
+
+
+def tool_boxes(chain, flange_offset, tool, q):
+    """[(name, centre, R, size)] of the mounted tool's boxes (tool_urdf.read:
+    centre and axes in the mount frame, the flange's face) at joint angles
+    q, in the robot frame."""
+    import urdf_rig as UR
+    last = UR.forward_kinematics(chain, q)[-1]
+    R, p = last["link_R"], last["link_p"]
+    out = []
+    for b in (tool or {}).get("boxes", []):
+        c = (b["xyz"][0], b["xyz"][1], b["xyz"][2] + flange_offset)
+        Rb = tuple(tuple(sum(R[i][k] * b["R"][k][j] for k in range(3)) for j in range(3)) for i in range(3))
+        out.append((b["name"], UR._add(p, UR._mat_vec(R, c)), Rb, b["size"]))
+    return out
+
+
+def canvas_box(c):
+    """The show's paper {center, normal, size [w, h], thickness} as (centre,
+    R, size): upright, its x along the normal (as room_usd.show_extras)."""
+    n = c["normal"]
+    yaw = math.atan2(n[1], n[0])
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    R = ((cy, -sy, 0.0), (sy, cy, 0.0), (0.0, 0.0, 1.0))
+    return c["center"], R, (c.get("thickness", 0.02), c["size"][0], c["size"][1])
+
+
 def zx_arc_angle(j1_deg):
     """The Circle SOP angle (orientation ZX) that points where the arm faces
     at J1 = j1_deg. In ZX an angle a points along Houdini (cos a, 0, sin a);
@@ -139,6 +192,11 @@ def merge_config(cfg, scene):
         hubs[name] = dict(old, **h)
     out["hubs"] = hubs
     out["start_hub"] = scene["start_hub"] if scene["start_hub"] in hubs else next(iter(hubs), None)
+    if scene.get("canvas") != "keep" and "canvas" in scene:
+        if scene["canvas"]:
+            out["canvas"] = dict(cfg.get("canvas") or {}, **scene["canvas"])
+        else:
+            out.pop("canvas", None)
     out["range"] = dict(cfg.get("range", {}), **scene["range"])
     out["library"] = dict(cfg.get("library", {}), **scene["library"])
     out["select"] = dict(cfg.get("select", {}), **scene["select"])
@@ -312,7 +370,7 @@ def _parms(node, config, env):
         **_cb("profile_changed(kwargs['node'])")))
     setup.addParmTemplate(T.StringParmTemplate(
         "env_file", "Environment", 1, default_value=(env,), string_type=T.stringParmType.FileReference,
-        file_type=T.fileType.Any, tags={"filechooser_pattern": "*.json"},
+        file_type=T.fileType.Any, tags={"filechooser_pattern": "*.usda *.usd"},
         help="envs/<room>.usda: the measured room the clips are checked against"))
     setup.addParmTemplate(T.StringParmTemplate(
         "config", "Show Config", 1, default_value=(config,), string_type=T.stringParmType.FileReference,
@@ -334,6 +392,30 @@ def _parms(node, config, env):
                                                "(Esc or another tool leaves them)", **_cb("edit_in_viewport(kwargs['node'])")))
     g.append(setup)
 
+    tl = T.FolderParmTemplate("tool_f", "Tool", folder_type=T.folderType.Tabs)
+    tl.addParmTemplate(T.StringParmTemplate(
+        "tool_file", "Tool URDF", 1, string_type=T.stringParmType.FileReference, file_type=T.fileType.Any,
+        tags={"filechooser_pattern": "*.urdf"},
+        help="What is mounted on the flange (assets/tools/<tool>.urdf; empty: the profile's). Its root link is the "
+             "mounting face: z out of it, x and y as the last link's"))
+    tl.addParmTemplate(T.ButtonParmTemplate("tool_load_b", "Load Tool", join_with_next=True,
+                                            help="The tool URDF -> these parameters", **_cb("load_tool(kwargs['node'])")))
+    tl.addParmTemplate(T.ButtonParmTemplate("tool_write_b", "Write Tool",
+                                            help="These parameters -> the tool URDF. Every check uses it from then on: "
+                                                 "rebuild the show", **_cb("write_tool(kwargs['node'])")))
+    bl = T.FolderParmTemplate("tool_boxes", "Boxes", folder_type=T.folderType.MultiparmBlock)
+    bl.addParmTemplate(T.StringParmTemplate("tbox_name#", "Name", 1))
+    bl.addParmTemplate(T.FloatParmTemplate("tbox_xyz#", "Centre (mount frame, m)", 3,
+                                           help="From the flange's mounting face: z out of it"))
+    bl.addParmTemplate(T.FloatParmTemplate("tbox_rpy#", "Rotation (roll pitch yaw, deg)", 3))
+    bl.addParmTemplate(T.FloatParmTemplate("tbox_size#", "Size (m)", 3, default_value=(0.05, 0.05, 0.05), min=0.001,
+                                           max=3.0))
+    tl.addParmTemplate(bl)
+    tl.addParmTemplate(T.FloatParmTemplate("tool_tcp_xyz", "TCP (mount frame, m)", 3,
+                                           help="The tool's working point, e.g. the LED face"))
+    tl.addParmTemplate(T.FloatParmTemplate("tool_tcp_rpy", "TCP Rotation (deg)", 3))
+    g.append(tl)
+
     zones = T.FolderParmTemplate("zones_f", "Zones", folder_type=T.folderType.Tabs)
     zones.addParmTemplate(T.ToggleParmTemplate(
         "stage_override", "Use Zone 'stage' as the Stage", default_value=False,
@@ -345,6 +427,18 @@ def _parms(node, config, env):
     zl.addParmTemplate(T.FloatParmTemplate("zone_size#", "Size (m)", 3, default_value=(0.6, 0.6, 0.6), min=0.01, max=5.0))
     zl.addParmTemplate(T.FloatParmTemplate("zone_yaw#", "Yaw (deg)", 1, min=-180.0, max=180.0))
     zones.addParmTemplate(zl)
+    zones.addParmTemplate(T.SeparatorParmTemplate("canvas_sep"))
+    zones.addParmTemplate(T.ToggleParmTemplate("canvas_on", "Canvas (the Paper)", default_value=True,
+                                               help="The show's paper: an obstacle for every idle clip, what the scan paints"))
+    zones.addParmTemplate(T.FloatParmTemplate("canvas_center", "Canvas Centre (m)", 3, disable_when="{ canvas_on == 0 }",
+                                              help="Robot base frame, Z up: the middle of the paper's face"))
+    zones.addParmTemplate(T.FloatParmTemplate("canvas_facing", "Canvas Faces (deg)", 1, min=-180.0, max=180.0,
+                                              disable_when="{ canvas_on == 0 }",
+                                              help="The paper's normal, pointing away from the robot, as an angle about Z"))
+    zones.addParmTemplate(T.FloatParmTemplate("canvas_size", "Canvas Width, Height (m)", 2, default_value=(1.5, 1.0),
+                                              min=0.05, max=4.0, disable_when="{ canvas_on == 0 }"))
+    zones.addParmTemplate(T.FloatParmTemplate("canvas_thickness", "Canvas Thickness (m)", 1, default_value=(0.02,),
+                                              min=0.001, max=0.2, disable_when="{ canvas_on == 0 }"))
     g.append(zones)
 
     hubs = T.FolderParmTemplate("hubs_f", "Hubs", folder_type=T.folderType.Tabs)
@@ -438,7 +532,8 @@ def _parms(node, config, env):
 
     disp = T.FolderParmTemplate("display_f", "Display", folder_type=T.folderType.Tabs)
     for name, label, on in (("show_robot", "Robot", True), ("show_room", "Room", True), ("show_zones", "Zones", True),
-                            ("show_ghosts", "Hub Ghosts", True), ("show_rays", "Look Rays", True),
+                            ("show_ghosts", "Hub Ghosts", True), ("show_fixtures", "Tool and Canvas", True),
+                            ("show_rays", "Look Rays", True),
                             ("show_paths", "Built Tool Paths", True), ("show_range", "Operating Range", True)):
         disp.addParmTemplate(T.ToggleParmTemplate(name, label, default_value=on))
     g.append(disp)
@@ -507,6 +602,22 @@ def _network(node):
     zones.parm("applyto1").set(0)
     zones.parm("applymethod1").set(0)
     zones.parm("applyattribs1").set("Cd")
+
+    # the paper and the mounted tool (on the arm and at every hub): a solid
+    # Box copied onto one data point per box; the points follow the frame
+    fpts = _py(node, "fixture_points", "fixture_points")
+    fg = fpts.parmTemplateGroup()
+    fg.append(hou.FloatParmTemplate("frame", "Frame", 1))
+    fpts.setParmTemplateGroup(fg)
+    fpts.parm("frame").setExpression("$F")
+    solid = node.createNode("box", "solid_box")
+    fixtures = node.createNode("copytopoints::2.0", "fixtures")
+    fixtures.setInput(0, solid)
+    fixtures.setInput(1, fpts)
+    fixtures.parm("targetattribs").set(1)
+    fixtures.parm("applyto1").set(0)
+    fixtures.parm("applymethod1").set(0)
+    fixtures.parm("applyattribs1").set("Cd")
 
     # hub ghosts: the arm's own link meshes, posed per hub by Transform Pieces
     poses = _py(node, "hub_poses", "hub_poses")
@@ -598,6 +709,7 @@ def _network(node):
     shown = [arm_packed,
              _switch(node, "zones_shown", zones, "show_zones"),
              _switch(node, "ghosts_shown", ghosts, "show_ghosts"),
+             _switch(node, "fixtures_shown", fixtures, "show_fixtures"),
              _switch(node, "rays_shown", rays, "show_rays"),
              _switch(node, "paths_shown", paths, "show_paths"),
              _switch(node, "range_shown", range_tubes, "show_range")]
@@ -647,12 +759,91 @@ def build_hda(config=DEFAULT_CONFIG):
     return HDA_FILE
 
 
+# --- the mounted tool (a URDF: tool_urdf.py) ---------------------------------
+
+def tool_path(node=None):
+    """The tool URDF this node edits: its Tool URDF, else the profile's."""
+    import robot_profile as RP
+    node = tool(node)
+    p = node.evalParm("tool_file").strip() if node.parm("tool_file") else ""
+    if not p:
+        t = RP.load(node.parm("robot_profile").evalAsString() or "fr20").get("tool") or {}
+        p = os.path.join(ROOT, t["urdf"]) if t.get("urdf") else ""
+    return p.replace("\\", "/")
+
+
+def load_tool(node=None):
+    """The tool URDF -> the Tool page."""
+    import tool_urdf
+    node = tool(node)
+    path = tool_path(node)
+    if not path or not os.path.exists(path):
+        _report(node, "No tool URDF (%s): the arm is bare" % (path or "the profile names none"))
+        node.parm("tool_boxes").set(0)
+        return None
+    t = tool_urdf.read(path)
+    node.parm("tool_file").set(path.replace(ROOT, "$HIP/..") if path.startswith(ROOT) else path)
+    node.parm("tool_boxes").set(len(t["boxes"]))
+    for i, b in enumerate(t["boxes"], start=1):
+        node.parm("tbox_name%d" % i).set(b["name"])
+        node.parmTuple("tbox_xyz%d" % i).set(_r(b["xyz"]))
+        node.parmTuple("tbox_rpy%d" % i).set(_r([math.degrees(x) for x in b["rpy"]], 3))
+        node.parmTuple("tbox_size%d" % i).set(_r(b["size"]))
+    tcp = t.get("tcp") or {"xyz": (0.0, 0.0, 0.0), "rpy": (0.0, 0.0, 0.0)}
+    node.parmTuple("tool_tcp_xyz").set(_r(tcp["xyz"]))
+    node.parmTuple("tool_tcp_rpy").set(_r([math.degrees(x) for x in tcp["rpy"]], 3))
+    return t
+
+
+def tool_from_parms(node=None):
+    """The Tool page as a tool (tool_urdf's form), or None with no boxes."""
+    import tool_urdf
+    node = tool(node)
+    if not node.parm("tool_boxes") or node.evalParm("tool_boxes") == 0:
+        return None
+    boxes = []
+    for i in range(1, node.evalParm("tool_boxes") + 1):
+        rpy = [math.radians(x) for x in node.parmTuple("tbox_rpy%d" % i).eval()]
+        boxes.append({"name": node.evalParm("tbox_name%d" % i).strip() or "box%d" % i,
+                      "xyz": list(node.parmTuple("tbox_xyz%d" % i).eval()), "rpy": rpy,
+                      "R": tool_urdf.rpy_matrix(rpy), "size": list(node.parmTuple("tbox_size%d" % i).eval())})
+    name = os.path.splitext(os.path.basename(tool_path(node)))[0] or "tool"
+    return {"name": name, "boxes": boxes,
+            "tcp": {"name": "tool_tcp" if "tcp" not in name else name, "xyz": list(node.parmTuple("tool_tcp_xyz").eval()),
+                    "rpy": [math.radians(x) for x in node.parmTuple("tool_tcp_rpy").eval()]}}
+
+
+def write_tool(node=None):
+    """The Tool page -> the tool URDF. The checks read it from then on (the
+    collision model is rebuilt); the show needs rebuilding."""
+    import collision as C
+    import tool_urdf
+    node = tool(node)
+    t = tool_from_parms(node)
+    path = tool_path(node)
+    if t is None or not path:
+        _report(node, "Not written: no boxes, or no Tool URDF path", error=True)
+        return None
+    old = tool_urdf.read(path) if os.path.exists(path) else None
+    if old and old.get("tcp") and t.get("tcp"):
+        t["tcp"]["name"] = old["tcp"]["name"]
+    tool_urdf.write(t, path, note="Written by the robot_show tool (Houdini) %s. Root link: the flange's mounting "
+                                  "face, z out of it." % time.strftime("%Y-%m-%d %H:%M"))
+    C._MODELS.clear()
+    _CACHE.pop("cmodel", None)
+    _report(node, "Wrote %s -- rebuild the show: its clips were checked with the old tool" % _rel(path))
+    _cook(node)
+    return t
+
+
 def on_created(node):
     """The asset's OnCreated: a new node loads its config, gets its look."""
     hou = _hou()
     node.setColor(hou.Color((0.3, 0.6, 0.9)))
     if os.path.exists(cfg_path(node)):
         load_config(node)
+    if node.parm("tool_boxes") is not None and node.evalParm("tool_boxes") == 0:
+        load_tool(node)
     register_state()
     clean_view()
 
@@ -734,6 +925,14 @@ def load_config(node=None):
     if stage:
         zones["stage"] = stage
     node.parm("stage_override").set(1 if cfg.get("stage") else 0)
+    c = cfg.get("canvas")
+    if node.parm("canvas_on") is not None:
+        node.parm("canvas_on").set(1 if c else 0)
+        if c:
+            node.parmTuple("canvas_center").set(c["center"])
+            node.parm("canvas_facing").set(round(math.degrees(math.atan2(c["normal"][1], c["normal"][0])), 3))
+            node.parmTuple("canvas_size").set(c["size"])
+            node.parm("canvas_thickness").set(c.get("thickness", 0.02))
     node.parm("zones").set(len(zones))
     for i, (name, z) in enumerate(zones.items(), start=1):
         node.parm("zone_name%d" % i).set(name)
@@ -810,7 +1009,14 @@ def scene_parts(node=None):
             h["families"] = node.evalParm("hub_families%d" % i).split()
         hubs[name] = h
     b0, b1 = node.parmTuple("bars").eval()
+    canvas = None
+    if node.parm("canvas_on") is not None and node.evalParm("canvas_on"):
+        a = math.radians(node.evalParm("canvas_facing"))
+        canvas = {"center": _r(node.parmTuple("canvas_center").eval()),
+                  "normal": [round(math.cos(a), 4), round(math.sin(a), 4), 0.0],
+                  "size": _r(node.parmTuple("canvas_size").eval(), 3), "thickness": round(node.evalParm("canvas_thickness"), 4)}
     return {
+        "canvas": canvas if node.parm("canvas_on") is not None else "keep",
         "zones": zones, "stage": stage, "hubs": hubs, "start_hub": node.evalParm("start_hub"),
         "range": {"j1_deg": _r(node.parmTuple("j1_range").eval(), 2), "tcp_z": _r(node.parmTuple("tcp_z").eval(), 3),
                   "speed": round(node.evalParm("speed"), 3)},
@@ -1109,6 +1315,54 @@ def zone_points(sop):
         pt.setAttribValue("name", name)
 
 
+TOOL_RGB = (1.0, 0.82, 0.3)
+CANVAS_RGB = (0.93, 0.93, 0.9)
+
+
+def fixture_points(sop):
+    """Python SOP: one point per box of what is mounted and placed -- the
+    show's paper, the tool (the profile's "tool", e.g. the LED strip) on the
+    arm at this frame and on every hub's pose -- with P, orient, scale, Cd,
+    name. A Box is copied onto them. Depends on the frame (its `frame` parm)."""
+    hou = _hou()
+    import robot_profile as RP
+    geo = sop.geometry()
+    for name, default in (("orient", (0.0, 0.0, 0.0, 1.0)), ("scale", (1.0, 1.0, 1.0)), ("Cd", (1.0, 1.0, 1.0))):
+        geo.addAttrib(hou.attribType.Point, name, default)
+    geo.addAttrib(hou.attribType.Point, "name", "")
+    sop.evalParm("frame")                                     # cook again when the frame changes
+
+    def add(label, box, cd):
+        P, orient, scale = box_instance(*box)
+        pt = geo.createPoint()
+        pt.setPosition(P)
+        pt.setAttribValue("orient", orient)
+        pt.setAttribValue("scale", scale)
+        pt.setAttribValue("Cd", cd)
+        pt.setAttribValue("name", label)
+
+    node = tool(sop)
+    cfg = scene_config(sop)
+    if cfg.get("canvas"):
+        add("canvas", canvas_box(cfg["canvas"]), CANVAS_RGB)
+    tool_def = tool_from_parms(node)                            # the Tool page, live as it is edited
+    if tool_def is None:
+        import collision as C
+        tool_def = C.tool_def(RP.load(node.parm("robot_profile").evalAsString() or "fr20"))
+    if not tool_def:
+        return
+    m = _cmodel()
+    arm = node.node("robot_arm")
+    q = [joint(arm, j) for j in range(1, 7)]
+    for name, c, R, s in tool_boxes(m["chain"], m["flange_offset"], tool_def, q):
+        add("tool_" + name, (c, R, s), TOOL_RGB)
+    for name, h in cfg["hubs"].items():
+        qh, why = hub_status(cfg, h)
+        if qh is not None:
+            for sname, c, R, s in tool_boxes(m["chain"], m["flange_offset"], tool_def, qh):
+                add("%s_tool_%s" % (name, sname), (c, R, s), BAD_RGB if why else TOOL_RGB)
+
+
 def hub_poses(sop):
     """Python SOP: each hub's posed skeleton (urdf_rig.posed_skeleton: points
     name, P, transform, as the robot_arm asset poses its meshes), tagged with
@@ -1195,7 +1449,7 @@ def paths(sop):
 def _cook(node):
     hou = _hou()
     node = tool(node)
-    for name in ("zone_points", "hub_poses", "rays", "paths"):
+    for name in ("zone_points", "fixture_points", "hub_poses", "rays", "paths"):
         sop = node.node(name)
         if sop:
             try:
@@ -1389,6 +1643,37 @@ def self_test():
     a = add_authored([{"id": "cat", "hub": "rest", "csv": "x.csv"}], ROOT + "/tests/csv/cat.csv", "greet", "cat")
     check_("authored: same id replaced, path made relative",
            a == [{"id": "cat", "hub": "greet", "csv": "tests/csv/cat.csv"}], a)
+
+    def turn(qt, v):                                   # rotate v by the quaternion (x, y, z, w)
+        x, y, z, w = qt
+        u = (x, y, z)
+        cr = lambda a, b: (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+        t = [2.0 * c for c in cr(u, v)]
+        return [v[i] + w * t[i] + cr(u, t)[i] for i in range(3)]
+    yaw = math.radians(30.0)
+    R = ((math.cos(yaw), -math.sin(yaw), 0.0), (math.sin(yaw), math.cos(yaw), 0.0), (0.0, 0.0, 1.0))
+    P, orient, scale = box_instance((1.0, 2.0, 3.0), R, (0.1, 0.2, 0.3))
+    ax = turn(orient, (1.0, 0.0, 0.0))
+    check_("a box's orient turns its x axis where R does, in Houdini's frame",
+           all(abs(a - b) < 1e-9 for a, b in zip(ax, to_h((math.cos(yaw), math.sin(yaw), 0.0))))
+           and P == to_h((1.0, 2.0, 3.0)) and scale == (0.1, 0.2, 0.3), (ax, P))
+    import capability as CAP
+    import collision as C
+    import robot_profile as RP
+    m = C.load_model("fr20")
+    tool_def = C.tool_def(RP.load("fr20"))
+    if tool_def:
+        import gestures as G
+        rig = G.Rig()
+        n = (0.193, 0.981, 0.0)                            # the paper's normal: the tool points level at it
+        qs = rig.solve((0.0, 0.9, 1.5), n, 0.0, REST_Q)
+        if qs is not None:
+            strip = [b for b in tool_boxes(m["chain"], m["flange_offset"], tool_def, qs) if b[0] == "strip"][0]
+            long_axis = [strip[2][r][1] for r in range(3)]      # its length runs along the flange's y
+            check_("the LED strip stands upright when the tool points level at the paper (roll 0)",
+                   abs(abs(long_axis[2]) - 1.0) < 1e-6, long_axis)
+        check_("the collision model carries the tool's capsules",
+               any(c["name"] == "tool_strip" for c in m["caps"]), [c["name"] for c in m["caps"]][-3:])
     print("%d failed" % len(fails) if fails else "all passed")
     return 1 if fails else 0
 

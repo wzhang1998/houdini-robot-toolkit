@@ -56,9 +56,9 @@ STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limi
 ERROR_POLL_S = 0.1
 SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
+MAX_PPM = 3000.0                   # a controller clock calibration further off than this is refused
+MAX_BURST = 4                      # points sent back to back after a late tick; more are skipped
 QUEUE_POLL_S = 0.02                # how often the controller's motion queue length is read
-QUEUE_TARGET = 6                   # ServoJ points kept waiting in the controller (6 x 8 ms): its clock paces the show
-QUEUE_BAND = 3                     # within TARGET +- BAND one point per tick; above, a tick is held; below, two go
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
@@ -251,7 +251,8 @@ def realtime_priority():
     return "process high, stream thread time-critical" if ok_p and ok_t else "not set (%s, %s)" % (ok_p, ok_t)
 
 
-def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print, analyse=True):
+def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print, analyse=True,
+           clock_ppm=None):
     """The stream loop. The arm must already be at the Runner's start pose.
     Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
     report, not raised."""
@@ -267,77 +268,78 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     gc.collect()
     gc.freeze()                                     # what exists now (the graph, the show) is never walked again
     events.append("priority: " + realtime_priority())
-    # Who paces the show: the controller, when it tells its motion queue's
-    # length (GetMotionQueueLength) -- ServoJ points wait there and are played
-    # one per cmdT on the controller's own clock, so points are sent to keep
-    # QUEUE_TARGET of them waiting: the latency stays put however the two
-    # clocks drift, and a slow send only lowers the queue for a moment.
-    # Otherwise this PC's clock paces, a point per tick, and a late tick is
-    # skipped rather than burst.
-    t_q = time.perf_counter() + 0.5
-    while link.queue_seq == 0 and link._queue_ok and time.perf_counter() < t_q:
-        time.sleep(0.005)
-    paced = link.queue_seq > 0
-    events.append("pacing: " + ("the controller's motion queue, %d points (%d ms) waiting"
-                                % (QUEUE_TARGET, QUEUE_TARGET * dt * 1000) if paced else "this PC's clock"))
-    holds = refills = starved = 0
-    last_seq, filled, pid = -1, False, 0
+    # Who paces the show: the controller's clock. ServoJ points are played
+    # one per cmdT on the controller's own clock, and the real FR20's clock
+    # runs ~950 ppm slower than this PC's (2026-09-28): points sent on the
+    # PC's clock piled up in a buffer behind its motion queue (whose length,
+    # GetMotionQueueLength, stayed put while the lag grew ~1 ms per s). So
+    # with the controller's clock rate known (clock_ppm: measured by
+    # controller_clock.py outside servo mode -- GetSystemClock takes ~300 ms
+    # in it -- and kept per controller in playback.toml), each point's
+    # deadline is the last one's plus dt at that rate, the way a disciplined
+    # clock (NTP, PTP) is steered by its measured rate. A late tick sends the
+    # points it owes back to back -- the controller buffers them (the FR20
+    # took such pairs without error) -- up to MAX_BURST; more are skipped.
+    # Without a calibration the PC's clock paces, a late tick is skipped.
+    clocked = clock_ppm is not None
+    if clocked and abs(clock_ppm) > MAX_PPM:
+        raise ValueError("clock_ppm %.0f: beyond %.0f, not believed -- measure again" % (clock_ppm, MAX_PPM))
+    rate = 1.0 + (clock_ppm or 0.0) * 1e-6          # controller s per this PC's s
+    events.append("pacing: " + ("the controller's clock, %+.0f ppm against this PC's (calibrated)" % clock_ppm
+                                if clocked else "this PC's clock (no clock calibration for this controller)"))
+    bursts, pid, tick = 0, 0, -1
+    step = dt / rate                                # this PC's seconds per point
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
-    last = -1
+    next_t = start
     try:
         while True:
-            _wait = start + (last + 1) * dt
-            P._wait_until(_wait)
+            P._wait_until(next_t)
             now = time.perf_counter()
-            due = int((now - start) / dt)
-            k = max(last + 1, due)
-            late = k - last - 1 if last >= 0 else 0
-            late_ms.append((now - (start + k * dt)) * 1000.0)
+            owed = 1 + max(0, int((now - next_t) / step))    # points whose time has come
+            late_ms.append((now - next_t) * 1000.0)
             if commands.stop_requested.is_set():
                 fault = "stop requested"
                 break
             if link.error is not None:
                 raise StreamFault("controller error %s" % (link.error,))
             commands.apply()
-            if not ending and k * dt >= end_at:
+            if not ending and now - start >= end_at:
                 ending = True
                 runner.pause()
                 events.append("%.2f end of the run: finishing the clip at a hub" % runner.clock)
             n, adv = 1, 1
-            if paced:
-                if link.queue_seq != last_seq:        # one correction per reading of the queue
-                    last_seq, qn = link.queue_seq, link.queue_len
-                    filled = filled or qn >= QUEUE_TARGET
-                    if filled and qn == 0:
-                        starved += 1                  # the controller ran out: a real hitch
-                        events.append("%.2f the controller's queue ran empty (the send before took %.1f ms)"
-                                      % (runner.clock, sends_ms[-1] if len(sends_ms) else 0.0))
-                    if qn > QUEUE_TARGET + QUEUE_BAND:
-                        n, holds = 0, holds + 1      # it has enough: this tick adds none
-                    elif qn < QUEUE_TARGET - QUEUE_BAND:
-                        n, refills = 2, refills + 1  # it is running low: two points
-            elif late:                                # the PC's clock: skip, never burst
-                adv = late + 1
-                skipped += late
-                events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before took "
-                              "%.1f ms" % (runner.clock, late, (now - _wait) * 1000.0,
-                                           sends_ms[-1] if len(sends_ms) else 0.0))
-            commands.skipped = skipped + starved
-            for _ in range(n):
-                q = runner.step(dt * speed * adv) if pid > 0 else prev
-                guard.check(prev, q, adv)
+            if owed > 1:
+                if clocked:                           # the controller buffers: send what is owed
+                    n = min(owed, MAX_BURST)
+                    adv = owed - n + 1                # beyond MAX_BURST the oldest are skipped
+                    bursts += 1
+                    if adv > 1:
+                        skipped += adv - 1
+                        events.append("%.2f skipped %d point(s): %d owed after a %.1f ms send"
+                                      % (runner.clock, adv - 1, owed, sends_ms[-1] if len(sends_ms) else 0.0))
+                else:                                 # the PC's clock: skip, never burst
+                    adv = owed
+                    skipped += owed - 1
+                    events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before "
+                                  "took %.1f ms" % (runner.clock, owed - 1, (now - next_t) * 1000.0,
+                                                    sends_ms[-1] if len(sends_ms) else 0.0))
+            next_t += owed * step
+            commands.skipped = skipped
+            for i in range(n):
+                a = adv if i == 0 else 1
+                tick += a
+                q = runner.step(dt * speed * a) if pid > 0 else prev
+                guard.check(prev, q, a)
                 t0 = time.perf_counter()
                 ret = ctrl.servo_j(q, dt, pid)
                 sends_ms.append((time.perf_counter() - t0) * 1000.0)
                 code = ret[0] if isinstance(ret, (list, tuple)) else ret
                 if code != 0:
                     raise StreamFault("ServoJ point %d returned %s" % (pid, ret))
-                # the key is the point's place in the controller's play time (paced) or the PC's tick
-                ticks_cmd.add(pid if paced else k, q)
+                ticks_cmd.add(tick, q)                # the point's place in the play time
                 prev, pid = q, pid + 1
-            last = k
-            if osc is not None and k % OSC_EVERY == 0:
+            if osc is not None and pid % OSC_EVERY < n:
                 try:
                     osc.send(prev)
                 except Exception:
@@ -365,12 +367,12 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     if fault:
         log("STOPPED: %s" % fault)
     rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse)
-    rep["pacing"] = "controller queue" if paced else "pc clock"
-    if paced:
-        h = sorted(link.queue_hist)
-        rep["queue"] = {"target": QUEUE_TARGET, "band": QUEUE_BAND, "min": h[0], "median": h[len(h) // 2],
-                        "p99": h[int(len(h) * 0.99)], "max": h[-1], "held_ticks": holds, "double_ticks": refills,
-                        "ran_empty": starved, "readings": len(h)}
+    rep["pacing"] = "controller clock" if clocked else "pc clock"
+    rep["clock_ppm"] = clock_ppm
+    rep["bursts"] = bursts
+    h = sorted(link.queue_hist)
+    if h:                                           # the motion queue, for the record (it does not show the backlog)
+        rep["queue"] = {"min": h[0], "median": h[len(h) // 2], "p99": h[int(len(h) * 0.99)], "max": h[-1]}
     return rep, ticks_cmd, start
 
 
@@ -540,7 +542,7 @@ def self_test():
     broken = S.Graph({"a": A}, [S.Segment("a_broken", "idle", [0.0, 0.3, 0.304, 1.0], [A, A, bad, A], "a", "a",
                                           {"action": "float"})], {"start_hub": "a"})
 
-    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph):
+    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph, clock_ppm=None):
         r = S.Runner(g_, S.Selector(g_.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
         cmds = Commands(r)
         if trigger:
@@ -548,7 +550,8 @@ def self_test():
         if stop_at:
             threading.Timer(stop_at, cmds.stop).start()
         g = Guard(vel, lim, dt, speed)
-        rep, _, _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None)
+        rep, _, _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None,
+                           clock_ppm=clock_ppm)
         return rep, r
 
     c = FakeCtrl()
@@ -636,26 +639,27 @@ def self_test():
                 self._consume()
                 return list(self.q)
 
-    class QueueCtrlTelling(QueueCtrl):
-        def queue_length(self):
-            with self.lock:
-                self._consume()
-                return len(self.pending)
+    global MAX_PPM
+    max_ppm, MAX_PPM = MAX_PPM, 50000.0               # an exaggerated 3 % slow controller clock, believed here
+    try:
+        blind, told = QueueCtrl(), QueueCtrl()
+        rep_b, _ = run(blind, 10.0 / 60)
+        rep_t, _ = run(told, 10.0 / 60, clock_ppm=(1.0 / 1.03 - 1.0) * 1e6)
+        slow = QueueCtrl(slow_ctrl=0.0, slow_every=40)
+        rep_s, _ = run(slow, 2.0 / 60, clock_ppm=0.0)
+    finally:
+        MAX_PPM = max_ppm
+    check("without a clock calibration the PC's clock paces, and a slow controller's buffer piles up (the FR20's lag)",
+          rep_b["pacing"] == "pc clock" and blind.peak > 25, blind.peak)
+    check("... with its clock rate: points paced by the controller's clock, its buffer stays small",
+          rep_t["pacing"] == "controller clock" and told.peak <= 12
+          and rep_t["ended"] == "at a hub", (rep_t["clock_ppm"], told.peak))
+    check("... and a slow send is sent late, back to back: nothing skipped, no jump",
+          rep_s["skipped"] == 0 and rep_s["bursts"] > 0 and rep_s["worst_step_of_limit"] <= 1.0,
+          (rep_s["skipped"], rep_s["bursts"], rep_s["worst_step_of_limit"]))
 
-    blind, told = QueueCtrl(), QueueCtrlTelling()
-    rep_b, _ = run(blind, 8.0 / 60)
-    rep_t, _ = run(told, 8.0 / 60)
-    check("a controller that does not tell its queue: the PC's clock paces, and its queue piles up (the FR20's growing lag)",
-          rep_b["pacing"] == "pc clock" and blind.peak > 2 * (QUEUE_TARGET + QUEUE_BAND), blind.peak)
-    qs = rep_t.get("queue", {})
-    check("... one that tells it: its queue paces the show and stays near the target",
-          rep_t["pacing"] == "controller queue" and qs.get("p99", 99) <= QUEUE_TARGET + QUEUE_BAND + 3
-          and told.peak <= QUEUE_TARGET + QUEUE_BAND + 3 and rep_t["ended"] == "at a hub", (qs, told.peak))
-    slow = QueueCtrlTelling(slow_every=40)
-    rep_s, _ = run(slow, 2.0 / 60)
-    check("... and a slow send is taken up by the queue: nothing skipped, no jump, never ran empty",
-          rep_s["skipped"] == 0 and rep_s["worst_step_of_limit"] <= 1.0 and rep_s["queue"]["ran_empty"] == 0,
-          (rep_s["skipped"], rep_s["worst_step_of_limit"], rep_s["queue"]))
+    sug = suggest_clock_ppm({"lag_ms_by_window": [104, 280, 460], "lag_window_s": 180.0, "clock_ppm": None})
+    check("a lag growing ~1 ms per s asks for a clock calibration of ~ -990 ppm", abs(sug + 988.9) < 1.0, sug)
 
     import io
 
@@ -722,6 +726,9 @@ def main(argv=None):
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
+    ap.add_argument("--clock-ppm", type=float, default=None,
+                    help="the controller's clock against this PC's (controller_clock.py measures it; default: "
+                         "playback.toml's [controller_clock_ppm] for this IP; none: the PC's clock paces)")
     ap.add_argument("--goto-start", action="store_true",
                     help="only move to the start hub (checked against the room, --move-vel %%), then end")
     a = ap.parse_args(argv)
@@ -767,6 +774,10 @@ def main(argv=None):
     print(plan)
     if not ask(plan):
         return 1
+    clock_ppm = a.clock_ppm if a.clock_ppm is not None else toml_clock_ppm(ip)
+    if clock_ppm is None:
+        print("no clock calibration for %s: the PC's clock paces (the controller's lag may grow). "
+              "Measure it: uv run scripts/controller_clock.py --ip %s --write" % (ip, ip))
     cmds = Commands(runner, speed)
     osc = None
     if a.osc:
@@ -776,7 +787,8 @@ def main(argv=None):
     guard = Guard(RP.velocity_limits(prof), [tuple(x) for x in prof["robot"]["limits_deg"]], dt, speed)
     link = Link(ip)
     try:
-        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False)
+        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False,
+                                       clock_ppm=clock_ppm)
     finally:
         if osc is not None:
             osc.close()
@@ -787,15 +799,42 @@ def main(argv=None):
     print("log written: %s (the joints; tracking follows)" % (base + ".json"))
     sys.stdout.flush()
     add_tracking(out, start, dt, ticks_cmd, link.samples)
+    out["clock_ppm_suggested"] = suggest_clock_ppm(out)
     with open(base + ".json", "w", newline="\n") as f:
         json.dump(out, f, indent=1)
     summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
                                        "speed",
                                        "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
-                                       "send_ms_p95", "max_late_ms", "controller_error")}
+                                       "send_ms_p95", "max_late_ms", "controller_error", "pacing", "clock_ppm",
+                                       "lag_ms_by_window", "clock_ppm_suggested")}
     print(json.dumps(summary, indent=1))
     print("log:", base + ".json")
     return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
+
+
+def toml_clock_ppm(ip, path=None):
+    """playback.toml's [controller_clock_ppm] value for this controller's IP, or None."""
+    import tomllib
+    path = path or os.path.join(ROOT, "playback.toml")
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        v = tomllib.load(f).get("controller_clock_ppm", {}).get(ip)
+    return float(v) if v is not None else None
+
+
+def suggest_clock_ppm(rep):
+    """The clock calibration the run's own lag asks for: the lag per window
+    should stay put; a lag growing by g ms per s means the controller plays
+    g * 1000 ppm slower than the points were paced. None with < 2 windows."""
+    w = rep.get("lag_ms_by_window") or []
+    if len(w) < 2:
+        return None
+    n = len(w)
+    mx = (n - 1) / 2.0
+    slope = sum((i - mx) * (x - sum(w) / n) for i, x in enumerate(w)) / sum((i - mx) ** 2 for i in range(n))
+    grow = slope / rep.get("lag_window_s", LAG_WINDOW_S)     # ms of lag per s
+    return round((rep.get("clock_ppm") or 0.0) - grow * 1000.0, 1)
 
 
 def _toml_ip():

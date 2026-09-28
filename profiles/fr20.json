@@ -70,6 +70,17 @@
     "ik_reference_deg": [0, -90, 90, -90, -90, 0]
   },
 
+  "_comment_tool": [
+    "What is mounted on the flange: a tool URDF (its root link the mounting face,",
+    "z out of it, x and y as joint_6's link; links on fixed joints with box",
+    "collision geometry; a *tcp* link for its working point), the standard way an",
+    "end effector is described for ROS / MoveIt / Isaac. collision.load_model adds",
+    "its boxes to the last link, so every check -- clips, moves, the show build,",
+    "the player -- sees the tool. Edited in Houdini: robot_show > Tool.",
+    "Mass for the controller's tool load (WebApp) once weighed."
+  ],
+  "tool": {"urdf": "assets/tools/led_strip.urdf", "mass_kg": null},
+
   "output": {
     "_comment_writer": "No Fairino-specific writer exists yet. The CSV columns (time_s, j1_deg..j6_deg) are controller-neutral; how the Fairino side consumes them is still open.",
     "writer": "joint_csv",
