@@ -51,6 +51,16 @@ orientation mode:
 
 In look and tangent modes the tool also rolls with the figure's rhythm.
 
+The LED strip on the flange (1 m across the tool's aim, collision.load_model
+carries it) is kept clear by a roll about the aim: the figure's frames are
+probed with the strip turned 0, +-30, +-60 or 90 degrees (strip_rolls,
+gestures.Probe: the room and the arm, the strip included), and the turn most
+of them clear fades in (and out) sooner than the look and the roll (half
+their time, or what J6 needs for the turn), strip_roll_deg in the params;
+when the clip still hits the room the next is tried. (No ribbon or brush
+mode -- the strip kept along or across the path: a loop's tangent turns a
+full turn a loop, more than J6's range over a few loops.)
+
 Timing: the figure is paced along the arc length of the figure at full
 size (so a spiral's small turns take as long as its big ones, as a hand
 draws them) with the two-thirds power law of human drawing (slower in the
@@ -691,6 +701,8 @@ def frames(rig, hub_q, fig, prm, pace, slow=1.0):
     td = [min(T, max(0.0, t - STILL_S) / slow) for t in ts]   # design time of each frame
     orient = prm["orient"]
     tw = max(pace.ease, 0.2 * T)                          # the look / roll fade in and out
+    r_s = abs(prm.get("strip_roll_deg", 0.0))            # the strip's turn: sooner, in the time J6 needs for it
+    tws = min(T / 3.0, max(0.5 * tw, 1.2 * max(0.0123 * r_s, math.sqrt(0.0113 * r_s))))
 
     def pos(t):
         return fig.at(pace.s_of(min(T, max(0.0, t))))
@@ -711,6 +723,7 @@ def frames(rig, hub_q, fig, prm, pace, slow=1.0):
     out = []
     for i, (t, (p, th)) in enumerate(zip(ts, samples)):
         w = _mj(td[i] / tw) * _mj((T - td[i]) / tw)
+        ws = _mj(td[i] / tws) * _mj((T - td[i]) / tws)       # the strip turns clear sooner, back later
         d = d0
         if orient == "look":
             aim = U._normalize(U._sub(_look_at(prm, td[i] / T), p))
@@ -725,6 +738,7 @@ def frames(rig, hub_q, fig, prm, pace, slow=1.0):
         R = U._mat_mul(_swing(d0, d), R0)
         roll = prm["roll_deg"] * w * math.sin(2 * math.pi * prm["roll_cycles"] * td[i] / T
                                               + math.radians(prm["roll_phase_deg"]))
+        roll += prm.get("strip_roll_deg", 0.0) * ws          # the strip turned clear (strip_rolls)
         if roll:
             R = U._mat_mul(U.axis_angle_matrix(d, math.radians(roll)), R)
         out.append((t, p, R))
@@ -750,6 +764,41 @@ def solve_frames(rig, hub_q, frs):
         return None, "does not come back to the hub"
     qs[-1] = list(hub_q)
     return qs, None
+
+
+# --------------------------------------------------------------------------
+# the strip on the flange: turned clear of the room and the arm
+# --------------------------------------------------------------------------
+
+STRIP_ROLLS = (0.0, 30.0, -30.0, 60.0, -60.0, 90.0)   # the strip's turns to try (it is symmetric: +-90 reach every way)
+STRIP_EVERY = 4                  # frames: every this many checked when choosing
+STRIP_TRIES = 3                  # rolls tried in turn when the clip hits the room
+
+
+def strip_rolls(rig, hub_q, fig, prm, pace, env=None):
+    """The rolls (degrees about the aim, faded in and out a little sooner
+    than the look and the roll) that keep the strip on the flange clear along the figure,
+    likeliest first: STRIP_ROLLS ordered by how many of the figure's frames
+    (every STRIP_EVERY-th, as designed) the tool can take with it -- clear
+    of the room and of the arm, the strip included (gestures.Probe) -- the
+    least turn first among equals. The tool frame at the hub is the hub's:
+    the strip turns while the figure blooms and back while it folds."""
+    probe = G.Probe(rig, hub_q, env)
+    score = []
+    for r in STRIP_ROLLS:
+        prm["strip_roll_deg"] = r
+        q, good, n = list(hub_q), 0, 0
+        for t, p, R in frames(rig, hub_q, fig, prm, pace, 1.0)[::STRIP_EVERY]:
+            n += 1
+            qn = probe.pose(p, R, near=q)
+            if qn is not None:
+                good, q = good + 1, qn
+        score.append((-good, abs(r), r))
+        if good == n and r == 0.0:                   # the figure as drawn is clear: the others in turn after it
+            prm["strip_roll_deg"] = 0.0
+            return list(STRIP_ROLLS)
+    prm["strip_roll_deg"] = 0.0
+    return [r for _, _, r in sorted(score)]
 
 
 # --------------------------------------------------------------------------
@@ -855,47 +904,60 @@ def make(rig, hub_q, family, zones, rng, bpm=90, intensity=0.6, clip_id=None, en
         return fail("does not fit its space")
     fig = Figure(family, prm, home[0], plane_axes(prm["plane"], audience_dir(zones, home[0])))
     pace = Pace(fig, prm)
-    designed = pace.duration
     vel, acc = [v * safety for v in rig.vel], [a * safety for a in rig.acc]
-    # a wrist that runs into its singularity (or flips) gets a quieter
-    # orientation for the same figure: half the look / lean / roll, then none
-    for soft in WRIST_SOFTEN:
-        if soft < 1.0:
-            _soften(prm, soft)
-            pace = Pace(fig, prm)
-            designed = pace.duration
-        got = _timed(rig, hub_q, fig, prm, pace, designed, vel, acc)
-        if got[0] is not None or not any(w in got[1] for w in ("wrist", "branch flip", "unreachable")):
+    model = CL.load_model("fr20") if env is not None else None
+    reason = None
+    # the strip turned clear (strip_rolls), the likeliest first; the next
+    # when the clip still hits the room (the checks see every frame)
+    for roll in strip_rolls(rig, hub_q, fig, prm, pace, env)[:STRIP_TRIES]:
+        prm["strip_roll_deg"] = roll
+        if "_drawn" in prm:
+            _soften(prm, 1.0)
+        pace = Pace(fig, prm)
+        designed = pace.duration
+        # a wrist that runs into its singularity (or flips) gets a quieter
+        # orientation for the same figure: half the look / lean / roll, then none
+        for soft in WRIST_SOFTEN:
+            if soft < 1.0:
+                _soften(prm, soft)
+                pace = Pace(fig, prm)
+                designed = pace.duration
+            got = _timed(rig, hub_q, fig, prm, pace, designed, vel, acc)
+            if got[0] is not None or not any(w in got[1] for w in ("wrist", "branch flip", "unreachable")):
+                break
+        if got[0] is None:
+            reason = got[1]
+            continue
+        ts, qs, slow = got
+        prm["beats"], prm["cruise_s"] = pace.beats, round(pace.cruise, 4)
+        slow_all, slow = slow, ts[-1] / designed
+        if not G.MIN_CLIP_S <= ts[-1] <= G.MAX_CLIP_S + 1e-6:
+            return fail("%.1f s, outside %g-%g s" % (ts[-1], G.MIN_CLIP_S, G.MAX_CLIP_S))
+        clip = {"schema": M.SCHEMA, "id": clip_id or "path_%s" % family, "robot": "fr20",
+                "joint_names": ["j%d" % i for i in range(1, 7)], "units": {"angle": "deg", "time": "s", "length": "m"},
+                "points": [{"t": round(t, 6), "q": [round(x, 5) for x in q]} for t, q in zip(ts, qs)],
+                "tcp": M._tcp_path("fr20", qs),
+                "style": {"generator": "paths.py", "primitive": family, "orient": prm["orient"], "bpm": bpm,
+                          "intensity": intensity, "slowed": round(slow, 3)},
+                "meta": {"duration_s": round(ts[-1], 6), "tags": ["path", family, prm["orient"]],
+                         "source": {"generator": "paths.py"}}}
+        clip["points"][0]["q"], clip["points"][-1]["q"] = list(hub_q), list(hub_q)
+        xs = list(zip(*clip["tcp"]))
+        clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
+        M.measure(clip, acc=rig.acc)
+        if env is None:
             break
-    if got[0] is None:
-        return fail(got[1])
-    ts, qs, slow = got
-    prm["beats"], prm["cruise_s"] = pace.beats, round(pace.cruise, 4)
-    slow_all, slow = slow, ts[-1] / designed
-    if not G.MIN_CLIP_S <= ts[-1] <= G.MAX_CLIP_S + 1e-6:
-        return fail("%.1f s, outside %g-%g s" % (ts[-1], G.MIN_CLIP_S, G.MAX_CLIP_S))
-    clip = {"schema": M.SCHEMA, "id": clip_id or "path_%s" % family, "robot": "fr20",
-            "joint_names": ["j%d" % i for i in range(1, 7)], "units": {"angle": "deg", "time": "s", "length": "m"},
-            "points": [{"t": round(t, 6), "q": [round(x, 5) for x in q]} for t, q in zip(ts, qs)],
-            "tcp": M._tcp_path("fr20", qs),
-            "style": {"generator": "paths.py", "primitive": family, "orient": prm["orient"], "bpm": bpm,
-                      "intensity": intensity, "slowed": round(slow, 3)},
-            "meta": {"duration_s": round(ts[-1], 6), "tags": ["path", family, prm["orient"]],
-                     "source": {"generator": "paths.py"}}}
-    clip["points"][0]["q"], clip["points"][-1]["q"] = list(hub_q), list(hub_q)
-    xs = list(zip(*clip["tcp"]))
-    clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
-    M.measure(clip, acc=rig.acc)
-    if env is not None:
-        model = CL.load_model("fr20")
         near, left_out = near_room(env, model, qs)
         rep = CL.check(model, near, ts, qs)
         clip["safety"]["collision"] = CL.describe(rep)
         clear = rep["min_env_clearance_m"]
         clip["safety"]["min_clearance_m"] = clear if clear is not None else round(left_out, 4)
         clip["safety"]["min_self_clearance_m"] = rep["min_self_clearance_m"]
-        if not rep["ok"]:
-            return fail("hits the room: %s" % CL.describe(rep)[:80])
+        if rep["ok"]:
+            break
+        reason = "hits the room: %s" % CL.describe(rep)[:80]
+    else:
+        return fail(reason)
     clip["labels"] = motion_labels.label(clip)
     clip["labels"]["family"] = family
     prm["slowed"], prm["slowed_all"] = round(slow, 3), round(slow_all, 3)
@@ -928,6 +990,8 @@ def _worker_init():
     env = show.show_env(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["idle_canvas_m"])
     for name, (q, _) in G.synthetic_hubs(rig, cfg, env).items():
         hubs[name] = q
+    for name in list(hubs):                              # a hub not clear itself: its stand-in (gestures.stand_in)
+        hubs[name] = G.stand_in(rig, hubs[name], env) or hubs[name]
     _W.update(cfg=cfg, rig=rig, hubs=hubs, env=env, zones=cfg["zones"], model=CL.load_model("fr20"),
               safety=(cfg.get("range") or {}).get("speed", PLAN_SAFETY))
 
@@ -1026,6 +1090,15 @@ def self_test():
     pa, pf = Pace(fig, dict(prm, tempo="steady")), Pace(fig, fast)
     check("an accelerando figure ends quicker than it starts", pf.v[-10] > 1.4 * pf.v[10] and abs(pa.v[-10] / pa.v[10] - 1.0) < 0.5,
           "%.2f -> %.2f m/s" % (pf.v[10], pf.v[-10]))
+
+    # the hubs themselves, with the tool (a hub that is not clear is swept
+    # turned about its tool axis: gestures.stand_in)
+    import collision as CL
+    import show
+    env = show.show_env(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["idle_canvas_m"])
+    blocked = {n: G.hub_clear(q, env) for n, q in show.resolve_hubs(cfg, rig).items()}
+    blocked = {n: w for n, w in blocked.items() if w}
+    check("the show's hubs are clear of the room and the arm, the tool included", not blocked, blocked)
 
     # the matrix: every family x mode from every hub; the sweep: every family
     # from every hub, SEEDS seeds, TRIES draws, the mode drawn
