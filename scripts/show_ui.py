@@ -56,7 +56,7 @@ MOODS = ["", "float", "glide", "wring", "press", "punch", "slash", "dab", "flick
 
 HARDWARE_MAX = 1.0                         # the show speed the window allows on the real arm (0.3 first, then up)
 MOVE_VEL = (3.0, 30.0)                     # MoveJ % to the start hub the window allows
-SCAN_SPEED = (0.1, 1.0)                    # the scan's speed, of the built one (shows/<show>.json scan.speed_mps)
+SCAN_SPEED = (0.05, 1.0)                    # the scan's speed, of the built one (shows/<show>.json scan.speed_mps)
 MOVE_VEL_DEFAULT = {"sim": 20.0, "hardware": 10.0}
 REPORT_WAIT_S = 60.0                       # after STOP, the arm stopped: time for the show to write its report
 
