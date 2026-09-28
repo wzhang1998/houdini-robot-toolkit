@@ -56,6 +56,7 @@ MOODS = ["", "float", "glide", "wring", "press", "punch", "slash", "dab", "flick
 
 HARDWARE_MAX = 1.0                         # the show speed the window allows on the real arm (0.3 first, then up)
 MOVE_VEL = (3.0, 30.0)                     # MoveJ % to the start hub the window allows
+SCAN_SPEED = (0.1, 1.0)                    # the scan's speed, of the built one (shows/<show>.json scan.speed_mps)
 MOVE_VEL_DEFAULT = {"sim": 20.0, "hardware": 10.0}
 REPORT_WAIT_S = 60.0                       # after STOP, the arm stopped: time for the show to write its report
 
@@ -86,11 +87,14 @@ def missing_packages(names=REQUIRED):
 
 
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
-                goto_start=False):
+                goto_start=False, scan_speed=1.0):
     """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
     given; status also to each HOST:PORT in `also` (TouchDesigner).
-    goto_start: only the move to the start hub. Refuses what the window does
+    goto_start: only the move to the start hub. scan_speed: the scan alone
+    slower than built (tuning an exposure). Refuses what the window does
     not allow on the real arm (ValueError)."""
+    if not SCAN_SPEED[0] <= scan_speed <= SCAN_SPEED[1]:
+        raise ValueError("scan speed %g: %g..%g of the built scan's" % ((scan_speed,) + SCAN_SPEED))
     if target not in ("sim", "hardware"):
         raise ValueError("target is sim or hardware, not %r" % target)
     if not ip:
@@ -103,7 +107,7 @@ def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, targ
     argv = [python, STREAM, config, "--" + target, "--ip", ip, "--move-vel", "%g" % move_vel]
     if goto_start:
         return argv + ["--goto-start"]
-    argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed]
+    argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed, "--scan-speed", "%g" % scan_speed]
     for t in also:
         argv += ["--osc-out", t]
     return argv
@@ -142,11 +146,11 @@ class ShowLink:
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False):
+    def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False, scan_speed=1.0):
         if self.running:
             return
         argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
-                           goto_start=goto_start)
+                           goto_start=goto_start, scan_speed=scan_speed)
         self.ip, self.target, self.goto_start = ip, target, goto_start
         self.spawn(argv)
 
@@ -256,6 +260,7 @@ def run_window(config):
     minutes = tk.DoubleVar(value=10.0)
     speed = tk.DoubleVar(value=0.5)
     move_vel = tk.DoubleVar(value=MOVE_VEL_DEFAULT["sim"])
+    scan_speed = tk.DoubleVar(value=1.0)
     td_on = tk.BooleanVar(value=True)
     td_target = tk.StringVar(value="127.0.0.1:9002")
     before_start = []
@@ -278,6 +283,8 @@ def run_window(config):
     field("Show speed", speed_box, 1, 4)
     field("Move speed %", ttk.Spinbox(top, from_=MOVE_VEL[0], to=MOVE_VEL[1], increment=1, textvariable=move_vel,
                                       width=5), 2, 4)
+    field("Scan speed", ttk.Spinbox(top, from_=SCAN_SPEED[0], to=SCAN_SPEED[1], increment=0.05,
+                                    textvariable=scan_speed, width=5), 1, 6)
     td_check = ttk.Checkbutton(top, text="Status also to TD at", variable=td_on)
     td_check.grid(row=2, column=0, columnspan=2, sticky="w", padx=8)
     td_entry = ttk.Entry(top, textvariable=td_target, width=16)
@@ -321,6 +328,8 @@ def run_window(config):
             return "Show speed is 0.05 .. %.1f%s." % (HARDWARE_MAX if hw else 1.0, " on the real arm" if hw else "")
         if not MOVE_VEL[0] <= move_vel.get() <= MOVE_VEL[1]:
             return "Move speed is %g .. %g %%." % MOVE_VEL
+        if not SCAN_SPEED[0] <= scan_speed.get() <= SCAN_SPEED[1]:
+            return "Scan speed is %g .. %g of the built scan's (1: as built)." % SCAN_SPEED
         if hw and not all(v.get() for v in ticks):
             return "Tick every line of the checklist before the real arm moves (%s)." % what
         miss = missing_packages()
@@ -336,7 +345,7 @@ def run_window(config):
             return
         link.start(ip.get().strip(), minutes.get(), speed.get(),
                    [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [],
-                   target=target.get(), move_vel=move_vel.get(), goto_start=goto_start)
+                   target=target.get(), move_vel=move_vel.get(), goto_start=goto_start, scan_speed=scan_speed.get())
         for v in ticks:                              # the checklist again next time
             v.set(False)
 
@@ -526,6 +535,14 @@ def self_test():
     hw = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware")
     check("the real arm: --hardware (never --sim), its slow move to the start hub (10 %)",
           "--hardware" in hw and "--sim" not in hw and hw[hw.index("--move-vel") + 1] == "10", hw)
+    sc = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", scan_speed=0.4)
+    check("the scan speed goes to the stream (the scan only, for tuning an exposure)",
+          sc[sc.index("--scan-speed") + 1] == "0.4", sc)
+    try:
+        stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, scan_speed=1.2)
+        check("a scan faster than built is refused", False)
+    except ValueError:
+        check("a scan faster than built is refused", True)
     go = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", move_vel=5, goto_start=True)
     check("Move to start: only the move, at the speed set, no show",
           "--goto-start" in go and "--osc" not in go and go[go.index("--move-vel") + 1] == "5", go)

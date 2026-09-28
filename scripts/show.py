@@ -494,53 +494,46 @@ def build(cfg_path, log=print):
                 continue
             segs.append(Segment("move_%s_%s" % (a, b), "move", t, q, a, b))
 
-    # the scan (PLACEHOLDER line) and the moves to and from it
+    # the scan: one pass, left to right, and the moves to and from it. In
+    # and out as a painting cell does: the checked route ends at a pose
+    # approach_m back from the scan's start (the same tool attitude, clear
+    # by the moves' margins), then straight in; at the end straight back out
+    # to the end's own approach, then a checked route home -- never back over
+    # the paper, which a second pass would expose again (the user, 2026-09-28)
     if cfg.get("scan"):
-        scan = placeholder_scan(cfg, scan_env)
-        if not scan["safety"]["ok"]:
-            raise SystemExit("scan: %s" % scan["safety"]["reasons"])
-        st, sq = [p["t"] for p in scan["points"]], [p["q"] for p in scan["points"]]
+        st, sq, slab = scan_line(cfg, scan_env, prof)
         hubs["scan_start"], hubs["scan_end"] = list(sq[0]), list(sq[-1])
-        segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end"))
+        segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end", slab))
+        log("scan: %.2f m/s over the %.2f m opening, LEDs on %.2f-%.2f s of %.2f s, %.3f m clear"
+            % (slab["speed_mps"], slab["exposed_m"], slab["led_on_s"][0], slab["led_on_s"][1], st[-1],
+               slab["clearance_m"]))
         home = cfg["scan"]["from_hub"]
-        # an approach, as a machining or painting cell does: the checked route
-        # goes to a pose approach_m back from the scan's start (the same tool
-        # attitude, clear of the paper by the moves' margins), then straight
-        # in along the paper's normal -- a tool held near the paper would
-        # otherwise swing past it on the way (the LED strip, 2026-09-28)
         back = cfg["scan"].get("approach_m", 0.2)
-        found = find_approach(rig, hubs["scan_start"], cfg["canvas"]["normal"], back, model, scan_env)
-        if found is None:
-            raise SystemExit("scan: no approach pose near its start clear by the moves' margins")
-        pa = found[0]
-        log("approach to the scan's start: %.2f m back, %.2f m down" % (found[1], found[2]))
-        # in and out at the scan's start only: the far end can be a folded arm
-        # with no clear approach (the LED strip's scan, 2026-09-28), so the
-        # way out first sweeps back along the scan's own line (checked with the
-        # scan's margins; the LEDs off), as a scanning cell returns its head
-        path, why = safe_move.route(hubs[home], pa, scan_env, model)
-        if path is None:
-            raise SystemExit("to_scan: %s" % why)
+        backs = [back + 0.1 * k for k in range(4)]
+        way = slab["travel"]
+        ends = {}
+        for end, inward, out in (("scan_start", way, False), ("scan_end", [-x for x in way], True)):
+            got = scan_way(rig, hubs[end], cfg["canvas"]["normal"], backs, inward, model, scan_env, hubs[home], out)
+            if got is None:
+                raise SystemExit("scan: no approach at its %s with a clear route %s %s"
+                                 % (end.replace("scan_", ""), "to" if out else "from", home))
+            ends[end] = got
+            log("approach at the scan's %s: %.2f m back, %.2f m down, %.2f m inward; %s"
+                % (end.replace("scan_", ""), got[1][0], got[1][1], got[1][2], got[3]))
+        _, _, path, _ = ends["scan_start"]
         t, q, rep = checked_move([hubs[home]] + path + [hubs["scan_start"]], cfg["transition_safety"], vel, acc,
                                  model, scan_env)
         if not rep["ok"]:
             raise SystemExit("to_scan: %s" % C.describe(rep))
         segs.append(Segment("to_scan", "to_scan", t, q, home, "scan_start"))
-        log("to_scan: %.1f s, %s" % (t[-1], why))
-        path, why = safe_move.route(pa, hubs[home], scan_env, model)
-        if path is None:
-            raise SystemExit("from_scan: %s" % why)
-        tb = [st[-1] - x for x in reversed(st)]                   # the scan's line, back to its start
-        qb = [list(x) for x in reversed(sq)]
-        tm, qm, _ = checked_move([hubs["scan_start"], pa] + path, cfg["transition_safety"], vel, acc, model, scan_env)
-        hold = 0.2
-        t = tb + [tb[-1] + hold + x for x in tm]
-        q = qb + [list(x) for x in qm]
-        rep = C.check(model, scan_env, t, q)
+        log("to_scan: %.1f s" % t[-1])
+        pe, _, path, _ = ends["scan_end"]
+        t, q, rep = checked_move([hubs["scan_end"], pe] + path, cfg["transition_safety"], vel, acc, model, scan_env)
         if not rep["ok"]:
             raise SystemExit("from_scan: %s" % C.describe(rep))
+        log("from_scan: %.1f s" % t[-1])
         segs.append(Segment("from_scan", "from_scan", t, q, "scan_end", home))
-        log("from_scan: %.1f s (%.1f s back along the line), %s" % (t[-1], tb[-1], why))
+        log("from_scan: %.1f s, %s" % (t[-1], why))
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
@@ -572,46 +565,172 @@ def limit_breaches(segments, limits):
     return out
 
 
-def approach_pose(rig, q, normal, back, down=0.0):
+def approach_pose(rig, q, normal, back, down=0.0, side=(0.0, 0.0, 0.0)):
     """Joints with the tool back m further from the paper along its normal
-    (-normal) and down m lower, the tool's attitude kept, nearest q; None if
-    not reachable."""
+    (-normal), down m lower and moved by side, the tool's attitude kept,
+    nearest q; None if not reachable."""
     R, tcp, _ = rig.tool(q)
-    p = [tcp[i] - normal[i] * back for i in range(3)]
+    p = [tcp[i] - normal[i] * back + side[i] for i in range(3)]
     p[2] -= down
     return rig.solve(p, (R[0][2], R[1][2], R[2][2]), 0.0, q, R=R)
 
 
-def find_approach(rig, q, normal, back, model, env):
-    """The first approach pose clear by the moves' margins (safe_move.blocked):
-    back back (then +0.1 m), and lowered in 0.1 m steps -- a tall tool at a
-    paper near the ceiling (the LED strip's top 0.14 m under it) has to come
-    in from below. (q, back, down) or None."""
+def scan_way(rig, q, normal, backs, inward, model, env, home, out):
+    """The approach at a scan end and the checked route between it and home
+    (out: from the approach to home, else home to it). Candidates back
+    (backs, m) from the paper, lower (0.1 m steps) and slid inward (0.1 m
+    steps towards the scan's middle; the LEDs are off there), the gentlest
+    first; the first clear by the moves' margins whose route is a straight
+    MoveJ -- a detour's folded postures (the arm laid towards the floor,
+    2026-09-28) only when none is. (approach, (back, down, inward), path,
+    why) or None."""
     import safe_move
     menv = safe_move.move_env(env)
-    for b in (back, back + 0.1):
-        for down in (0.0, 0.1, 0.2, 0.3):
-            a = approach_pose(rig, q, normal, b, down)
-            if a is not None and not safe_move.blocked(model, menv, a):
-                return a, b, down
+    first = None
+    cands = sorted(((b, d, s) for b in backs for d in (0.0, 0.1, 0.2, 0.3) for s in (0.0, 0.1, 0.2, 0.3)),
+                   key=lambda c: (c[0] + c[1] + c[2], c))
+    for b, d, s in cands:
+        a = approach_pose(rig, q, normal, b, d, [x * s for x in inward])
+        if a is None or safe_move.blocked(model, menv, a):
+            continue
+        path, why = safe_move.route(a, home, env, model) if out else safe_move.route(home, a, env, model)
+        if path is None:
+            continue
+        got = (a, (b, d, s), path, why)
+        if len(path) == 1:                                 # a straight MoveJ, clear
+            return got
+        first = first or got
+        # a key pose between: J6 alone turns the strip level there (it
+        # turns parallel to the paper, 0.2 m and more from it), and the
+        # arm goes home from that -- the upright strip swings no rail over
+        for j6 in (-90.0, 90.0, home[5]):
+            v = list(a[:5]) + [j6]
+            if (safe_move.blocked(model, menv, v) or safe_move.segment_clear(model, menv, a, v) is not None):
+                continue
+            p2, why2 = safe_move.route(v, home, env, model) if out else safe_move.route(home, v, env, model)
+            if p2 is not None and len(p2) == 1:
+                return (a, (b, d, s), [v] + p2 if out else p2 + [a],
+                        "the strip turned level at J6 %.0f there, then %s" % (j6, why2))
+    return first
+
+
+def find_approach(rig, q, normal, back, model, env, inward=None, backs=None):
+    """The first approach pose clear by the moves' margins (safe_move.blocked):
+    back back (then +0.1 m), lowered in 0.1 m steps -- a tall tool at a
+    paper near the ceiling has to come in from below -- and, given inward (a
+    unit vector towards the scan's middle), slid that way in 0.1 m steps: a
+    scan's end at the edge of the work zone, or with the arm folded, cannot
+    back straight out (the one-pass scan, 2026-09-28; the LEDs are off there,
+    0.2 m and more from the paper). (q, back, down, inward m) or None."""
+    import safe_move
+    menv = safe_move.move_env(env)
+    for s in ((0.0, 0.1, 0.2, 0.3) if inward else (0.0,)):
+        for b in (backs or (back, back + 0.1)):
+            for down in (0.0, 0.1, 0.2, 0.3):
+                side = [x * s for x in inward] if inward else (0.0, 0.0, 0.0)
+                a = approach_pose(rig, q, normal, b, down, side)
+                if a is not None and not safe_move.blocked(model, menv, a):
+                    return a, b, down, s
     return None
 
 
-def placeholder_scan(cfg, env):
-    """A straight line along the canvas (its width, level) at the standoff, the
-    tool pointing at the paper (clip_factory's pipeline: reach, IK, TOPP,
-    room check). With the tool level, roll 0 keeps an LED strip mounted
-    along the flange's y upright, so it sweeps the paper's height."""
-    import clip_factory
+def scan_line(cfg, env, prof, dt=0.016):
+    """The scan (scan_ends, scan_profile): IK along the line with the tool
+    level and pointing at the paper (roll 0 keeps the LED strip, along the
+    flange's y, upright), inside the joint limits at scan.safety of them and
+    clear of the room. (times, joints, labels); labels["led_on_s"]: when the
+    strip is over the opening -- light it only then. SystemExit when it
+    cannot be done, saying why."""
+    import capability as CAP
+    import clip_factory as CF
+    import collision as C
+    import fairino_player as P
+    tool = C.tool_def(prof)
+    tool_z = (tool or {}).get("tcp", {}).get("xyz", [0.0, 0.0, 0.0])[2] if tool and tool.get("tcp") else 0.0
+    boxes = (tool or {}).get("boxes") or []
+    strip_w = max(boxes, key=lambda b: max(b["size"]))["size"][0] if boxes else 0.0254   # across the scan
+    start, end, info = scan_ends(cfg, tool_z, strip_w)
+    s = cfg["scan"]
+    v, lead = s["speed_mps"], s.get("lead_m", 0.05)
+    ts, ss, (t_on, t_off) = scan_profile(info["cruise_m"], v, s.get("accel_mps2", 0.5), dt)
+    d = info["direction"]
+    pts = [tuple(start[i] + d[i] * x for i in range(3)) for x in ss]
+    model, chain, fo, vel, acc = CF._model()
+    R = CAP.tool_frame(cfg["canvas"]["normal"], 0.0)
+    try:
+        qs = CF._solve_along(model, R, pts, fo, list(CF.REFERENCE), 20.0)
+    except CF.Rejected as e:
+        raise SystemExit("scan: %s (from %s to %s)" % (e, [round(x, 3) for x in start], [round(x, 3) for x in end]))
+    for k in range(1, len(qs)):
+        qs[k] = [b - 360.0 * round((b - a) / 360.0) for a, b in zip(qs[k - 1], qs[k])]
+    safety = s.get("safety", 0.5)
+    lim = P.limiting(ts, qs, 125.0, [x * safety for x in vel], [x * safety for x in acc])
+    if lim["scale_needed"] > 1.0 + 1e-3:
+        raise SystemExit("scan: %.2f m/s asks J%d for %.2fx its %s at safety %.2f -- slower (scan.speed_mps) or a "
+                         "gentler ramp (scan.accel_mps2)" % (v, lim["joint"], lim["scale_needed"], lim["kind"], safety))
+    rep = C.check(C.load_model("fr20"), env, ts, qs)
+    if not rep["ok"]:
+        raise SystemExit("scan: %s" % C.describe(rep))
+    labels = {"speed_mps": v, "exposed_m": round(info["exposed_m"], 4), "direction": s.get("direction", "left_to_right"),
+              "led_gap_m": s["led_gap_m"], "led_on_s": [round(t_on + lead / v, 4), round(t_off - lead / v, 4)],
+              "travel": [round(x, 6) for x in d],
+              "clearance_m": rep["min_env_clearance_m"]}
+    return ts, [list(q) for q in qs], labels
+
+
+def scan_profile(cruise_m, v, a, dt):
+    """The scan's time law: from rest up to v, cruise_m at exactly v, back to
+    rest -- the ramps with a sine-shaped acceleration (no jerk step), their
+    peak a. An exposure wants an even speed wherever the light falls, so the
+    ramps are run outside it. (times, distance along, (cruise start, end))."""
+    ta = math.pi * v / (2.0 * a)                          # peak of v*pi/(2 ta) = a
+    ramp = v * ta / 2.0
+    tc = cruise_m / v
+    total = 2 * ta + tc
+    n = max(2, int(math.ceil(total / dt)))
+    ts, ss = [], []
+    for k in range(n + 1):
+        t = total * k / n
+        if t < ta:
+            s = v * (t / 2.0 - ta / (2 * math.pi) * math.sin(math.pi * t / ta))
+        elif t <= ta + tc:
+            s = ramp + v * (t - ta)
+        else:
+            r = total - t
+            s = 2 * ramp + cruise_m - v * (r / 2.0 - ta / (2 * math.pi) * math.sin(math.pi * r / ta))
+        ts.append(t)
+        ss.append(s)
+    return ts, ss, (ta, ta + tc)
+
+
+def canvas_opening(c):
+    """The paper's width that shows between the frame's rails (m)."""
+    f = c.get("frame")
+    return min(c["size"][0], f["outer"][0] - 2 * f["face_width"]) if f else c["size"][0]
+
+
+def scan_ends(cfg, tool_z, strip_w=0.0254):
+    """(start, end, info) of the scan's TCP line (the flange's working point;
+    the LED face tool_z beyond it): level, along the paper's width, the LED
+    face scan.led_gap_m from the paper's face, left to right as seen from the
+    robot's side facing it (scan.direction) -- one pass, so the paper is
+    exposed once. The line covers the opening, the strip's width and
+    scan.lead_m each side at the cruise speed, then the ramps (scan_profile)."""
     c, s = cfg["canvas"], cfg["scan"]
     n = c["normal"]
-    centre = [c["center"][i] - n[i] * s["standoff_m"] for i in range(3)]
-    along = (-n[1], n[0], 0.0)                            # the paper's width, level
-    L = math.hypot(*along)
-    v = {"id": "scan", "primitive": "line", "center": centre, "size": s["length_m"] / 2.0,
-         "axes": [[x / L for x in along], [0.0, 0.0, 1.0]], "tool": list(n), "safety": s["safety"],
-         "tags": ["scan", "placeholder"]}
-    return clip_factory.make(v, env=env)
+    right = (n[1], -n[0], 0.0)
+    way = 1.0 if s.get("direction", "left_to_right") == "left_to_right" else -1.0
+    standoff = s["led_gap_m"] + c.get("thickness", 0.02) / 2.0 + tool_z
+    centre = [c["center"][i] - n[i] * standoff for i in range(3)]
+    opening = canvas_opening(c)
+    cruise = opening + strip_w + 2 * s.get("lead_m", 0.05)
+    v, a = s["speed_mps"], s.get("accel_mps2", 0.5)
+    ramp = v * (math.pi * v / (2.0 * a)) / 2.0
+    half = cruise / 2.0 + ramp
+    start = [centre[i] - way * right[i] * half for i in range(3)]
+    end = [centre[i] + way * right[i] * half for i in range(3)]
+    return start, end, {"exposed_m": opening, "cruise_m": cruise, "ramp_m": ramp, "speed_mps": v,
+                        "direction": [way * x for x in right]}
 
 
 def compiled_path(cfg_path):
@@ -823,7 +942,11 @@ class Selector:
 class Runner:
     """Walks the graph one step at a time: step(dt) -> joints (degrees)."""
 
-    def __init__(self, graph, selector, start_hub=None, hub_stay=(2, 4), sequences=None, seed=None, log=None):
+    def __init__(self, graph, selector, start_hub=None, hub_stay=(2, 4), sequences=None, seed=None, log=None,
+                 scan_speed=1.0):
+        if not 0.0 < scan_speed <= 1.0:
+            raise ValueError("scan_speed %r: the scan plays at most as fast as built (0 < f <= 1)" % scan_speed)
+        self.scan_speed = scan_speed                  # the scan only, for tuning an exposure; it starts and ends still
         self.g, self.sel, self.log = graph, selector, log or (lambda *a: None)
         self.hub = start_hub or graph.info.get("start_hub") or graph.idle_hubs()[0]
         self.hub_stay, self.sequences = hub_stay, sequences if sequences is not None else graph.info.get("sequences", {})
@@ -914,7 +1037,7 @@ class Runner:
             self.state = "IDLE"
             self._advance()
             return self.seg.at(self.seg_t)
-        self.seg_t += dt
+        self.seg_t += dt * (self.scan_speed if self.seg.kind == "scan" else 1.0)
         while self.seg_t >= self.seg.duration:
             left = self.seg_t - self.seg.duration
             self._advance()
@@ -958,10 +1081,10 @@ class Runner:
                 "clip_energy": round(float((self.seg.labels or {}).get("energy") or 0.0), 3)}
 
 
-def runner_for(graph, seed=None, log=None):
+def runner_for(graph, seed=None, log=None, scan_speed=1.0):
     sel = graph.info.get("select", {})
     return Runner(graph, Selector(graph.idle(), sel.get("no_repeat", 6), seed=seed, arc=sel.get("arc")),
-                  hub_stay=tuple(sel.get("hub_stay", (2, 4))), seed=seed, log=log)
+                  hub_stay=tuple(sel.get("hub_stay", (2, 4))), seed=seed, log=log, scan_speed=scan_speed)
 
 
 # --------------------------------------------------------------------------
@@ -1118,6 +1241,24 @@ def self_test():
             seen.append(r.seg.name)
     check("scan from another hub: move there first, then to_scan, scan, from_scan",
           seen[1:5] == ["move_b_a", "to_scan", "scan", "from_scan"], seen[:6])
+    # the scan's speed at run time (tuning an exposure): only the scan slows
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, scan_speed=0.5)
+    r.step(0.5)
+    r.trigger("scan")
+    ticks = {}
+    for _ in range(600):
+        r.step(0.05)
+        ticks[r.seg.name] = ticks.get(r.seg.name, 0) + 1
+    check("scan_speed 0.5 plays the scan (2 s) in 4 s, the moves to and from it as built",
+          abs(ticks.get("scan", 0) - 80) <= 1 and abs(ticks.get("to_scan", 0) - 40) <= 1, ticks)
+    bad = []
+    for f in (0.0, 1.5, -1.0):
+        try:
+            Runner(g, Selector(g.idle(), 1, seed=0), scan_speed=f)
+            bad.append(f)
+        except ValueError:
+            pass
+    check("a scan speed is slower than built, never faster (0 < f <= 1)", not bad, bad)
     # a sequence: to its hub, its clips with its mood
     r = Runner(g, Selector(g.idle(), 0, seed=4), hub_stay=(99, 99), seed=0)
     r.step(0.5)
@@ -1188,6 +1329,19 @@ def self_test():
     se = {o["name"]: o for o in show_env(room, {"margins": {"ceiling_m": 0.3}}, 0.15)["objects"]}
     check("the ceiling keeps margins.ceiling_m from every motion (the sprinkler), the floor its own",
           se["ceiling"].get("margin_m") == 0.3 and "margin_m" not in se["floor"], se)
+    ts, ss, (on, off) = scan_profile(1.0, 0.3, 0.5, 0.01)
+    vs = [(b - a) / (t1 - t0) for a, b, t0, t1 in zip(ss, ss[1:], ts, ts[1:])]
+    cruise = [v for v, t in zip(vs, ts) if on <= t <= off - 0.01]
+    check("the scan's time law: still at both ends, the cruise (1.0 m) at exactly its speed",
+          ss[0] == 0.0 and vs[0] < 0.01 and vs[-1] < 0.01 and max(abs(v - 0.3) for v in cruise) < 1e-6
+          and abs(off - on - 1.0 / 0.3) < 1e-9, (vs[0], vs[-1], min(cruise), max(cruise), on, off))
+    sc = {"canvas": cv, "scan": {"direction": "left_to_right", "speed_mps": 0.3, "accel_mps2": 0.5, "led_gap_m": 0.06,
+                                 "lead_m": 0.05}}
+    a, b, info = scan_ends(sc, tool_z=0.07)
+    check("left to right as seen from the robot's side: the scan starts at the left end (-x here), the LED face "
+          "led_gap_m from the paper",
+          a[0] < -0.8 and b[0] > 0.8 and abs(a[1] - (0.99 - 0.06 - 0.07)) < 1e-9
+          and abs(info["exposed_m"] - 1.435) < 1e-3, (a, b, info))
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]

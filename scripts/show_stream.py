@@ -425,7 +425,7 @@ def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(
 def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse=True,
            step=None):
     ended = "at a hub" if not fault else ("stopped" if fault in OPERATOR_STOPS else "fault")
-    rep = {"ended": ended, "fault": fault, "speed": speed,
+    rep = {"ended": ended, "fault": fault, "speed": speed, "scan_speed": getattr(runner, "scan_speed", 1.0),
            "sends": len(ticks_cmd), "skipped": skipped,
            "duration_s": round(ticks_cmd.row(-1)[0] * dt, 2) if len(ticks_cmd) else 0.0,
            "worst_step_of_limit": round(guard.worst_ratio, 3),
@@ -746,6 +746,8 @@ def main(argv=None):
     tgt.add_argument("--hardware", action="store_true", help="the target is the physical arm: asks first, speed 0.3")
     ap.add_argument("--ip", default=None, help="controller IP (default: playback.toml's)")
     ap.add_argument("--speed", type=float, default=None, help="show clock scale (default 1.0 sim, 0.3 hardware)")
+    ap.add_argument("--scan-speed", type=float, default=1.0,
+                    help="the scan alone at this fraction of its built speed (0 < f <= 1; tuning an exposure)")
     ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
                     help="also send the status here (a control window and TouchDesigner both listening); repeatable")
     ap.add_argument("--minutes", type=float, default=5.0)
@@ -776,7 +778,9 @@ def main(argv=None):
     graph = S.Graph.load(S.compiled_path(cfg_path))
     prof = RP.load("fr20")
     dt = 1.0 / RATE_HZ
-    runner = S.runner_for(graph, seed=a.seed)
+    if not 0.0 < a.scan_speed <= 1.0:
+        ap.error("--scan-speed must be within 0..1 (the scan plays at most as fast as built)")
+    runner = S.runner_for(graph, seed=a.seed, scan_speed=a.scan_speed)
     start_q = runner.step(0.0)
 
     def ask(text):

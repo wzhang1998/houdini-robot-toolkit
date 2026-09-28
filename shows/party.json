@@ -233,11 +233,15 @@
   }
  },
  "scan": {
-  "placeholder": true,
-  "length_m": 1.5,
-  "standoff_m": 0.25,
+  "direction": "left_to_right",
+  "speed_mps": 0.2,
+  "accel_mps2": 0.8,
+  "led_gap_m": 0.06,
+  "lead_m": 0.02,
   "safety": 0.5,
-  "from_hub": "rest"
+  "from_hub": "rest",
+  "approach_m": 0.2,
+  "_note": "One pass, left to right as seen from the robot's side, at speed_mps across the frame's opening (ramps over the rails); the LED face led_gap_m from the paper (the rails stand 0.02 in front of it, margins.scan_canvas_m clear of them). 0.2 m/s is the fastest that fits the work zone with this frame (0.3 needs 6 cm more); show_stream --scan-speed slows it at run time -- 0.05-0.3 m/s is the range to test on the real paint (docs/uv_scan_exposure.md)."
  },
  "margins": {
   "idle_canvas_m": 0.15,
