@@ -60,6 +60,7 @@ BAD_RGB = (1.0, 0.1, 0.1)
 GHOST_KEEP_PCT = 1.2               # a hub's ghost: the robot's own meshes reduced to this %, drawn as edges
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
 FAMILIES = ("look wave nod reach tilt trace peek shy stretch bounce search rise dive sweep pop "   # gestures.FAMILIES
+            "twirl wipe scoop broom salute "                                                  # (the LED strip's)
             "lissajous figure8 spiral helix rose spline")                        # paths.FAMILIES
 
 

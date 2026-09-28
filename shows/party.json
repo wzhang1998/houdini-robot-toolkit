@@ -38,7 +38,7 @@
     -88.0,
     4.0
    ],
-   "clips": 16,
+   "clips": 20,
    "generator": "gestures",
    "zone": "greet",
    "families": [
@@ -57,6 +57,11 @@
     "dive",
     "sweep",
     "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
     "lissajous",
     "figure8",
     "spiral",
@@ -67,7 +72,7 @@
    "note": "the tool looks at the audience; gestures and spatial paths"
   },
   "low": {
-   "clips": 12,
+   "clips": 16,
    "generator": "gestures",
    "zone": "low",
    "tcp": [
@@ -104,6 +109,11 @@
     "dive",
     "sweep",
     "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
     "lissajous",
     "figure8",
     "spiral",
@@ -113,7 +123,7 @@
    ]
   },
   "high": {
-   "clips": 12,
+   "clips": 16,
    "generator": "gestures",
    "zone": "high",
    "tcp": [
@@ -150,6 +160,10 @@
     "dive",
     "sweep",
     "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "salute",
     "lissajous",
     "figure8",
     "spiral",
