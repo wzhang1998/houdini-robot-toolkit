@@ -91,10 +91,18 @@ Dry run, 20 minutes (2026-09-27):
 **one continuous ServoJ stream at 125 Hz**. It sends the Runner's joints
 tick by tick. There is no CSV per run and no stop between clips.
 
-- **Timing.** The stream runs on an absolute clock, as the single-clip
-  player does. When a tick is late, the Runner advances by the ticks
-  missed and only the newest pose is sent. Feedback comes on a separate
-  connection.
+- **Timing: the controller's clock paces.** ServoJ points wait in the
+  controller's motion queue and are played one per 8 ms on its own clock.
+  The stream reads the queue's length (`GetMotionQueueLength`, every 20 ms,
+  on the feedback connection) and keeps about 6 points waiting: a tick adds
+  none when it has more than 9, two when it has fewer than 3. The show's
+  clock advances with the points sent, so the lag is fixed (SimMachine:
+  36 ms) however the two clocks drift, and a slow send only lowers the
+  queue for a moment. Paced by the PC's clock instead, the real FR20's
+  lag grew 104 -> 352 ms in 10 min (it plays ServoJ ~0.04 % slower) --
+  the standard answer for a queued controller is to let its buffer set
+  the pace, as here. A controller that does not tell its queue falls back
+  to the PC's clock: a late tick is skipped, never burst.
 - **Checks on every tick.** Before a pose is sent, its joint step must be
   within the velocity limits times the speed, and every joint within its
   limits. The feedback thread polls the controller's error code. Either

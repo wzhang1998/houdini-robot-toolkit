@@ -56,6 +56,9 @@ STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limi
 ERROR_POLL_S = 0.1
 SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
+QUEUE_POLL_S = 0.02                # how often the controller's motion queue length is read
+QUEUE_TARGET = 6                   # ServoJ points kept waiting in the controller (6 x 8 ms): its clock paces the show
+QUEUE_BAND = 3                     # within TARGET +- BAND one point per tick; above, a tick is held; below, two go
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
@@ -150,6 +153,10 @@ class Link(threading.Thread):
         self.error = None
         self._last_poll = 0.0
         self._halt = threading.Event()
+        self.queue_len, self.queue_seq = None, 0      # the controller's motion queue, read every QUEUE_POLL_S
+        self.queue_hist = array("i")
+        self._last_queue = 0.0
+        self._queue_ok = hasattr(self.c, "queue_length")
 
     @property
     def samples(self):
@@ -169,6 +176,14 @@ class Link(threading.Thread):
                     self.rows.add((t0 + t1) / 2.0, q)
                 else:
                     self.slow_reads += 1
+                if self._queue_ok and t0 - self._last_queue >= QUEUE_POLL_S:
+                    self._last_queue = t0
+                    n = self.c.queue_length()
+                    if n is None:
+                        self._queue_ok = False            # this controller does not say: the PC's clock paces
+                    else:
+                        self.queue_len, self.queue_seq = n, self.queue_seq + 1
+                        self.queue_hist.append(n)
                 if t0 - self._last_poll >= ERROR_POLL_S:
                     self._last_poll = t0
                     err = list(self.c.error_code())
@@ -252,6 +267,21 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     gc.collect()
     gc.freeze()                                     # what exists now (the graph, the show) is never walked again
     events.append("priority: " + realtime_priority())
+    # Who paces the show: the controller, when it tells its motion queue's
+    # length (GetMotionQueueLength) -- ServoJ points wait there and are played
+    # one per cmdT on the controller's own clock, so points are sent to keep
+    # QUEUE_TARGET of them waiting: the latency stays put however the two
+    # clocks drift, and a slow send only lowers the queue for a moment.
+    # Otherwise this PC's clock paces, a point per tick, and a late tick is
+    # skipped rather than burst.
+    t_q = time.perf_counter() + 0.5
+    while link.queue_seq == 0 and link._queue_ok and time.perf_counter() < t_q:
+        time.sleep(0.005)
+    paced = link.queue_seq > 0
+    events.append("pacing: " + ("the controller's motion queue, %d points (%d ms) waiting"
+                                % (QUEUE_TARGET, QUEUE_TARGET * dt * 1000) if paced else "this PC's clock"))
+    holds = refills = starved = 0
+    last_seq, filled, pid = -1, False, 0
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     last = -1
@@ -262,13 +292,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             now = time.perf_counter()
             due = int((now - start) / dt)
             k = max(last + 1, due)
-            adv = k - last if last >= 0 else 1
-            skipped += adv - 1
-            commands.skipped = skipped
-            if adv > 1:                             # say why: a late wake-up, or the send before it was slow
-                events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before took "
-                              "%.1f ms" % (runner.clock, adv - 1, (now - _wait) * 1000.0,
-                                           sends_ms[-1] if len(sends_ms) else 0.0))
+            late = k - last - 1 if last >= 0 else 0
             late_ms.append((now - (start + k * dt)) * 1000.0)
             if commands.stop_requested.is_set():
                 fault = "stop requested"
@@ -280,19 +304,42 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
                 ending = True
                 runner.pause()
                 events.append("%.2f end of the run: finishing the clip at a hub" % runner.clock)
-            q = runner.step(dt * speed * adv) if last >= 0 else prev
-            guard.check(prev, q, adv)
-            t0 = time.perf_counter()
-            ret = ctrl.servo_j(q, dt, k)
-            sends_ms.append((time.perf_counter() - t0) * 1000.0)
-            code = ret[0] if isinstance(ret, (list, tuple)) else ret
-            if code != 0:
-                raise StreamFault("ServoJ tick %d returned %s" % (k, ret))
-            ticks_cmd.add(k, q)
-            prev, last = q, k
+            n, adv = 1, 1
+            if paced:
+                if link.queue_seq != last_seq:        # one correction per reading of the queue
+                    last_seq, qn = link.queue_seq, link.queue_len
+                    filled = filled or qn >= QUEUE_TARGET
+                    if filled and qn == 0:
+                        starved += 1                  # the controller ran out: a real hitch
+                        events.append("%.2f the controller's queue ran empty (the send before took %.1f ms)"
+                                      % (runner.clock, sends_ms[-1] if len(sends_ms) else 0.0))
+                    if qn > QUEUE_TARGET + QUEUE_BAND:
+                        n, holds = 0, holds + 1      # it has enough: this tick adds none
+                    elif qn < QUEUE_TARGET - QUEUE_BAND:
+                        n, refills = 2, refills + 1  # it is running low: two points
+            elif late:                                # the PC's clock: skip, never burst
+                adv = late + 1
+                skipped += late
+                events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before took "
+                              "%.1f ms" % (runner.clock, late, (now - _wait) * 1000.0,
+                                           sends_ms[-1] if len(sends_ms) else 0.0))
+            commands.skipped = skipped + starved
+            for _ in range(n):
+                q = runner.step(dt * speed * adv) if pid > 0 else prev
+                guard.check(prev, q, adv)
+                t0 = time.perf_counter()
+                ret = ctrl.servo_j(q, dt, pid)
+                sends_ms.append((time.perf_counter() - t0) * 1000.0)
+                code = ret[0] if isinstance(ret, (list, tuple)) else ret
+                if code != 0:
+                    raise StreamFault("ServoJ point %d returned %s" % (pid, ret))
+                # the key is the point's place in the controller's play time (paced) or the PC's tick
+                ticks_cmd.add(pid if paced else k, q)
+                prev, pid = q, pid + 1
+            last = k
             if osc is not None and k % OSC_EVERY == 0:
                 try:
-                    osc.send(q)
+                    osc.send(prev)
                 except Exception:
                     pass                            # status out is best effort; never stop the arm for it
             if ending and runner.state == "PAUSED":
@@ -318,6 +365,12 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     if fault:
         log("STOPPED: %s" % fault)
     rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse)
+    rep["pacing"] = "controller queue" if paced else "pc clock"
+    if paced:
+        h = sorted(link.queue_hist)
+        rep["queue"] = {"target": QUEUE_TARGET, "band": QUEUE_BAND, "min": h[0], "median": h[len(h) // 2],
+                        "p99": h[int(len(h) * 0.99)], "max": h[-1], "held_ticks": holds, "double_ticks": refills,
+                        "ran_empty": starved, "readings": len(h)}
     return rep, ticks_cmd, start
 
 
@@ -336,7 +389,7 @@ def _dense(ticks_cmd):
     return out
 
 
-def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(0, 164, 4)):
+def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(0, 504, 4)):
     """The best constant lag (ms) of the arm behind the commands, per window
     of the run. It should stay put; if it grows, the controller consumes
     ServoJ slower than this PC's clock sends it and its queue is filling
@@ -546,6 +599,63 @@ def self_test():
     check("the stream runs at a high priority on Windows",
           any(e.startswith("priority: " + ("process high" if os.name == "nt" else "")) for e in rep["events"]),
           [e for e in rep["events"] if e.startswith("priority")])
+
+    import collections
+
+    class QueueCtrl(FakeCtrl):
+        """A controller with a motion queue, playing one point per period on
+        its own clock -- slow_ctrl slower than this PC's (the real FR20:
+        ~0.04 %; here exaggerated)."""
+
+        def __init__(self, slow_ctrl=0.03, slow_every=None):
+            super().__init__(slow_every=slow_every)
+            self.pending, self.t_last, self.lock = collections.deque(), None, threading.Lock()
+            self.peak = 0
+            self.period = dt * (1.0 + slow_ctrl)
+
+        def _consume(self):
+            now = time.perf_counter()
+            if self.t_last is None or not self.pending:
+                self.t_last = now
+            while self.pending and now - self.t_last >= self.period:
+                self.q = self.pending.popleft()
+                self.t_last += self.period
+
+        def servo_j(self, q, cmd_t, cmd_id):
+            if self.slow_every and len(self.sent) % self.slow_every == self.slow_every - 1:
+                time.sleep(3 * dt)
+            with self.lock:
+                self._consume()
+                self.pending.append(list(q))
+                self.peak = max(self.peak, len(self.pending))
+                self.sent.append((cmd_id, list(q)))
+            return 0
+
+        def joints(self):
+            with self.lock:
+                self._consume()
+                return list(self.q)
+
+    class QueueCtrlTelling(QueueCtrl):
+        def queue_length(self):
+            with self.lock:
+                self._consume()
+                return len(self.pending)
+
+    blind, told = QueueCtrl(), QueueCtrlTelling()
+    rep_b, _ = run(blind, 8.0 / 60)
+    rep_t, _ = run(told, 8.0 / 60)
+    check("a controller that does not tell its queue: the PC's clock paces, and its queue piles up (the FR20's growing lag)",
+          rep_b["pacing"] == "pc clock" and blind.peak > 2 * (QUEUE_TARGET + QUEUE_BAND), blind.peak)
+    qs = rep_t.get("queue", {})
+    check("... one that tells it: its queue paces the show and stays near the target",
+          rep_t["pacing"] == "controller queue" and qs.get("p99", 99) <= QUEUE_TARGET + QUEUE_BAND + 3
+          and told.peak <= QUEUE_TARGET + QUEUE_BAND + 3 and rep_t["ended"] == "at a hub", (qs, told.peak))
+    slow = QueueCtrlTelling(slow_every=40)
+    rep_s, _ = run(slow, 2.0 / 60)
+    check("... and a slow send is taken up by the queue: nothing skipped, no jump, never ran empty",
+          rep_s["skipped"] == 0 and rep_s["worst_step_of_limit"] <= 1.0 and rep_s["queue"]["ran_empty"] == 0,
+          (rep_s["skipped"], rep_s["worst_step_of_limit"], rep_s["queue"]))
 
     import io
 

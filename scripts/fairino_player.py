@@ -328,6 +328,16 @@ class Controller:
     def stop(self):
         return self.rpc.StopMotion()
 
+    def queue_length(self):
+        """Commands waiting in the controller's motion queue (ServoJ points
+        included: each is played for its cmdT), or None when the controller
+        does not answer GetMotionQueueLength."""
+        try:
+            ret = self.rpc.GetMotionQueueLength()
+        except xmlrpc.client.Fault:
+            return None
+        return int(ret[1]) if isinstance(ret, (list, tuple)) and ret[0] == 0 else None
+
 
 class Feedback(threading.Thread):
     """Actual joints on a separate connection, off the send path."""

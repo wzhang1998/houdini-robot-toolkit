@@ -232,10 +232,17 @@ hub, at rest. A controller error or a joint step past the limits stops
 the stream by itself (FAULT). None of this replaces the E-stop.
 
 **The report** (printed, and `logs/stream/stream_<time>.json` with the
-commanded and actual joints as CSV):
+commanded and actual joints as CSV; the joints are written first, so a
+stopped run keeps them):
+- `pacing` should be `controller queue`: the controller's motion queue
+  (GetMotionQueueLength) paces the stream, so its lag cannot grow. The first
+  real runs (2026-09-28, before this) paced by the PC's clock, and the lag
+  grew 104 -> 352 ms in 10 min. `queue` gives its depth (target 6 points,
+  48 ms), `held_ticks` (ticks the controller already had enough), and
+  `ran_empty` (should be 0);
 - `ended` should be `at a hub`;
 - `controller_error` should be null;
-- `skipped` should be 0;
+- `skipped` should be 0 (with the queue pacing, a slow send no longer skips);
 - look at `tracking_after_lag_max_deg`;
 - `lag_ms_by_window` (one value per 3 min): if it grows run after run, the
   controller's clock drifts against this PC's (SimMachine: +28 ms in 30
