@@ -196,14 +196,34 @@ def show_env(env, cfg, canvas_margin):
     return dict(env, objects=objs)
 
 
-def timed_move(waypoints, safety, vel, acc, jerk=None):
+def timed_move(waypoints, safety, vel, acc, jerk=None, max_dev_deg=None):
     """A joint move through waypoints, at rest at both ends: straight legs
     (as the controller's MoveJ), blended past the corners, jerk-limited by
     Ruckig (transitions.move; jerk None = acc / 0.2 s). TOPP was used until
     2026-09-27: time-optimal but not jerk-limited, its 125 Hz stream went
     over the acceleration limit (170 vs 150 deg/s^2 on the hub moves)."""
     import transitions
-    return transitions.move(waypoints, vel, acc, jerk, safety)
+    if max_dev_deg is None:
+        return transitions.move(waypoints, vel, acc, jerk, safety)
+    return transitions.move(waypoints, vel, acc, jerk, safety, max_dev_deg=max_dev_deg)
+
+
+BLENDS_DEG = (2.0, 0.5, 0.0)       # how far a move may cut its corners, tried in turn until it checks clear
+
+
+def checked_move(waypoints, safety, vel, acc, model, env):
+    """timed_move through the route's waypoints, checked in env: the route
+    (safe_move) is clear along its straight legs, but a blended corner
+    leaves them by up to max_dev_deg -- so a move that fails its check is
+    timed again with tighter corners, down to stopping at each (0: the legs
+    exactly). (t, q, report)."""
+    import collision as C
+    for dev in BLENDS_DEG:
+        t, q = timed_move(waypoints, safety, vel, acc, max_dev_deg=dev)
+        rep = C.check(model, env, t, q)
+        if rep["ok"]:
+            break
+    return t, q, rep
 
 
 def out_of_range(cfg, qs, tcps):
@@ -445,8 +465,7 @@ def build(cfg_path, log=print):
             if path is None:
                 log("  no move %s -> %s: %s" % (a, b, why))
                 continue
-            t, q = timed_move([hubs[a]] + path, cfg["transition_safety"], vel, acc)
-            rep = C.check(model, idle_env, t, q)
+            t, q, rep = checked_move([hubs[a]] + path, cfg["transition_safety"], vel, acc, model, idle_env)
             if not rep["ok"]:
                 log("  move %s -> %s refused: %s" % (a, b, C.describe(rep)))
                 continue
@@ -479,8 +498,8 @@ def build(cfg_path, log=print):
         path, why = safe_move.route(hubs[home], pa, scan_env, model)
         if path is None:
             raise SystemExit("to_scan: %s" % why)
-        t, q = timed_move([hubs[home]] + path + [hubs["scan_start"]], cfg["transition_safety"], vel, acc)
-        rep = C.check(model, scan_env, t, q)
+        t, q, rep = checked_move([hubs[home]] + path + [hubs["scan_start"]], cfg["transition_safety"], vel, acc,
+                                 model, scan_env)
         if not rep["ok"]:
             raise SystemExit("to_scan: %s" % C.describe(rep))
         segs.append(Segment("to_scan", "to_scan", t, q, home, "scan_start"))
@@ -490,7 +509,7 @@ def build(cfg_path, log=print):
             raise SystemExit("from_scan: %s" % why)
         tb = [st[-1] - x for x in reversed(st)]                   # the scan's line, back to its start
         qb = [list(x) for x in reversed(sq)]
-        tm, qm = timed_move([hubs["scan_start"], pa] + path, cfg["transition_safety"], vel, acc)
+        tm, qm, _ = checked_move([hubs["scan_start"], pa] + path, cfg["transition_safety"], vel, acc, model, scan_env)
         hold = 0.2
         t = tb + [tb[-1] + hold + x for x in tm]
         q = qb + [list(x) for x in qm]
