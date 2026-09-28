@@ -48,6 +48,7 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 
 | Date | Result | Commit |
 |---|---|---|
+| 2026-09-28 | Show v5 in Isaac Sim 6.0, headless 3 min on the USD room, a scan trigger every ~40 s: 35 clips at all four hubs, 4 scans (trigger to scan 10.5 s mean, 12.1 max -- longer than v4: the scan starts from rest, and the hubs are further apart), 0 arm-room contacts, tracking max 1.03 deg (J4), RMS <= 0.22 | see git log |
 | 2026-09-27 | Show v4 in Isaac Sim 6.0, headless 2 min, the room read from OpenUSD (`shows/party.usda` over `envs/volvox_lab.usda`), a scan trigger every ~30 s: 31 clips over both hubs, 4 scans (trigger to scan 5.4 s mean, 6.7 max), 0 arm-room contacts (PhysX), tracking under gravity and the drives max 0.67 deg (J5), RMS <= 0.23 | see git log |
 
 ## Houdini / unit
