@@ -284,11 +284,10 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     clocked = clock_ppm is not None
     if clocked and abs(clock_ppm) > MAX_PPM:
         raise ValueError("clock_ppm %.0f: beyond %.0f, not believed -- measure again" % (clock_ppm, MAX_PPM))
-    rate = 1.0 + (clock_ppm or 0.0) * 1e-6          # controller s per this PC's s
     events.append("pacing: " + ("the controller's clock, %+.0f ppm against this PC's (calibrated)" % clock_ppm
                                 if clocked else "this PC's clock (no clock calibration for this controller)"))
     bursts, pid, tick = 0, 0, -1
-    step = dt / rate                                # this PC's seconds per point
+    step = point_step(dt, clock_ppm)                # this PC's seconds per point
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     next_t = start
@@ -366,7 +365,8 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
         gc.unfreeze()
     if fault:
         log("STOPPED: %s" % fault)
-    rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse)
+    rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse,
+                 step=step)
     rep["pacing"] = "controller clock" if clocked else "pc clock"
     rep["clock_ppm"] = clock_ppm
     rep["bursts"] = bursts
@@ -422,7 +422,8 @@ def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(
     return out
 
 
-def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse=True):
+def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse=True,
+           step=None):
     ended = "at a hub" if not fault else ("stopped" if fault in OPERATOR_STOPS else "fault")
     rep = {"ended": ended, "fault": fault, "speed": speed,
            "sends": len(ticks_cmd), "skipped": skipped,
@@ -439,25 +440,36 @@ def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard
     rep["feedback_slow_reads_dropped"] = link.slow_reads
     rep["controller_error"] = link.error
     if analyse:
-        add_tracking(rep, start, dt, ticks_cmd, link.samples)
+        add_tracking(rep, start, step or dt, ticks_cmd, link.samples)
     return rep
 
 
-def add_tracking(rep, start, dt, ticks_cmd, fb):
+def point_step(dt, clock_ppm):
+    """This PC's seconds per point: dt on the controller's clock (clock_ppm
+    against this PC's; None: the PC's clock paces)."""
+    return dt / (1.0 + (clock_ppm or 0.0) * 1e-6)
+
+
+def add_tracking(rep, start, step, ticks_cmd, fb):
     """Actual vs commanded, after the best lag, and the lag per window, into
-    rep. Seconds of work on a long run (a few million interpolations), so
-    main() writes the raw log first and adds this after."""
+    rep. step: this PC's seconds per point (point_step) -- the feedback is
+    stamped on this PC's clock, so point k is compared where it was sent,
+    at k * step (on k * dt a calibrated run showed the calibration itself as
+    a growing lag, 2026-09-28). Seconds of work on a long run (a few million
+    interpolations), so main() writes the raw log first and adds this after."""
     if len(ticks_cmd) > 1:
         every = max(1, len(fb) // TRACKING_MAX_SAMPLES)
-        t0, dense = start + ticks_cmd.row(0)[0] * dt, _dense(ticks_cmd)
-        rep.update(P.tracking(t0, dense, dt, fb[::every]))
+        t0, dense = start + ticks_cmd.row(0)[0] * step, _dense(ticks_cmd)
+        rep.update(P.tracking(t0, dense, step, fb[::every]))
         rep["tracking_samples_used"] = len(fb[::every])
-        rep["lag_ms_by_window"] = lag_by_window(t0, dense, dt, fb)
+        rep["lag_ms_by_window"] = lag_by_window(t0, dense, step, fb, window_s=LAG_WINDOW_S)
         rep["lag_window_s"] = LAG_WINDOW_S
     return rep
 
 
-def write_log(out_dir, stamp, rep, ticks_cmd, dt, feedback, start):
+def write_log(out_dir, stamp, rep, ticks_cmd, step, feedback, start):
+    """The report and the joints: commanded at the PC time each point was
+    sent for (k * step, point_step), actual as read -- one time base."""
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.join(out_dir, "stream_%s" % stamp)
     with open(base + ".json", "w", newline="\n") as f:
@@ -466,7 +478,7 @@ def write_log(out_dir, stamp, rep, ticks_cmd, dt, feedback, start):
         w = csv.writer(f)
         w.writerow(["time_s"] + ["j%d_deg" % i for i in range(1, 7)])
         for k, q in ticks_cmd:
-            w.writerow(["%.4f" % (k * dt)] + ["%.4f" % x for x in q])
+            w.writerow(["%.4f" % (k * step)] + ["%.4f" % x for x in q])
     with open(base + "_actual.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["time_s"] + ["j%d_deg" % i for i in range(1, 7)])
@@ -685,6 +697,23 @@ def self_test():
     fb = [(k * dt + (0.04 if k * dt < 20 else 0.064), q) for k, q in enumerate(dense)][::2]
     lags = lag_by_window(0.0, dense, dt, fb, window_s=10.0)
     check("the lag is measured per window (a growing one shows)", lags == [40, 40, 64, 64], lags)
+    # paced by a (exaggerated) slow controller clock: point k leaves this PC at
+    # k * step, not k * dt; an arm 40 ms behind every point has a steady lag
+    step = point_step(dt, -3000.0)
+    ticks = Rows()
+    for k, q in enumerate(dense):
+        ticks.add(k, q)
+    fb = [(k * step + 0.04, q) for k, q in enumerate(dense)][::2]
+    global LAG_WINDOW_S
+    keep, LAG_WINDOW_S = LAG_WINDOW_S, 10.0
+    try:
+        paced = add_tracking({}, 0.0, step, ticks, fb)["lag_ms_by_window"]
+    finally:
+        LAG_WINDOW_S = keep
+    check("a clock-paced run's lag is measured on the PC times its points were sent at (steady, not the "
+          "calibration's own drift)", len(paced) >= 4 and set(paced) == {40}, paced)
+    check("... which is dt at the controller's rate", abs(step - dt / (1.0 - 3000e-6)) < 1e-15
+          and point_step(dt, None) == dt, step)
 
     rows = Rows()
     rows.add(3, [1, 2, 3, 4, 5, 6])
@@ -795,10 +824,11 @@ def main(argv=None):
     out.update(rep)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     # the data first: a report that is interrupted while it analyses still leaves the run behind
-    base = write_log(a.log, stamp, out, ticks_cmd, dt, link.samples, start)
+    step = point_step(dt, clock_ppm)
+    base = write_log(a.log, stamp, out, ticks_cmd, step, link.samples, start)
     print("log written: %s (the joints; tracking follows)" % (base + ".json"))
     sys.stdout.flush()
-    add_tracking(out, start, dt, ticks_cmd, link.samples)
+    add_tracking(out, start, step, ticks_cmd, link.samples)
     out["clock_ppm_suggested"] = suggest_clock_ppm(out)
     with open(base + ".json", "w", newline="\n") as f:
         json.dump(out, f, indent=1)
