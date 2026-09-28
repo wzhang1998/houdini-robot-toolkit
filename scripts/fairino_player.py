@@ -311,9 +311,11 @@ class Controller:
         self._ok(self.rpc.Mode(0), "Mode(0) automatic")
         self._ok(self.rpc.RobotEnable(1), "RobotEnable(1)")
 
-    def move_to(self, q, vel_pct):
+    def move_to(self, q, vel_pct, tool=0, wobj=0):
+        """MoveJ to joints q; tool / wobj: the frames applied now, which
+        GetForwardKin's pose is in (_current_frames)."""
         desc = self._ok(self.rpc.GetForwardKin([float(x) for x in q]), "GetForwardKin")[1:7]
-        self._ok(self.rpc.MoveJ([float(x) for x in q], list(desc), 0, 0, float(vel_pct), 0.0, 100.0,
+        self._ok(self.rpc.MoveJ([float(x) for x in q], list(desc), int(tool), int(wobj), float(vel_pct), 0.0, 100.0,
                                 [0.0] * 4, -1.0, 0, [0.0] * 6), "MoveJ")
 
     def servo_start(self):
@@ -391,29 +393,27 @@ def _require_no_error(ctrl, when):
         raise RuntimeError("controller reports an error %s: %s" % (when, err))
 
 
-def _require_base_frames(ctrl):
-    """This player works in the base frame with tool 0: MoveJ gets the pose
-    from GetForwardKin, which the controller reports in its CURRENT
-    workpiece / tool frame. With another one applied (a workpiece frame made
-    for a safety zone, 2026-09-25) MoveJ fails with 154 'joint command point
-    error' and --check sees FK rotated -- say so plainly instead."""
+def _current_frames(ctrl):
+    """(tool, workpiece) numbers applied on the controller now (0 where it
+    does not say). MoveJ's Cartesian pose comes from GetForwardKin, which
+    the controller reports in these frames, so MoveJ is sent with them -- as
+    the Fairino SDK's own MoveJ does. Sent with 0 / 0 instead (a workpiece
+    frame for a safety zone, 2026-09-25) it failed with 154 'joint command
+    point error'. The joints are the target either way; ServoJ is joint-only."""
     try:
         tool, wobj = ctrl.frames()
     except Exception:
-        return                                   # firmware without the calls: MoveJ will report
-    if (tool or 0) != 0 or (wobj or 0) != 0:
-        raise RuntimeError("the controller's current workpiece coordinate system is #%s and tool #%s; this player "
-                           "works in the base frame with tool 0. Apply workpiece 0 and tool 0 in the WebApp "
-                           "(safety zones keep their own reference frame)" % (wobj, tool))
+        return 0, 0                              # firmware without the calls
+    return tool or 0, wobj or 0
 
 
 def goto(ctrl, q, move_vel_pct, tol_deg=2.0, timeout_s=60.0):
     """Controller-planned MoveJ to q, then wait until the arm is within
     tol_deg of it on every joint."""
     _require_no_error(ctrl, "before moving")
-    _require_base_frames(ctrl)
+    tool, wobj = _current_frames(ctrl)
     ctrl.prepare()
-    ctrl.move_to(q, move_vel_pct)
+    ctrl.move_to(q, move_vel_pct, tool, wobj)
     t_end = time.time() + timeout_s
     while True:
         off = max(abs(a - b) for a, b in zip(ctrl.joints(), q))
@@ -683,20 +683,27 @@ def self_test():
 
     class _Frames:
         def __init__(self, tool, wobj):
-            self.v = (tool, wobj)
+            self.v, self.sent, self.q = (tool, wobj), None, None
 
         def frames(self):
             return self.v
-    try:
-        _require_base_frames(_Frames(0, 1))
-        check("a workpiece frame applied on the controller is refused before moving", False)
-    except RuntimeError as e:
-        check("a workpiece frame applied on the controller is refused before moving", "workpiece" in str(e), str(e)[:80])
-    try:
-        _require_base_frames(_Frames(0, 0))
-        check("base frame, tool 0: no complaint", True)
-    except RuntimeError as e:
-        check("base frame, tool 0: no complaint", False, str(e))
+
+        def error_code(self):
+            return [0, 0, 0]
+
+        def prepare(self):
+            pass
+
+        def move_to(self, q, vel_pct, tool=0, wobj=0):
+            self.q, self.sent = list(q), (tool, wobj)
+
+        def joints(self):
+            return self.q
+    for tool, wobj in ((1, 0), (0, 2), (0, 0), (None, None)):
+        c = _Frames(tool, wobj)
+        goto(c, [0.0, -90.0, 90.0, -90.0, -90.0, 0.0], 5.0)
+        check("MoveJ with tool %s / workpiece %s applied on the controller is sent in those frames (its "
+              "GetForwardKin pose is in them)" % (tool, wobj), c.sent == (tool or 0, wobj or 0), str(c.sent))
 
     lim = [(-175, 175), (-265, 85), (-162, 162), (-265, 85), (-175, 175), (-175, 175)]
     t = [i / 24.0 for i in range(25)]
