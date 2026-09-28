@@ -58,7 +58,8 @@ ZONE_RGB = {"audience": (0.35, 0.6, 1.0), "greet": (1.0, 0.55, 0.2), "idle": (0.
 BAD_RGB = (1.0, 0.1, 0.1)
 GHOST_KEEP_PCT = 1.2               # a hub's ghost: the robot's own meshes reduced to this %, drawn as edges
 REST_Q = [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0]
-FAMILIES = "look wave nod reach tilt trace"
+FAMILIES = ("look wave nod reach tilt trace peek shy stretch bounce search "        # gestures.FAMILIES
+            "lissajous figure8 spiral helix rose spline")                        # paths.FAMILIES
 
 
 # --------------------------------------------------------------------------
@@ -372,7 +373,7 @@ def _parms(node, config, env):
     hl.addParmTemplate(T.StringParmTemplate(
         "hub_zone#", "Zone", 1, menu_type=T.menuType.Normal,
         item_generator_script=_menu_script("zone_menu"), item_generator_script_language=T.scriptLanguage.Python))
-    hl.addParmTemplate(T.StringParmTemplate("hub_families#", "Gesture Families", 1, default_value=(FAMILIES,),
+    hl.addParmTemplate(T.StringParmTemplate("hub_families#", "Families", 1, default_value=(FAMILIES,),
                                             disable_when="{ hub_gen# == choreo }", help="Space separated: " + FAMILIES))
     hubs.addParmTemplate(hl)
     g.append(hubs)

@@ -25,7 +25,9 @@ home --to_scan--> scan_start --scan--> scan_end --from_scan--> home
   paper and the strip are decided.
 - **Joining moves** (`to_scan`, `from_scan`) are planned once by
   `safe_move.route`, which detours round the ceiling and keeps the TCP in the
-  work area. They are timed by `retime_topp` and checked like any clip.
+  work area. They are timed by Ruckig (`transitions.py`: jerk-limited,
+  corners blended within 2 deg of the planned legs) and checked like any
+  clip.
 - **The scan is a design input to the library.** The paper is an obstacle
   with a margin for every idle clip, and the hubs sit where the move to the
   scan is short and clear. When the paper moves, rebuild:
@@ -133,6 +135,35 @@ Four spatial ideas, each with one job:
 
 So a hub lives **inside** the stage (checked), usually **inside** its zone
 (designed), and the range narrows both for the whole show.
+
+## The library: what a hub's clips are made of
+
+A hub's `generator` picks how its clips are made; `clips` is how many.
+
+| Generator | Module | What it makes |
+|---|---|---|
+| `choreo` | `choreo.py` | Laban dance phrases (punch, slash, press, wring, dab, flick, glide, float) in joint space from the hub's pose, 1-2 bars |
+| `gestures` | `gestures.py`, `paths.py` | The hub's `families` in turn. Gestures: look, wave, nod, reach, tilt, trace, peek, shy, stretch, bounce, search -- the tool aims at people and the wrist carries the character. Spatial paths: lissajous, figure8, spiral, helix, rose, spline -- the tool draws a figure at human scale (0.2-0.4 m), looking at the audience, leaning along the path, or fixed |
+
+What keeps them alive rather than point-to-point (all scaled by
+intensity or the Laban effort, all inside the joint limits):
+- **anticipation**: a small wind-up before a strike, a lean back before a
+  reach, a dip before a stretch;
+- **overshoot and settle** at the end of quick moves;
+- **overlapping action**: the wrist trails the arm (successive flow in the
+  dances); the gaze and roll run on their own clock, trailing or leading
+  the tool tip;
+- **breathing**: holds keep a slow drift of a few millimetres or a few
+  tenths of a degree, so the arm never freezes (at most 0.04 s still);
+- **timing**: paths follow the human two-thirds power law (slower in tight
+  turns) on a beat grid; gestures fit each key to what its joints need.
+
+Every clip still starts and ends exactly at its hub, at rest, so any two
+join. The labels the mood selection uses (`motion_labels.py`) were refitted
+at the measured limits (J1-J3 300, J4-J6 600 deg/s^2): single-action dance
+phrases agree with their intent 91/96 on held-out seeds
+(`python scripts/motion_labels.py --calibrate` refits). They are fitted on
+dance phrases; on gestures and paths they are a rough mood only.
 
 ## Editing the show in Houdini
 

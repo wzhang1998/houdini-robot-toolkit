@@ -56,7 +56,6 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 SCHEMA = "motionlab.show.compiled/2"
-STEP_DEG = 1.0                      # joint-space sampling of a planned move
 STATE_OF = {"idle": "IDLE", "move": "MOVE", "to_scan": "TO_SCAN", "scan": "SCAN", "from_scan": "FROM_SCAN"}
 
 
@@ -180,16 +179,14 @@ def show_env(env, cfg, canvas_margin):
     return dict(env, objects=objs)
 
 
-def timed_move(waypoints, safety, vel, acc):
-    """A joint-space path through waypoints (straight in joint space per leg,
-    as the controller's MoveJ), at rest at both ends, timed by retime_topp."""
-    import retime_topp as T
-    q = [list(waypoints[0])]
-    for a, b in zip(waypoints, waypoints[1:]):
-        n = max(2, int(math.ceil(max(abs(x - y) for x, y in zip(a, b)) / STEP_DEG)))
-        q += [[x + (y - x) * k / float(n) for x, y in zip(a, b)] for k in range(1, n + 1)]
-    t = T.plan(q, [v * safety for v in vel], [a_ * safety for a_ in acc])
-    return t, q
+def timed_move(waypoints, safety, vel, acc, jerk=None):
+    """A joint move through waypoints, at rest at both ends: straight legs
+    (as the controller's MoveJ), blended past the corners, jerk-limited by
+    Ruckig (transitions.move; jerk None = acc / 0.2 s). TOPP was used until
+    2026-09-27: time-optimal but not jerk-limited, its 125 Hz stream went
+    over the acceleration limit (170 vs 150 deg/s^2 on the hub moves)."""
+    import transitions
+    return transitions.move(waypoints, vel, acc, jerk, safety)
 
 
 def out_of_range(cfg, qs, tcps):
@@ -260,8 +257,21 @@ def hub_clips(name, hub, n, lib, env, model, kin, rng, log=print, cfg=None):
     return got, dropped
 
 
+def family_maker(fam):
+    """The generator of a family: a spatial path (paths.py) or a gesture
+    (gestures.py); both make(rig, hub_q, family, zones, rng, bpm, intensity,
+    env=, safety=) -> clip or None."""
+    import gestures as G
+    import paths as PA
+    if fam in PA.FAMILIES:
+        return PA.make
+    if fam in G.FAMILIES:
+        return G.make
+    raise SystemExit("family %r: not a gesture %s or a path %s" % (fam, G.FAMILIES, PA.FAMILIES))
+
+
 def gesture_clips(name, hub, h, cfg, env, rig, rng, log=print):
-    """Gesture clips for a hub (gestures.py): the families in turn, towards
+    """Clips from a hub's families (gestures.py, paths.py), in turn, towards
     the show's zones; kept when they fit the length and clear the room."""
     import gestures as G
     lib = cfg["library"]
@@ -289,8 +299,8 @@ def _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, index, dropped
     if True:
         bpm = rng.randint(*lib["bpm"])
         k = rng.uniform(*lib.get("intensity", (0.4, 0.9)))
-        clip = G.make(rig, hub, fam, cfg["zones"], rng, bpm=bpm, intensity=k, env=env,
-                      safety=(cfg.get("range") or {}).get("speed", G.PLAN_SAFETY))
+        clip = family_maker(fam)(rig, hub, fam, cfg["zones"], rng, bpm=bpm, intensity=k, env=env,
+                                 safety=(cfg.get("range") or {}).get("speed", G.PLAN_SAFETY))
         if clip is None:
             dropped.append("%s: no clean draw" % fam)
             return None
@@ -307,6 +317,8 @@ def _one_gesture(name, fam, hub, cfg, env, rig, rng, lib, lo, hi, index, dropped
         labels = {"action": m.get("action"), "effort": {x: m.get(x) for x in ("weight", "time", "space", "flow")},
                   "intent": [fam], "family": fam, "bpm": bpm, "intensity": round(k, 2),
                   "clearance_m": clip["safety"].get("min_clearance_m"), "wrist_share": round(G.wrist_share(q), 2)}
+        if (clip.get("labels") or {}).get("params"):
+            labels["params"] = clip["labels"]["params"]
         seg_name = "%s_%02d_%s" % (name, index, fam)
         seg = Segment(seg_name, "idle", t, q, name, name, labels)
         seg.clip = dict(clip, id=seg_name)

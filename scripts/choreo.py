@@ -33,6 +33,31 @@ moves chosen for its action:
     look     the wrist turns the tool to a gaze point and back
     hold     stillness (with a slow breath when flow is free)
 
+Animation principles (spec["principles"]: True by default, False for the
+plain phrase, or a 0..1 strength), scaled by the effort:
+
+    anticipation   a sudden travel (punch, slash, dab, flick) winds up
+                   against its strike first -- 10-15 % of the distance, just
+                   before the beat, slower than the strike
+    overshoot      ... strikes 7-12 % past its target (more when flow is
+                   free) and settles back inside its segment; every
+                   reversal comes to rest, so a direct path stays direct
+    follow-through J2-J6 run on delayed clocks (DELAY_SHAPE: the elbow a
+                   little, the wrist most) -- successive flow: the wrist
+                   trails the arm into a move and through its end. Under a
+                   frame for punch / dab (their path must stay straight),
+                   a few frames for press / glide, most for slash / flick
+                   (a whip -- the lag costs a joint no acceleration, a detour
+                   in a sudden strike would) and wring / float; twist and
+                   sway also phase the hand behind the forearm / base
+    breathing      a slow (3.6 s), tiny (< 0.4 deg) breath over the whole
+                   phrase, faded in and out at the ends -- holds never
+                   freeze. It stays under motion_labels' stillness floors.
+
+With them a phrase is held to PLAN_SAFETY of the speed / acceleration
+limits and LIMIT_MARGIN inside the joint limits; the labels were
+calibrated with them on (motion_labels.CAL, from calibration_set()).
+
 Every phrase starts and ends at rest in HOME, so clips chain -- or at the
 pose in spec["start"] (a show's hub pose). A clip must
 play at its designed speed (fairino_player's measure) and clear the cell
@@ -42,6 +67,7 @@ detours, softer attacks, so the beat is kept -- and only then the tempo.
     phrase(spec, seed)            -> (times, joints, info)     24 fps frames
     make_clip(spec, seed, env)    -> motion_clip dict with labels
     random_spec(rng, ...)         -> a phrase spec
+    calibration_set(kin, seeds)   -> single-action phrases for motion_labels.fit_cal
 
 Pure Python. Tests: python scripts/choreo.py
 """
@@ -103,6 +129,83 @@ def _envelope(u):
     min-jerk ramp at the ends added more acceleration than the oscillation
     it faded, and the fit then shrank every oscillation to nothing."""
     return 0.5 - 0.5 * math.cos(2 * math.pi * max(0.0, min(1.0, u)))
+
+
+# --------------------------------------------------------------------------
+# animation principles (spec["principles"]: True / False / 0..1 strength)
+# --------------------------------------------------------------------------
+
+# successive flow: how much of a segment's lag each joint takes -- the base
+# and shoulder lead, the elbow follows a little, the wrist most
+DELAY_SHAPE = (0.0, 0.0, 0.3, 0.6, 0.8, 1.0)
+BREATH_S = 3.6                                        # a breath, seconds
+BREATH_DEG = (0.14, 0.1, -0.2, 0.2, 0.35, 0.0)        # its depth per joint, mostly distal
+
+
+def _principles(spec):
+    """Strength of the animation principles, 0 (off: the plain phrase, with
+    the checks it had before them) .. 1 (default)."""
+    p = spec.get("principles", True)
+    if p is True:
+        return 1.0
+    if not p:
+        return 0.0
+    return max(0.0, min(1.0, float(p)))
+
+
+def _anticipation(eff, p):
+    """(wind-up, overshoot) as fractions of a sudden travel's distance:
+    strong actions wind up more; free flow overshoots more, bound less.
+    Sustained travels get neither."""
+    if eff["time"] <= 0 or p <= 0:
+        return 0.0, 0.0
+    return (p * (0.10 + 0.05 * (eff["weight"] + 1) / 2.0),
+            p * (0.07 + 0.05 * (eff["flow"] + 1) / 2.0))
+
+
+def _lag(eff, p):
+    """Follow-through: how far (s) the wrist trails the base, a few frames --
+    more when indirect (wandering), sustained (gentle drag) or free; under
+    a frame for a direct sudden action (punch, dab), whose path must stay
+    straight -- their life is the anticipation and overshoot instead. An
+    indirect sudden action (slash, flick) whips: its strike is too short for
+    a detour at the acceleration limits, but a lag is only a delay, and
+    costs a joint no acceleration at all."""
+    indirect, sudden = (1 - eff["space"]) / 2.0, (eff["time"] + 1) / 2.0
+    frames = 0.5 + indirect * (2.5 + 3.0 * sudden) + 1.0 * (1 - sudden) + 0.5 * (eff["flow"] + 1) / 2.0
+    return p * frames / FPS
+
+
+def _strike(u, a, ant, over, w, z):
+    """Progress of a sudden travel with anticipation and overshoot: a
+    counter-move to -ant over [-w, 0] (before the beat), the strike to
+    1 + over over [0, a], then settling back to 1 over [a, a + z]. Min-jerk
+    pieces: every reversal comes to rest, so a direct path stays direct."""
+    if u <= -w:
+        return 0.0
+    if u < 0.0:
+        return -ant * _minjerk((u + w) / w)
+    if u < a:
+        return -ant + (1.0 + ant + over) * _minjerk(u / a)
+    if z > 0.0 and u < a + z:
+        return 1.0 + over - over * _minjerk((u - a) / z)
+    return 1.0
+
+
+def _breath(tt, total, beat, p, flow):
+    """A slow, tiny breath over the whole phrase so it never freezes: faded
+    in over the first beat (a second at least) and out over the last, so
+    the phrase still starts and ends at rest in its pose; shallower when
+    bound."""
+    fade = min(max(beat, 1.0), total / 2.0)
+    ramp = min(_minjerk(tt / fade), _minjerk((total - tt) / fade))
+    if ramp <= 0.0 or p <= 0.0:
+        return None
+    w = 2 * math.pi / BREATH_S
+    amp = p * ramp * (0.8 + 0.2 * flow)
+    phase = (0.7, 0.0, 0.5, 2.1, 1.3, 0.0)
+    rate = (0.5, 1.0, 1.0, 0.5, 1.0, 1.0)            # base and forearm drift at half the rate
+    return [amp * d * math.sin(r * w * tt + ph) for d, r, ph in zip(BREATH_DEG, rate, phase)]
 
 
 # --------------------------------------------------------------------------
@@ -209,6 +312,11 @@ def _target(kind, eff, act, cur, kin, rng, tries=16, home=None):
                          reach, AIMS[act], cur, rng)
             if q is None or max(abs(a - b) for a, b in zip(q, cur)) > 150:
                 continue
+            # a strong move is a whole-arm move: skip poses reached mostly by
+            # turning the wrist (a jab towards one moved J1-J3 a few degrees
+            # and read light)
+            if max(abs(a - b) for a, b in zip(q[:3], cur[:3])) < 0.4 * max(abs(a - b) for a, b in zip(q, cur)):
+                continue
             if sudden:
                 # a jab towards that pose: at 150 deg/s^2 a heavy arm cannot
                 # be quick over a big distance, so a sudden move is a short one
@@ -249,7 +357,10 @@ def _caps(seg, kin, beat):
         # the second harmonic of an indirect wave doubles the frequency
         w = w * (1.6 if e["space"] < 0 else 1.0)
     elif kind in ("sway", "twist"):
-        w = 2 * math.pi / dur
+        # one cycle under a Hann window of the same length: the window's own
+        # curvature adds up to ~2x the sine's acceleration (it overran the
+        # limits, and the fit softened the whole phrase, attacks included)
+        w = 1.5 * 2 * math.pi / dur
     elif kind == "bounce":
         ta = max(0.05, _attack(e["time"], 1.0) * 0.5 * beat)
         return [0.4 * a * ta * ta / 5.7735 for a in kin.acc]
@@ -266,6 +377,7 @@ def _plan(spec, kin, rng):
     limits (and at its attack), so the phrase stays on the beat grid."""
     beat = 60.0 / spec["bpm"]
     flow = spec.get("flow", 0.0)
+    p = _principles(spec)
     t = beat                                                  # a beat of stillness first
     home = list(spec.get("start") or HOME)
     cur = list(home)
@@ -289,7 +401,11 @@ def _plan(spec, kin, rng):
                     seg["from"], seg["to"] = list(cur), target
                     seg["detour"] = [rng.uniform(-1, 1) for _ in range(6)]
                     a = _attack(eff["time"], 1.0)
-                    need = _travel_time(kin, cur, target) * 1.25 / a      # + room for detour / overshoot
+                    # + room for detour / overshoot: the principles' wind-up and
+                    # overshoot (<= 0.27 of the distance) fit in it, so a strike
+                    # stays as quick as a plain travel
+                    need = _travel_time(kin, cur, target) * 1.25 / a
+                    seg["ant"], seg["over"] = _anticipation(eff, p)
                     nb = max(nb, int(math.ceil(need / beat - 1e-9)))
                     seg["t1"] = t1 = t0 + nb * beat
                     seg["acc_min"] = min(kin.acc)
@@ -299,17 +415,23 @@ def _plan(spec, kin, rng):
             seg["phase"] = rng.uniform(0, 2 * math.pi)
             seg["beat"] = beat
             seg["cap"] = _caps(seg, kin, beat)
+            seg["lag"] = _lag(eff, p)
+            if kind in ("twist", "sway"):
+                seg["succ"] = p * math.pi / 3.0                # phase the hand trails by
             segs.append(seg)
             t = t1
             if flow < -0.3:                                    # bound: a held beat after every move
                 segs.append({"t0": t, "t1": t + beat, "kind": "hold", "eff": eff, "act": act, "bar": bi,
-                             "phase": 0.0, "beat": beat, "cap": [1e9] * 6})
+                             "phase": 0.0, "beat": beat, "cap": [1e9] * 6, "lag": 0.0})
                 t += beat
     # home again, then a beat of stillness
-    nb = max(2, int(math.ceil(_travel_time(kin, cur, home) * 1.1 / beat - 1e-9)))
+    # bound flow arrives in 0.8 of the travel (see _travel): plan for that
+    a_home = 0.8 if flow < -0.3 else 1.0
+    nb = max(2, int(math.ceil(_travel_time(kin, cur, home) * 1.1 / a_home / beat - 1e-9)))
+    glide = efforts_of("glide", flow)
     segs.append({"t0": t, "t1": t + nb * beat, "kind": "travel_home", "from": list(cur), "to": list(home),
-                 "eff": efforts_of("glide", flow), "act": "glide", "detour": [0.0] * 6, "phase": 0.0,
-                 "beat": beat, "cap": [1e9] * 6})
+                 "eff": glide, "act": "glide", "detour": [0.0] * 6, "phase": 0.0,
+                 "beat": beat, "cap": [1e9] * 6, "lag": _lag(glide, p)})
     return segs, t + (nb + 1) * beat
 
 
@@ -340,13 +462,19 @@ def _offsets(seg, tt, k):
             off[j] += A(j, 14.0 * rr) * s * env
     elif kind == "sway":
         s = math.sin(2 * math.pi * u + ph)
+        # successive flow (principles): the hand's counter-turn trails the base
         off[0] += A(0, 16.0) * s * env
-        off[5] -= A(5, 13.0) * s * env
-        off[3] += A(3, 5.0) * math.sin(4 * math.pi * u + ph) * env
+        off[5] -= A(5, 13.0) * math.sin(2 * math.pi * u + ph - seg.get("succ", 0.0)) * env
+        # twice the frequency: a quarter of the cap (it was capped for the
+        # sway's own frequency, needed 2-4x J4's acceleration limit, and the
+        # fit then softened every slash phrase to its minimum intensity)
+        off[3] += min(5.0 * amp, cap[3] * k / 4.0) * math.sin(4 * math.pi * u + ph) * env
     elif kind == "twist":
         s = math.sin(2 * math.pi * u + ph)
         off[3] += A(3, 22.0) * s * env
-        off[5] -= A(5, 30.0) * s * env
+        # successive (principles): the hand trails the forearm -- a spiral,
+        # not a straight back-and-forth in the joints
+        off[5] -= A(5, 30.0) * math.sin(2 * math.pi * u + ph - seg.get("succ", 0.0)) * env
     elif kind == "bounce":
         beats = max(1, int(round(dur / seg.get("beat", dur))))  # a dip on every beat
         ub = (u * beats) % 1.0
@@ -368,17 +496,51 @@ def _offsets(seg, tt, k):
     return off
 
 
-def _travel(seg, tt, k, flow):
-    """(progress of the pose change, detour offsets) for a travel at tt."""
+def _strike_timing(seg, a, k, lead):
+    """(wind-up, overshoot, w, z) of a sudden travel at intensity k, w and z
+    as fractions of the travel's duration: the wind-up before the beat
+    (at most 3/4 of a beat, never before the phrase's first beat), the
+    settle inside the segment after the strike. Squeezed timings shrink
+    the amplitudes with the square, so no piece is sharper than the strike."""
+    ant, over = seg.get("ant", 0.0), seg.get("over", 0.0)
+    if ant <= 0.0 and over <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0
+    span = seg["t1"] - seg["t0"] + lead
+    beat = seg.get("beat", span)
+    w = max(0.0, min(0.6 * a, 0.75 * beat / span, (seg["t0"] - lead - 0.25 * beat) / span))
+    z = max(0.0, min(0.9 * a, 0.96 - a))
+    ant *= k * min(1.0, w / (0.6 * a)) ** 2
+    over *= k * min(1.0, z / (0.9 * a)) ** 2
+    return (ant if w > 0 else 0.0), (over if z > 0 else 0.0), w, z
+
+
+def _travel(seg, tt, k, flow, lags=None):
+    """(progress of the pose change, detour offsets) for a travel at tt.
+    lags (per joint, s): the principles' version -- progress per joint,
+    each joint's clock delayed by its lag, sudden travels with anticipation
+    and overshoot; without, exactly the plain travel."""
     e = seg["eff"]
     dur = seg["t1"] - seg["t0"]
     # free flow starts the move a quarter-beat early and lets it overlap
     lead = 0.12 * dur * max(0.0, flow)
-    u = (tt - seg["t0"] + lead) / (dur + lead)
     a = _attack(e["time"], k)
     if flow < -0.3:
         a = min(a, 0.8)                                       # bound: arrive, then be still
-    s = _minjerk(u / a)
+    if lags is not None:
+        ant, over, w, z = _strike_timing(seg, a, k, lead)
+
+        def at(t_):
+            u_ = (t_ - seg["t0"] + lead) / (dur + lead)
+            return [_strike(u_, a, ant, over, w, z)] * 6, _detour(seg, u_, a, k, dur + lead)
+        both = _lagged(lambda t_: list(zip(*at(t_))), tt, lags)   # per joint: (progress, detour)
+        return [x[0] for x in both], [x[1] for x in both]
+    u = (tt - seg["t0"] + lead) / (dur + lead)
+    return _minjerk(u / a), _detour(seg, u, a, k, dur + lead)
+
+
+def _detour(seg, u, a, k, span):
+    """Detour offsets (deg) of a travel at progress time u (attack a)."""
+    e = seg["eff"]
     det = [0.0] * 6
     if 0.0 < u < a:
         # sin^2: the detour starts and ends at rest, as the travel does (a
@@ -388,29 +550,56 @@ def _travel(seg, tt, k, flow):
         size = (1 - e["space"]) / 2.0 * 14.0 * k * (0.7 + 0.3 * e["weight"])
         if seg["kind"] == "travel_curve":
             size = max(size, 10.0 * k)
-        ta = a * (dur + lead)
+        ta = a * span
         size = min(size, 0.3 * seg.get("acc_min", 135.0) * ta * ta / (2 * math.pi ** 2))
         det = [size * d * bump for d in seg["detour"][:5]] + [0.0]
-    return s, det
+    return det
 
 
-def _sample(segs, total, k, flow, scale=1.0, home=None):
+def _lagged(fn, tt, lags):
+    """fn(t) -> 6 values or None, evaluated per joint at t - lag[j] (each
+    distinct lag once): the wrist runs a few frames behind the base."""
+    out, cache = [0.0] * 6, {}
+    for j, lg in enumerate(lags):
+        if lg not in cache:
+            cache[lg] = fn(tt - lg)
+        if cache[lg]:
+            out[j] = cache[lg][j]
+    return out
+
+
+def _sample(segs, total, k, flow, scale=1.0, home=None, p=0.0):
     """24 fps frames of the phrase played `scale` times slower: frame i is at
     i / FPS, and shows the plan at i / FPS / scale. (Stretching the frame
     times instead gave a slowed phrase frames at 17 fps -- fine for the
-    player, which goes by time, but not what an exported clip should be.)"""
+    player, which goes by time, but not what an exported clip should be.)
+    p > 0: with the animation principles (follow-through lags, anticipation
+    and overshoot, breathing)."""
     ts = [i / FPS for i in range(int(math.ceil(total * scale * FPS)) + 1)]
     qs = []
+    beat = segs[0]["beat"] if segs else 0.5
+    lags = {id(s): [s.get("lag", 0.0) * d for d in DELAY_SHAPE] for s in segs} if p > 0 else {}
     for tt in (t / scale for t in ts):
         q = list(home or HOME)
         for seg in segs:
             if "to" in seg:
-                s, det = _travel(seg, tt, k, flow)
-                q = [a + s * (b - c) + d for a, b, c, d in zip(q, seg["to"], seg["from"], det)]
+                s, det = _travel(seg, tt, k, flow, lags.get(id(seg)))
+                if not isinstance(s, list):
+                    s = [s] * 6
+                q = [a + sj * (b - c) + d for a, sj, b, c, d in zip(q, s, seg["to"], seg["from"], det)]
         for seg in segs:
-            off = _offsets(seg, tt, k)
+            if p > 0:
+                if tt < seg["t0"] or tt > seg["t1"] + seg.get("lag", 0.0):
+                    continue
+                off = _lagged(lambda t_, sg=seg: _offsets(sg, t_, k), tt, lags[id(seg)])
+            else:
+                off = _offsets(seg, tt, k)
             if off:
                 q = [a + b for a, b in zip(q, off)]
+        if p > 0:
+            br = _breath(tt, total, beat, p, flow)
+            if br:
+                q = [a + b for a, b in zip(q, br)]
         qs.append(q)
     return ts, qs
 
@@ -420,13 +609,20 @@ def phrase(spec, seed=0, env=None, kin=None, safety=0.9, max_tries=6):
     intensity kept, tempo, attempts, and why a try was dropped."""
     kin = kin or Kin()
     rng = random.Random(seed)
-    info = {"tries": [], "bpm": spec["bpm"]}
+    p = _principles(spec)
+    info = {"tries": [], "bpm": spec["bpm"], "principles": p}
+    # with the principles, the result is held to the planning margins
+    # (PLAN_SAFETY of the speed / acceleration limits, LIMIT_MARGIN inside
+    # the joint limits); without, exactly the checks the phrases had before
+    margin = LIMIT_MARGIN if p > 0 else 1.0
+    if p > 0:
+        safety = min(safety, PLAN_SAFETY)
     for attempt in range(max_tries):
         segs, total = _plan(spec, kin, rng)
         k, bpm_scale = 1.0, 1.0
         for _ in range(8):
-            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale, spec.get("start"))
-            if any(not lo + 1.0 < x < hi - 1.0 for q in qs for x, (lo, hi) in zip(q, kin.limits)):
+            ts, qs = _sample(segs, total, k, spec.get("flow", 0.0), bpm_scale, spec.get("start"), p)
+            if any(not lo + margin < x < hi - margin for q in qs for x, (lo, hi) in zip(q, kin.limits)):
                 k *= 0.7
                 continue
             lim = P.limiting(ts, qs, 125.0, [v * safety for v in kin.vel], [a * safety for a in kin.acc])
@@ -473,7 +669,7 @@ def make_clip(spec, seed=0, env=None, clip_id=None, kin=None, tags=()):
     xs = list(zip(*clip["tcp"]))
     clip["meta"]["bounds"] = {"min": [min(a) for a in xs], "max": [max(a) for a in xs]}
     clip["meta"]["duration_s"] = round(ts[-1], 6)
-    clip["style"].update({k: info[k] for k in ("intensity", "tempo_scale", "bpm_played", "segments")})
+    clip["style"].update({k: info[k] for k in ("intensity", "tempo_scale", "bpm_played", "segments", "principles")})
     clip["style"]["acc_limit"] = kin.acc
     M.measure(clip, acc=kin.acc)
     if env is not None:
@@ -494,6 +690,42 @@ def make_clip(spec, seed=0, env=None, clip_id=None, kin=None, tags=()):
 
 
 OPPOSITES = [("punch", "float"), ("slash", "glide"), ("press", "flick"), ("wring", "dab")]
+# start poses the labels are calibrated from: HOME (the rest hub as show.py
+# makes its clips, J1 turned to 0), the party's rest hub itself, a low hub
+CAL_STARTS = {"home": HOME, "rest": [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0],
+              "low": [0.0, -75.0, 110.0, -125.0, -90.0, 0.0]}
+
+
+def calibration_set(kin=None, seeds=range(4), starts=None, principles=None, log=None):
+    """Single-action phrases for motion_labels.fit_cal: every action x seeds
+    x start poses, 1 or 2 bars, tempo and flow from random_spec (every other
+    seed clamped to a show's 80-125 bpm). Rows: {"action", "flow", "raw"
+    (motion_labels.raw_measures), "seed", "start", "spec", "ts", "qs",
+    "info"}; a phrase that cannot be made is left out (and logged)."""
+    import motion_labels as L
+    kin = kin or Kin()
+    rows = []
+    for act in ACTIONS:
+        for seed in seeds:
+            for sname, start in (starts or CAL_STARTS).items():
+                rng = random.Random(7919 * seed + 31 * list(ACTIONS).index(act) + 1)
+                spec = random_spec(rng, actions=[act] * (1 + seed % 2))
+                if seed % 2:
+                    spec["bpm"] = int(min(max(spec["bpm"], 80), 125))
+                spec["start"] = list(start)
+                if principles is not None:
+                    spec["principles"] = principles
+                ts, qs, info = phrase(spec, seed, kin=kin)
+                if ts is None:
+                    if log:
+                        log("  %s seed %d from %s: no phrase" % (act, seed, sname))
+                    continue
+                tcp = M._tcp_path("fr20", qs)
+                raw = L.raw_measures(ts, qs, tcp)
+                rows.append({"action": act, "flow": spec["flow"], "seed": seed, "start": sname, "spec": spec,
+                             "raw": {k: raw[k] for k in ("weight", "time", "space", "still")},
+                             "ts": ts, "qs": qs, "info": info})
+    return rows
 
 
 def dance_wedge(n=48, seed=7):
@@ -529,7 +761,7 @@ if __name__ == "__main__":
             fails.append(label)
 
     kin = Kin()
-    env = CL.load_env(os.path.join(ROOT, "envs", "volvox_lab.json"))
+    env = CL.load_env(os.path.join(ROOT, "envs", "volvox_lab.usda"))
     t0 = time.time()
     clips = {}
     for act in ACTIONS:
@@ -569,10 +801,106 @@ if __name__ == "__main__":
     check("bound flow measures more bound than free flow", fb and ff and fb["flow"] < ff["flow"],
           "%.2f vs %.2f" % (fb["flow"], ff["flow"]))
     agree = sum(1 for a, c in clips.items() if c.get("labels") and c["labels"]["measured"]["action"] == a)
-    check("the measured Laban action matches the intended one on most actions", agree >= 5, "%d/8" % agree)
+    check("the measured Laban action matches the intended one (8 clips from HOME, at acc %s)" % kin.acc, agree >= 7,
+          "%d/8; %s" % (agree, ", ".join("%s->%s" % (a, c["labels"]["measured"]["action"]) for a, c in clips.items()
+                                         if c.get("labels") and c["labels"]["measured"]["action"] != a)))
+    rows = calibration_set(kin, seeds=range(20, 24), starts={"rest": CAL_STARTS["rest"]})
+    conf, n = L.confusion(rows)
+    L.print_confusion(conf)
+    check("... and from the party's rest hub, several seeds: >= 7/8 actions by majority",
+          L.majority(conf)[1] >= 7, "%d/8 actions, %d/%d phrases" % (L.majority(conf)[1], n, len(rows)))
     mix = make_clip({"bars": [{"action": "float"}, {"action": "punch"}, {"action": "glide"}], "bpm": 90, "flow": 0.3},
                     seed=4, env=env, kin=kin)
     check("a mixed phrase (float -> punch -> glide) is made and labelled",
           mix["safety"].get("ok") and mix.get("labels"), str(mix["safety"].get("reasons")))
+
+    # ---- the animation principles -------------------------------------------
+    rest = CAL_STARTS["rest"]
+    on, off = {}, {}
+    for act in ACTIONS:
+        for pr, out in ((True, on), (False, off)):
+            spec = {"bars": [{"action": act}] * 2, "bpm": 80 if ACTIONS[act][1] < 0 else 115, "flow": 0.0,
+                    "start": rest, "principles": pr}
+            out[act] = phrase(spec, seed=5, kin=kin)
+    bad = []
+    for act, (ts, qs, info) in on.items():
+        if ts is None:
+            bad.append("%s: no phrase" % act)
+            continue
+        pose = max(max(abs(a - b) for a, b in zip(qs[0], rest)), max(abs(a - b) for a, b in zip(qs[-1], rest)))
+        still = max(max(abs(a - b) for a, b in zip(qs[1], qs[0])), max(abs(a - b) for a, b in zip(qs[-1], qs[-2])))
+        if pose > 1e-3 or still > 1e-3:
+            bad.append("%s: %.1e deg from the pose, %.1e deg/frame at an end" % (act, pose, still))
+    check("with the principles, every phrase starts and ends at rest at its start pose (1e-3 deg)", not bad,
+          "; ".join(bad))
+    bad = []
+    for act, (ts, qs, info) in on.items():
+        if ts is None:
+            continue
+        lim = P.limiting(ts, qs, 125.0, [v * PLAN_SAFETY for v in kin.vel], [a * PLAN_SAFETY for a in kin.acc])
+        margin = min(min(x - lo, hi - x) for q in qs for x, (lo, hi) in zip(q, kin.limits))
+        if lim["scale_needed"] > 1.0 or margin < LIMIT_MARGIN:
+            bad.append("%s: x%.3f (J%d %s), %.1f deg inside the joint limits" % (
+                act, lim["scale_needed"], lim["joint"], lim["kind"], margin))
+    check("... within the speed / acceleration limits at PLAN_SAFETY and LIMIT_MARGIN inside the joint limits",
+          not bad, "; ".join(bad))
+    # anticipation and overshoot: the same plan with and without (the rng is
+    # drawn alike), J1-J3 projected on the first sudden travel's direction
+    spec = {"bars": [{"action": "punch"}] * 2, "bpm": 110, "flow": 0.0, "start": rest}
+    segs, total = _plan(spec, kin, random.Random(3))
+    ts_a, qs_a = _sample(segs, total, 1.0, 0.0, 1.0, rest, 1.0)
+    _, qs_b = _sample(segs, total, 1.0, 0.0, 1.0, rest, 0.0)
+    tr = next((s for s in segs if s.get("ant")), None)
+    if tr:
+        dv = [b - a for a, b in zip(tr["from"][:3], tr["to"][:3])]
+        nd = math.sqrt(sum(x * x for x in dv)) or 1e-9
+        proj = [sum((x - y) * d for x, y, d in zip(qa[:3], qb[:3], dv)) / nd for qa, qb in zip(qs_a, qs_b)]
+        before = [p_ for t, p_ in zip(ts_a, proj) if tr["t0"] - tr["beat"] <= t <= tr["t0"]]
+        during = [p_ for t, p_ in zip(ts_a, proj) if tr["t0"] <= t <= tr["t1"]]
+        check("a punch winds up against its strike and overshoots past it (vs the same plan without)",
+              min(before) < -0.05 * nd and max(during) > 0.04 * nd,
+              "wind-up %.1f deg, overshoot %.1f deg of a %.1f deg strike" % (-min(before), max(during), nd))
+    else:
+        check("a punch winds up against its strike and overshoots past it", False, "no sudden travel in the plan")
+    # follow-through: in every travel (where the arm and the wrist share one
+    # move) the J4-J6 speed profile trails J1-J3's -- and by more than in the
+    # same plan without the principles (detours alone shift it a little)
+    lags, gain = {}, []
+    for act in ACTIONS:
+        spec = {"bars": [{"action": act}] * 2, "bpm": 80 if ACTIONS[act][1] < 0 else 115, "flow": 0.0, "start": rest}
+        segs, total = _plan(spec, kin, random.Random(5))
+        ts_a, qs_a = _sample(segs, total, 1.0, 0.0, 1.0, rest, 1.0)
+        _, qs_b = _sample(segs, total, 1.0, 0.0, 1.0, rest, 0.0)
+        for sg in segs:
+            if "to" in sg:
+                idx = [i for i, t in enumerate(ts_a) if sg["t0"] - 0.3 <= t <= sg["t1"]]
+                la = L.successive_lag([ts_a[i] for i in idx], [qs_a[i] for i in idx])
+                lb = L.successive_lag([ts_a[i] for i in idx], [qs_b[i] for i in idx])
+                if la != 0.0 and lb != 0.0:                    # 0.0: one of the groups hardly moves
+                    lags.setdefault(act, []).append(la)
+                    gain.append(la - lb)
+    flat = [x for v in lags.values() for x in v]
+    check("follow-through: in every travel J4-J6 trail J1-J3, more than without the principles",
+          len(flat) >= 8 and min(flat) > 0.0 and min(gain) >= 0.0 and sorted(gain)[len(gain) // 2] > 0.02,
+          "%d travels, lag %.3f-%.3f s, %.3f-%.3f s more than without; median per action %s" % (
+              len(flat), min(flat), max(flat), min(gain), max(gain),
+              ", ".join("%s %.3f" % (a, sorted(v)[len(v) // 2]) for a, v in lags.items())))
+
+    # breathing: no frame between the ends is fully still
+    def still_frames(ts, qs, eps=0.02):
+        """Frames (0.25 s from either end) where no joint moves eps deg/s."""
+        return sum(1 for i in range(len(qs) - 1) if 0.25 <= ts[i] <= ts[-1] - 0.25
+                   and max(abs(b - a) for a, b in zip(qs[i], qs[i + 1])) * FPS < eps)
+    s_on = {a: still_frames(v[0], v[1]) for a, v in on.items() if v[0]}
+    s_off = {a: still_frames(v[0], v[1]) for a, v in off.items() if v[0]}
+    check("breathing: with the principles no frame is still (> 0.02 deg/s) in the holds; without, the holds freeze",
+          all(x == 0 for x in s_on.values()) and sum(s_off.values()) > 0,
+          "still frames with %d, without %d" % (sum(s_on.values()), sum(s_off.values())))
+    labels_on = {a: L.efforts(L.raw_measures(v[0], v[1], M._tcp_path("fr20", v[1])))["action"]
+                 for a, v in on.items() if v[0]}
+    check("... and the principles keep the labels: the 8 phrases above still measure as intended (>= 7/8)",
+          sum(a == b for a, b in labels_on.items()) >= 7,
+          ", ".join("%s->%s" % (a, b) for a, b in labels_on.items() if a != b))
+    print("\n%.0f s" % (time.time() - t0))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     sys.exit(1 if fails else 0)

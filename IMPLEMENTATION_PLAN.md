@@ -198,8 +198,19 @@ the user's OK):
 5. Dances: motif / variation operators, Laban Shape, BPM grid; the label
    recalibration at 300/600.
 6. Retargeting: AIST++ tests, a PCA mode; later OAK-D + motion matching.
-**Status**: Not Started (survey done). Ruckig and pyribs approved by the
-user (2026-09-27).
+**Status (2026-09-27)**: 2 and 3 done, in the show; 1, 4-6 not started.
+Ruckig and pyribs approved by the user.
+- 2: `transitions.py` -- hub moves jerk-limited (Ruckig), corners blended
+  within 2 deg of the planned legs; `show.timed_move` uses it. 125 Hz jerk
+  on the hub moves 10364 -> 767 deg/s^3, ~8% longer. `exit_from` /
+  `ramp_stop` written for an early exit, not wired yet.
+- 3: `paths.py` -- lissajous, figure8, spiral, helix, rose, spline; tool
+  look / tangent / fixed; two-thirds power law timing; 36/36 family x mode
+  x hub combinations made, ~86% of random draws kept.
+- Also: gestures fixed (220/220 draws, were dropping wave / nod / trace /
+  short reach) with five new families (peek, shy, stretch, bounce, search);
+  animation principles in gestures and dances; labels refitted at 300/600
+  (single-action dances 91/96 held out, was 65/96).
 
 ## Stage 6: Interactive show on the real FR20 (2026-09-27, PROPOSED -- to discuss)
 **Goal**: A demo for the studio: on the real FR20, the arm plays through
@@ -232,7 +243,10 @@ no joint jump); `envs/volvox_lab.usda`; `scripts/isaac/run_show.py`
   phrases) and `greet` (tool + look, gestures that look at the audience).
   Zones, the operating range and authored clips are in the config. A
   10 min dry run has no jump and uses both hubs.
-  - Open: label recalibration; a `scan_ready` hub (waits for the paper);
+  - v4 (2026-09-27 night): rest 12 dances, greet 22 clips over 17
+    families; 30 min dry run uses all 34, worst step 1.16 of 1.44 deg;
+    3 min SimMachine stream 0 skips, tracking 0.28 deg.
+  - Open: a `scan_ready` hub (waits for the paper);
     the cat clip needs a hub in its elbow configuration; the motion
     dynamics refinement (to discuss).
 

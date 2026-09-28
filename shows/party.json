@@ -14,10 +14,10 @@
     -90.0,
     0.0
    ],
-   "clips": 8,
+   "clips": 12,
    "generator": "choreo",
    "zone": "idle",
-   "note": "the stage home; dance phrases"
+   "note": "the stage home; dance phrases (anticipation, overshoot, follow-through, breathing)"
   },
   "greet": {
    "tcp": [
@@ -38,7 +38,7 @@
     -88.0,
     4.0
    ],
-   "clips": 10,
+   "clips": 22,
    "generator": "gestures",
    "zone": "greet",
    "families": [
@@ -47,9 +47,20 @@
     "nod",
     "reach",
     "tilt",
-    "trace"
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
    ],
-   "note": "the tool looks at the audience; gestures"
+   "note": "the tool looks at the audience; gestures and spatial paths"
   }
  },
  "library": {
