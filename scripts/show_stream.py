@@ -56,6 +56,7 @@ STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limi
 ERROR_POLL_S = 0.1
 SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
+OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
 MIN_SPEED = 0.05                   # the speed is set before the stream starts; it is not changed while it runs
@@ -200,6 +201,25 @@ class Guard:
                 raise StreamFault("J%d at %.2f deg, outside its limits %g..%g" % (j + 1, x, lo, hi))
 
 
+def realtime_priority():
+    """Windows: this process at HIGH priority and the calling (stream) thread
+    at TIME_CRITICAL, so other programs on the PC -- Houdini, TouchDesigner,
+    a SimMachine VM -- delay a tick less often. Only this process changes.
+    Returns what was set, or why not."""
+    if os.name != "nt":
+        return "not Windows: left as is"
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    # the pseudo-handles are -1 / -2: typed as HANDLE, or ctypes cuts them to 32 bits
+    k32.GetCurrentProcess.restype = k32.GetCurrentThread.restype = wintypes.HANDLE
+    k32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    k32.SetThreadPriority.argtypes = [wintypes.HANDLE, ctypes.c_int]
+    ok_p = k32.SetPriorityClass(k32.GetCurrentProcess(), 0x00000080)          # HIGH_PRIORITY_CLASS
+    ok_t = k32.SetThreadPriority(k32.GetCurrentThread(), 15)                  # THREAD_PRIORITY_TIME_CRITICAL
+    return "process high, stream thread time-critical" if ok_p and ok_t else "not set (%s, %s)" % (ok_p, ok_t)
+
+
 def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print):
     """The stream loop. The arm must already be at the Runner's start pose.
     Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
@@ -215,6 +235,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     link.start()
     gc.collect()
     gc.freeze()                                     # what exists now (the graph, the show) is never walked again
+    events.append("priority: " + realtime_priority())
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     last = -1
@@ -228,6 +249,10 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             adv = k - last if last >= 0 else 1
             skipped += adv - 1
             commands.skipped = skipped
+            if adv > 1:                             # say why: a late wake-up, or the send before it was slow
+                events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before took "
+                              "%.1f ms" % (runner.clock, adv - 1, (now - _wait) * 1000.0,
+                                           sends_ms[-1] if len(sends_ms) else 0.0))
             late_ms.append((now - (start + k * dt)) * 1000.0)
             if commands.stop_requested.is_set():
                 fault = "stop requested"
@@ -327,7 +352,8 @@ def lag_by_window(t0, dense, dt, feedback, window_s=LAG_WINDOW_S, lags_ms=range(
 
 
 def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed):
-    rep = {"ended": "fault" if fault else "at a hub", "fault": fault, "speed": speed,
+    ended = "at a hub" if not fault else ("stopped" if fault in OPERATOR_STOPS else "fault")
+    rep = {"ended": ended, "fault": fault, "speed": speed,
            "sends": len(ticks_cmd), "skipped": skipped,
            "duration_s": round(ticks_cmd.row(-1)[0] * dt, 2) if len(ticks_cmd) else 0.0,
            "worst_step_of_limit": round(guard.worst_ratio, 3),
@@ -483,12 +509,19 @@ def self_test():
     rep, r = run(c, 1.0, stop_at=0.6)
     check("/robot/stop (or Ctrl+C) stops at once with StopMotion", rep["fault"] == "stop requested"
           and "stop" in c.calls and rep["duration_s"] < 1.5, (rep["fault"], rep["duration_s"]))
+    check("... and the run reads as stopped, not as a fault", rep["ended"] == "stopped", rep["ended"])
 
     c = FakeCtrl(slow_every=40)
     rep, r = run(c, 2.0 / 60)
     check("a slow send is caught up by skipping ticks, not bursting (and still no jump)",
           rep["skipped"] > 0 and rep["worst_step_of_limit"] <= 1.0 and rep["ended"] == "at a hub",
           (rep["skipped"], rep["worst_step_of_limit"]))
+    why = [e for e in rep["events"] if "skipped" in e]
+    check("... and each skip says why (how late the wake-up, how long the send before)",
+          why and all("send before took" in e for e in why), why[:2])
+    check("the stream runs at a high priority on Windows",
+          any(e.startswith("priority: " + ("process high" if os.name == "nt" else "")) for e in rep["events"]),
+          [e for e in rep["events"] if e.startswith("priority")])
 
     r = S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
     check("the speed cannot be changed while streaming (no live speed command)",
@@ -605,7 +638,7 @@ def main(argv=None):
                                        "send_ms_p95", "max_late_ms", "controller_error")}
     print(json.dumps(summary, indent=1))
     print("log:", base + ".json")
-    return 0 if out["ended"] == "at a hub" else 1
+    return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
 
 
 def _toml_ip():
