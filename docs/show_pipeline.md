@@ -44,8 +44,17 @@ IDLE --(pause)--> PAUSED at home;  any --(fault)--> FAULT, holds until reset
 ```
 
 - **Choosing the next idle clip.** Weighted random, with no repeat within the
-  last 8. Weights lean towards a **mood** (a Laban action) and an **energy**
-  (0 calm .. 1 lively), which TouchDesigner can send.
+  last few. Weights lean towards a **mood** (a Laban action) and an
+  **energy** (0 calm .. 1 lively), and away from the family just played.
+  - Every idle clip has a measured energy: how fast and how big it moves,
+    ranked within the library (`python scripts/show.py report
+    shows/party.json` prints it, with each clip's height span, extent and
+    speed, and which variety targets the library misses).
+  - Unless TouchDesigner sets an energy, the show follows its **arc**
+    (`select.arc`, default: 180 s): it builds from calm to the peak, bursts
+    there for 20 s, and drops back. `/robot/energy` below 0 hands back to
+    the arc.
+  - At high energy the arm changes hub (level) sooner; calm, it stays.
 - **Latency.** A trigger waits for the running clip to end; the longest idle
   clip sets the worst case (18 s now). Later, Ruckig will make an early
   smooth exit to the nearest hub possible.
@@ -61,7 +70,9 @@ IDLE --(pause)--> PAUSED at home;  any --(fault)--> FAULT, holds until reset
     - `/robot/queue`: the items already queued;
     - `/robot/pending`: triggers still waiting;
     - `/robot/time_left`: seconds left in the clip;
-    - `/robot/fault`.
+    - `/robot/fault`;
+    - `/robot/energy_now`: the energy wanted now (the arc's or the
+      operator's), and `/robot/clip_energy`: the running clip's.
   - From the streaming backend only: `/robot/speed_now` and
     `/robot/skipped` (ticks skipped so far, so a stall shows at once).
   - The status can go to several listeners (`--osc-out HOST:PORT`), for

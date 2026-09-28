@@ -86,12 +86,12 @@ class ShowLink:
         osc = json.load(open(config))["osc"]
         self.status = {"state": "-", "clip": "-", "hub": "-", "progress": 0.0, "scan": -1.0, "speed_now": 0.0,
                        "sequence": "", "next": "", "queue": "", "pending": "", "time_left": 0.0, "fault": "",
-                       "skipped": 0}
+                       "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0}
         self.log = queue.Queue()
         self.proc = None
         d = dispatcher.Dispatcher()
         for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
-                    "time_left", "fault", "skipped"):
+                    "time_left", "fault", "skipped", "energy_now", "clip_energy"):
             d.map("/robot/" + key, self._status_setter(key))
         self.server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", send_port or osc["send_port"]), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -261,10 +261,19 @@ def run_window(config):
     box.pack(side="left")
     box.bind("<<ComboboxSelected>>", lambda e: link.mood(mood.get()))
     energy = tk.DoubleVar(value=0.5)
+    auto = tk.BooleanVar(value=True)                # the show's energy arc; unticked: the slider's value
+
+    def set_energy(*_):
+        link.energy(-1.0 if auto.get() else energy.get())
     ttk.Label(ctl, text="   Energy").pack(side="left")
+    ttk.Checkbutton(ctl, text="Auto (the show's arc)", variable=auto, command=set_energy).pack(side="left")
     sc = ttk.Scale(ctl, from_=0.0, to=1.0, variable=energy, length=140)
     sc.pack(side="left")
-    sc.bind("<ButtonRelease-1>", lambda e: link.energy(energy.get()))
+
+    def slid(_):
+        auto.set(False)                              # moving the slider takes over from the arc
+        set_energy()
+    sc.bind("<ButtonRelease-1>", slid)
 
     # --- health and log ----------------------------------------------------------------
     health = ttk.Label(root, text="", font=("Segoe UI", 9))
@@ -303,8 +312,10 @@ def run_window(config):
             next_l.config(text="-")
             prog["value"] = 0.0
         skipped = int(s.get("skipped") or 0)
-        health.config(text=("speed %.2f   |   skipped ticks %d%s   |   last status %.1f s ago"
-                            % (float(s.get("speed_now") or 0.0), skipped, "  (a stall!)" if skipped else "", age))
+        health.config(text=("speed %.2f   |   energy wanted %.2f, this clip %.2f   |   skipped ticks %d%s   |   "
+                            "last status %.1f s ago"
+                            % (float(s.get("speed_now") or 0.0), float(s.get("energy_now") or 0.0),
+                               float(s.get("clip_energy") or 0.0), skipped, "  (a stall!)" if skipped else "", age))
                       if live else "", foreground="#c0392b" if skipped else "#333333")
         while True:
             try:

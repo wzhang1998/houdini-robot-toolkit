@@ -31,10 +31,15 @@ Runner: plays idle clips at a hub, moves to another hub every few clips
 States: IDLE, MOVE, TO_SCAN, SCAN, FROM_SCAN, PAUSED (holds at a hub), FAULT
 (holds, needs reset). Selection: weighted random, no repeat within the last
 select.no_repeat at a hub, weighted towards a mood (a Laban action) and an
-energy (0 calm .. 1 lively) that TouchDesigner may send.
+energy (0 calm .. 1 lively). Every idle clip has a measured energy (how fast
+and how big it moves, ranked within the library). Unless TouchDesigner sets
+one, the energy follows the show's arc (select.arc): it builds from calm to a
+peak over period_s, bursts, and drops back -- so the show breathes instead of
+playing clips of one kind. The family just played is avoided, and at high
+energy the arm changes hub (level) more often.
 
 OSC in:  /robot/trigger [name] (default scan)   /robot/pause   /robot/resume   /robot/reset
-         /robot/mood <action>   /robot/energy <0..1>
+         /robot/mood <action>   /robot/energy <0..1> (below 0: back to the arc)
 OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
          /robot/scan f (0..1 while scanning: the LED strip's column clock)  /robot/joints f*6
 
@@ -139,7 +144,10 @@ class Graph:
     @staticmethod
     def load(path):
         d = json.load(open(path))
-        return Graph(d["hubs"], [Segment.from_dict(s) for s in d["segments"]], d.get("info"))
+        segs = [Segment.from_dict(s) for s in d["segments"]]
+        if any(s.kind == "idle" and "energy" not in (s.labels or {}) for s in segs):
+            add_energy(segs)                           # compiled before clips carried their energy
+        return Graph(d["hubs"], segs, d.get("info"))
 
     def check_joins(self, tol_deg=0.05):
         """[(segment, 'start'|'end', hub, off deg)] where a segment does not
@@ -454,6 +462,7 @@ def build(cfg_path, log=print):
                 raise SystemExit("%s: %s" % (name, C.describe(rep)))
             segs.append(Segment(name, kind, t, q, a, b))
             log("%s: %.1f s, %s" % (name, t[-1], why))
+    add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
@@ -481,6 +490,83 @@ def placeholder_scan(cfg, env):
 
 def compiled_path(cfg_path):
     return os.path.splitext(cfg_path)[0] + ".compiled.json"
+
+
+def motion_stats(t, q):
+    """How a clip looks from outside: the TCP's height span and range, its
+    largest extent, mean and peak TCP speed (m/s), the duration (s)."""
+    import motion_clip as M
+    tcp = M._tcp_path("fr20", q)
+    z = [p[2] for p in tcp]
+    sp = [math.dist(a, b) / (t1 - t0) for a, b, t0, t1 in zip(tcp, tcp[1:], t, t[1:]) if t1 > t0]
+    return {"z_min": round(min(z), 3), "z_max": round(max(z), 3), "z_span": round(max(z) - min(z), 3),
+            "extent": round(max(max(p[i] for p in tcp) - min(p[i] for p in tcp) for i in range(3)), 3),
+            "v_mean": round(sum(sp) / len(sp), 3) if sp else 0.0, "v_peak": round(max(sp), 3) if sp else 0.0,
+            "duration": round(t[-1], 2)}
+
+
+def add_energy(segments):
+    """labels["stats"] and labels["energy"] (0 calm .. 1 lively) on every
+    idle segment: speed and size, ranked within the library, so the energy
+    arc always has clips at both ends."""
+    idle = [s for s in segments if s.kind == "idle"]
+    for s in idle:
+        s.labels = dict(s.labels or {})
+        s.labels["stats"] = motion_stats(s.t, s.q)
+    if not idle:
+        return
+    def rank(key):
+        vals = sorted(s.labels["stats"][key] for s in idle)
+        return {id(s): (vals.index(s.labels["stats"][key]) / max(1, len(vals) - 1)) for s in idle}
+    vm, vp, ex = rank("v_mean"), rank("v_peak"), rank("extent")
+    raw = {id(s): 0.45 * vm[id(s)] + 0.35 * vp[id(s)] + 0.2 * ex[id(s)] for s in idle}
+    order = sorted(raw.values())
+    for s in idle:
+        s.labels["energy"] = round(order.index(raw[id(s)]) / max(1, len(order) - 1), 3)
+
+
+def family_of(seg):
+    """What kind of clip it is, for contrast: a gesture's or a path's family,
+    a dance's measured action."""
+    lab = seg.labels or {}
+    return lab.get("family") or lab.get("action") or seg.name
+
+
+def report(graph, cfg=None):
+    """The library as numbers (motion_stats per idle clip) and whether it
+    meets the variety the show asks for (cfg["library"]["variety"], or the
+    defaults): (rows, summary, [targets missed])."""
+    idle = graph.idle()
+    if any("stats" not in (s.labels or {}) for s in idle):
+        add_energy(graph.segments)
+    rows = [dict(name=s.name, hub=s.start, family=family_of(s), energy=s.labels.get("energy"), **s.labels["stats"])
+            for s in idle]
+    med = lambda xs: sorted(xs)[len(xs) // 2] if xs else 0.0
+    zs = [r["z_min"] for r in rows] + [r["z_max"] for r in rows]
+    summary = {"clips": len(rows), "families": len({r["family"] for r in rows}),
+               "z_range": [min(zs), max(zs)] if zs else None,
+               "z_span_median": med([r["z_span"] for r in rows]), "extent_median": med([r["extent"] for r in rows]),
+               "v_peak_max": max((r["v_peak"] for r in rows), default=0.0),
+               "v_peak_min": min((r["v_peak"] for r in rows), default=0.0),
+               "short_share": round(sum(r["duration"] <= 5.0 for r in rows) / max(1, len(rows)), 2),
+               "duration_range": [min(r["duration"] for r in rows), max(r["duration"] for r in rows)] if rows else None}
+    want = dict(VARIETY, **((cfg or {}).get("library", {}).get("variety") or {}))
+    missed = []
+    if summary["z_span_median"] < want["z_span_median"]:
+        missed.append("median height change %.2f m < %.2f" % (summary["z_span_median"], want["z_span_median"]))
+    if summary["extent_median"] < want["extent_median"]:
+        missed.append("median extent %.2f m < %.2f" % (summary["extent_median"], want["extent_median"]))
+    if zs and summary["z_range"][1] - summary["z_range"][0] < want["z_range_m"]:
+        missed.append("heights used %.2f-%.2f m, less than %.2f m apart" % (summary["z_range"][0], summary["z_range"][1],
+                                                                           want["z_range_m"]))
+    if summary["short_share"] < want["short_share"]:
+        missed.append("%.0f%% of clips <= 5 s < %.0f%%" % (100 * summary["short_share"], 100 * want["short_share"]))
+    if summary["v_peak_max"] < want["v_peak_fast"]:
+        missed.append("fastest clip %.2f m/s < %.2f" % (summary["v_peak_max"], want["v_peak_fast"]))
+    return rows, summary, missed
+
+
+VARIETY = {"z_span_median": 0.15, "extent_median": 0.3, "z_range_m": 0.8, "short_share": 0.2, "v_peak_fast": 1.0}
 
 
 def write_preview(graph, out_dir):
@@ -515,31 +601,61 @@ def write_preview(graph, out_dir):
 # choosing and running
 # --------------------------------------------------------------------------
 
+ARC = {"period_s": 180.0, "calm": 0.1, "peak": 1.0, "burst_s": 20.0}
+
+
 class Selector:
     """Next idle clip at a hub: weighted random, no repeat within the last
-    no_repeat, weighted towards a mood (Laban action) and an energy."""
+    no_repeat, towards a mood (Laban action) and an energy -- the operator's
+    (TouchDesigner) or else the arc's -- and away from the family just played."""
 
-    def __init__(self, clips, no_repeat=6, seed=None):
+    def __init__(self, clips, no_repeat=6, seed=None, arc=None):
         self.clips, self.no_repeat = clips, no_repeat
         self.recent, self.mood, self.energy = [], None, None
+        self.arc = dict(ARC, **arc) if isinstance(arc, dict) else (ARC if arc is None else None)
         self.rng = random.Random(seed)
 
-    def weight(self, c, mood=None):
+    def target_energy(self, clock=0.0):
+        """The energy wanted now: the operator's, or the arc's -- a build from
+        calm to the peak over period_s, a burst at the peak for burst_s, then
+        calm again. None: no preference."""
+        if self.energy is not None and self.energy >= 0.0:
+            return self.energy
+        a = self.arc
+        if not a:
+            return None
+        u = (clock % a["period_s"]) / a["period_s"]
+        burst = a["burst_s"] / a["period_s"]
+        if u >= 1.0 - burst:
+            return a["peak"]
+        return a["calm"] + (a["peak"] - a["calm"]) * (u / (1.0 - burst)) ** 1.5 * 0.85
+
+    def weight(self, c, mood=None, clock=0.0):
         w = 1.0
         mood = mood or self.mood
         if mood and c.labels.get("action") == mood:
             w *= 4.0
-        e = (c.labels.get("effort") or {})
-        if self.energy is not None and e.get("time") is not None:
-            lively = (e["time"] + 1.0) / 2.0                  # sudden = lively
-            w *= 0.25 + 1.5 * (1.0 - abs(lively - self.energy))
+        want = self.target_energy(clock)
+        e = c.labels.get("energy")
+        if e is None and (c.labels.get("effort") or {}).get("time") is not None:
+            e = (c.labels["effort"]["time"] + 1.0) / 2.0          # no measured energy: sudden = lively
+        if want is not None and e is not None:
+            w *= 0.1 + 2.0 * math.exp(-((e - want) / 0.22) ** 2)
+        fams = [family_of(x) for x in self.recent_segs[-3:]]
+        if fams and family_of(c) == fams[-1]:
+            w *= 0.15                                             # not the same kind twice in a row
+        elif family_of(c) in fams:
+            w *= 0.5
         return w
 
-    def pick(self, hub=None, mood=None):
+    recent_segs = ()
+
+    def pick(self, hub=None, mood=None, clock=0.0):
         at = [c for c in self.clips if hub is None or c.start == hub]
         pool = [c for c in at if c.name not in self.recent[-self.no_repeat:]] or at
-        c = self.rng.choices(pool, weights=[self.weight(x, mood) for x in pool])[0]
+        c = self.rng.choices(pool, weights=[self.weight(x, mood, clock) for x in pool])[0]
         self.recent.append(c.name)
+        self.recent_segs = list(self.recent_segs)[-5:] + [c]
         return c
 
 
@@ -555,7 +671,7 @@ class Runner:
         self.clock, self.seg_t, self.sequence = 0.0, 0.0, None
         self.stay = self.rng.randint(*self.hub_stay)
         self.history = []
-        self.seg = self.sel.pick(self.hub)
+        self.seg = self.sel.pick(self.hub, clock=0.0)
         self.state = "IDLE"
 
     # events (from OSC, a keyboard, a test script)
@@ -604,9 +720,12 @@ class Runner:
             route = self.g.route(self.hub, other)
             if route:
                 self.queue += route
-                self.stay = self.rng.randint(*self.hub_stay)
+                want = self.sel.target_energy(self.clock)
+                lo, hi = self.hub_stay
+                # high energy: change level sooner (a move between hubs is a big motion); calm: stay
+                self.stay = lo if want is not None and want > 0.7 else self.rng.randint(lo, hi)
                 return
-        self.queue.append(self.sel.pick(self.hub))
+        self.queue.append(self.sel.pick(self.hub, clock=self.clock))
 
     def _advance(self):
         self.history.append((round(self.clock, 3), self.seg.name))
@@ -619,7 +738,7 @@ class Runner:
         nxt = self.queue.pop(0)
         if isinstance(nxt, tuple):                              # a sequence's clip, chosen now
             _, name, hub, mood = nxt
-            nxt = self.sel.pick(hub, mood)
+            nxt = self.sel.pick(hub, mood, clock=self.clock)
         self.log("%.2f %s -> %s" % (self.clock, self.seg.name, nxt.name))
         self.seg, self.seg_t = nxt, 0.0
         self.state = STATE_OF[nxt.kind]
@@ -673,12 +792,14 @@ class Runner:
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
                 "time_left": round(max(0.0, self.seg.duration - self.seg_t), 2),
                 "next": self.next_up(), "queue": [self._label(x) for x in self.queue[:6]],
-                "pending": list(self.pending), "fault": self.fault_reason}
+                "pending": list(self.pending), "fault": self.fault_reason,
+                "energy": round(self.sel.target_energy(self.clock) or 0.0, 3),
+                "clip_energy": round(float((self.seg.labels or {}).get("energy") or 0.0), 3)}
 
 
 def runner_for(graph, seed=None, log=None):
     sel = graph.info.get("select", {})
-    return Runner(graph, Selector(graph.idle(), sel.get("no_repeat", 6), seed=seed),
+    return Runner(graph, Selector(graph.idle(), sel.get("no_repeat", 6), seed=seed, arc=sel.get("arc")),
                   hub_stay=tuple(sel.get("hub_stay", (2, 4))), seed=seed, log=log)
 
 
@@ -701,7 +822,8 @@ class OscBridge:
         d.map("/robot/resume", lambda a, *v: runner.resume())
         d.map("/robot/reset", lambda a, *v: runner.reset())
         d.map("/robot/mood", lambda a, *v: setattr(runner.sel, "mood", str(v[0]) if v and v[0] else None))
-        d.map("/robot/energy", lambda a, *v: setattr(runner.sel, "energy", float(v[0]) if v else None))
+        d.map("/robot/energy", lambda a, *v: setattr(runner.sel, "energy",
+                                                     float(v[0]) if v and float(v[0]) >= 0.0 else None))
         if hasattr(runner, "stop"):                    # the streaming backend: a software stop
             d.map("/robot/stop", lambda a, *v: runner.stop())
         self.server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", listen_port), d)
@@ -716,7 +838,8 @@ class OscBridge:
                 ("/robot/joints", [float(x) for x in q]),
                 ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
                 ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
-                ("/robot/time_left", float(s.get("time_left", 0.0))), ("/robot/fault", s.get("fault") or "")]
+                ("/robot/time_left", float(s.get("time_left", 0.0))), ("/robot/fault", s.get("fault") or ""),
+                ("/robot/energy_now", float(s.get("energy", 0.0))), ("/robot/clip_energy", float(s.get("clip_energy", 0.0)))]
         if hasattr(self.runner, "speed_now"):                  # the streaming backend
             msgs.append(("/robot/speed_now", float(self.runner.speed_now)))
             msgs.append(("/robot/skipped", int(self.runner.skipped)))
@@ -756,10 +879,15 @@ def dry_run(graph, minutes=10.0, trigger_every=45.0, dt=0.008, seed=1, log=print
             t_trig = None
     played = [n for _, n in r.history]
     idle = [n for n in played if graph_kind(graph, n) == "idle"]
+    by_name = {x.name: x for x in graph.idle()}
+    fams = [family_of(by_name[n]) for n in idle]
+    energies = [float(by_name[n].labels.get("energy") or 0.0) for n in idle]
     return {"minutes": minutes, "segments_played": len(played), "scans": played.count("scan"),
             "idle_clips_played": len(idle), "distinct_idle": len(set(idle)), "idle_available": len(graph.idle()),
             "hubs_visited": sorted(set(graph_start(graph, n) for n in idle)),
             "moves": sum(1 for n in played if graph_kind(graph, n) == "move"),
+            "same_family_twice": sum(x == y for x, y in zip(fams, fams[1:])),
+            "energy_played": {"min": round(min(energies), 2), "max": round(max(energies), 2)} if energies else None,
             "worst_step_deg_per_tick": round(worst, 4), "max_step_allowed": round(max_step(dt), 4),
             "trigger_to_start_s": {"max": round(max(latencies), 2) if latencies else None,
                                    "mean": round(sum(latencies) / len(latencies), 2) if latencies else None}}
@@ -863,14 +991,37 @@ def self_test():
     sel = Selector(g.idle(), no_repeat=1, seed=3)
     picks = [sel.pick("a").name for _ in range(50)]
     check("no repeat within the window", all(x != y for x, y in zip(picks, picks[1:])), picks[:6])
-    sel = Selector(g.idle(), no_repeat=0, seed=3)
+    sel = Selector(g.idle(), no_repeat=0, seed=3, arc=False)          # the mood alone, no arc
+    base = [sel.pick("a").name for _ in range(400)].count("a1")
     sel.mood = "punch"
     picks = [sel.pick("a").name for _ in range(400)]
-    check("a mood makes its clips likelier", picks.count("a1") > 2 * picks.count("a2"), (picks.count("a1"), picks.count("a2")))
+    check("a mood makes its clips likelier (than without it)", picks.count("a1") > base + 60, (base, picks.count("a1")))
     sel = Selector(g.idle(), no_repeat=0, seed=3)
     sel.energy = 1.0
     picks = [sel.pick("a").name for _ in range(400)]
     check("energy 1 prefers sudden clips", picks.count("a1") > 2 * picks.count("a2"), (picks.count("a1"), picks.count("a2")))
+    sel = Selector(g.idle(), seed=3)
+    wants = [sel.target_energy(t) for t in (0.0, 60.0, 120.0, 170.0, 185.0)]
+    check("the arc builds from calm, bursts at its peak, and starts again",
+          wants[0] < wants[1] < wants[2] < wants[3] and wants[3] == 1.0 and wants[4] < 0.3, wants)
+    sel.energy = 0.4
+    check("an energy from the operator overrides the arc ...", sel.target_energy(170.0) == 0.4)
+    sel.energy = None
+    check("... until it is cleared", sel.target_energy(170.0) == 1.0)
+    moving = [Segment("e%d" % k, "idle", [0.0, 1.0, 2.0], [A, [A[0] + 5.0 * k] + list(A[1:]), A], "a", "a", {})
+              for k in range(1, 5)]
+    add_energy(moving)
+    e = {x.name: x.labels["energy"] for x in moving}
+    check("every idle clip gets a measured energy, ranked 0..1", min(e.values()) == 0.0 and max(e.values()) == 1.0, e)
+    fam = Graph(g.hubs, [seg("f%d" % i, "idle", A, A, "a", "a", action=("punch" if i < 3 else "float"))
+                         for i in range(6)])
+    sel = Selector(fam.idle(), no_repeat=0, seed=5, arc=False)
+    picks = [family_of(sel.pick("a")) for _ in range(300)]
+    same = sum(x == y for x, y in zip(picks, picks[1:])) / float(len(picks) - 1)
+    check("the family just played is rarely played again at once", same < 0.3, round(same, 2))
+    rows, summ, missed = report(Graph(g.hubs, moving))
+    check("the report measures every idle clip and names the targets it misses",
+          len(rows) == 4 and summ["extent_median"] > 0 and any("median height" in m for m in missed), (summ, missed))
     rng_cfg = {"range": {"j1_deg": [-30, 30], "tcp_z": [0.5, 1.5]}}
     check("the operating range refuses J1 past its sector",
           out_of_range(rng_cfg, [[0, 0, 0, 0, 0, 0], [40, 0, 0, 0, 0, 0]], None) is not None)
@@ -882,7 +1033,7 @@ def self_test():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=("build", "dry-run", "osc"))
+    ap.add_argument("command", choices=("build", "dry-run", "report", "osc"))
     ap.add_argument("config")
     ap.add_argument("--minutes", type=float, default=10.0)
     ap.add_argument("--trigger-every", type=float, default=45.0)
@@ -900,6 +1051,17 @@ def main(argv=None):
             list(g.hubs), time.time() - t0))
         return 0
     g = Graph.load(compiled_path(cfg_path))
+    if a.command == "report":
+        rows, summ, missed = report(g, json.load(open(cfg_path)))
+        print("%-26s %-6s %-10s %5s %11s %6s %6s %6s %6s %5s" % ("clip", "hub", "family", "energy", "height m",
+                                                               "span", "extent", "v mean", "v peak", "s"))
+        for r in sorted(rows, key=lambda r: r["energy"] or 0.0):
+            print("%-26s %-6s %-10s %5.2f %5.2f-%5.2f %6.2f %6.2f %6.2f %6.2f %5.1f" % (
+                r["name"], r["hub"], r["family"][:10], r["energy"] or 0.0, r["z_min"], r["z_max"], r["z_span"],
+                r["extent"], r["v_mean"], r["v_peak"], r["duration"]))
+        print(json.dumps(summ))
+        print("variety: " + ("meets the targets" if not missed else "MISSES -- " + "; ".join(missed)))
+        return 0 if not missed else 1
     if a.command == "dry-run":
         rep = dry_run(g, a.minutes, a.trigger_every, log=lambda *x: None, triggers=a.triggers.split(","))
         print(json.dumps(rep, indent=1))
