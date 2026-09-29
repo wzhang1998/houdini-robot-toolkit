@@ -835,7 +835,8 @@ def main(argv=None):
     if a.osc:
         o = cfg["osc"]
         lag_ms = a.osc_lag_ms if a.osc_lag_ms is not None else (120.0 if a.hardware else 40.0)
-        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also, lag_s=lag_ms / 1000.0)
+        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also, lag_s=lag_ms / 1000.0,
+                           cfg=cfg)
         print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
     guard = Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, speed)     # J6: the tool cable's range
     link = Link(ip)

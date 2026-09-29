@@ -8,6 +8,10 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
         --auto-trigger 60 --seed 1 --camera audience --no-guides --video       the 5 min demo, recorded
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455
+        TouchDesigner live: TD hears the show (as from show_stream) and its LEDs come back over Art-Net, drawn
+        as the strip's 60 LEDs, in real time. Only with show_stream, scan_test and show_ui closed (the one
+        OSC port, 9000; TD's STOP here holds the arm in Isaac) and TD's Controller IP cleared.
 
 The same Runner as the dry run and (next) the real arm: each physics step
 asks it for joints and sends them to the arm's position drives. Triggers:
@@ -51,6 +55,14 @@ ap.add_argument("--camera", default="room",
                 help="room (the whole room), audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame)")
 ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
 ap.add_argument("--no-guides", action="store_true", help="hide the safety guides (zones' outlines): the demo's look")
+ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
+                help="the status to this target too (TouchDesigner: 127.0.0.1:9002), as show_stream --osc-out")
+ap.add_argument("--artnet", type=int, default=0, metavar="PORT",
+                help="draw the strip's 60 LEDs as TouchDesigner sends them (Art-Net on 127.0.0.1:PORT, e.g. 6455: "
+                     "a second DMX Out CHOP aimed here); implies --realtime")
+ap.add_argument("--led0", choices=("minus", "plus"), default="minus", help="the strip's end LED 0 is at (flange y)")
+ap.add_argument("--led-gain", type=float, default=1.0, help="brighten the drawn LEDs (a dim, capped pattern)")
+ap.add_argument("--realtime", action="store_true", help="the show's clock on the wall clock (TD live)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -134,8 +146,11 @@ def main():
     if not args.no_osc:
         o = cfg["osc"]
         try:
-            bridge = show.OscBridge(runner, o["listen_port"], o["send_host"], o["send_port"])
-            print("[show] OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
+            also = [(h, int(pt)) for h, pt in (x.rsplit(":", 1) for x in args.osc_out)]
+            runner.stop = lambda: runner.fault("stop (TouchDesigner)")  # /robot/stop: held, as a stopped stream
+            bridge = show.OscBridge(runner, o["listen_port"], o["send_host"], o["send_port"], also=also, cfg=cfg)
+            print("[show] OSC in :%d, out %s:%d%s" % (o["listen_port"], o["send_host"], o["send_port"],
+                                                    "".join(", %s:%d" % x for x in also)))
         except Exception as e:
             print("[show] OSC off: %s" % e)
 
@@ -185,6 +200,15 @@ def main():
     if cfg.get("scan"):                                        # the scan's area, the lit strip, the paper exposed
         from scan_viz import ScanViz
         viz = ScanViz(stage, cfg)
+    leds, rx = None, None
+    if args.artnet:
+        import artnet
+        from led_viz import LedViz
+        rx = artnet.Receiver(args.artnet)
+        leds = LedViz(stage, led0=args.led0, gain=args.led_gain)
+        print("[show] LEDs from Art-Net on 127.0.0.1:%d" % args.artnet)
+    realtime = args.realtime or bool(args.artnet)
+    wall0, steps = time.monotonic(), 0
     if args.video:
         import shutil
         from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
@@ -195,7 +219,12 @@ def main():
         q = runner.step(PHYSICS_DT)
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=np.array(idx)))
         shoot = frames is not None and runner.clock * FPS_VIDEO >= shots
-        if viz is not None and (shoot or not args.headless):
+        steps += 1
+        draw = ((not args.headless) and (not realtime or steps % 2 == 0)       # real time: drawn at 60 Hz
+                or bool(args.snapshot) or shoot)
+        if leds is not None and draw:
+            leds.update(rx.poll(), q)
+        if viz is not None and draw:
             s0 = runner.status()
             if s0["state"] == "TO_SCAN":
                 viz_u = -1.0                                   # a new pass: the paper fresh (it fades between)
@@ -203,8 +232,12 @@ def main():
                 viz_u = max(viz_u, s0["scan_u"])
             elif viz_u >= 0.0:
                 viz_u = 2.0                                    # after the pass: all of it, until the next
-            viz.update(viz_u, bool(s0["scan_led"]), q)
-        world.step(render=(not args.headless) or bool(args.snapshot) or shoot)
+            viz.update(viz_u, bool(s0["scan_led"]) and leds is None, q)      # TD's own LEDs drawn instead
+        world.step(render=draw)
+        if realtime:
+            ahead = runner.clock - (time.monotonic() - wall0)
+            if ahead > 0.0:
+                time.sleep(ahead)
         if shoot:
             capture_viewport_to_file(get_active_viewport(), os.path.join(frames, "f_%05d.png" % shots))
             st = runner.status()
@@ -234,6 +267,10 @@ def main():
                 st["state"], st["clip"], st["hub"], st["sequence"] or "", 100 * st["progress"],
                 ("%.0f%%" % (100 * st["scan"])) if st["scan"] >= 0 else "-", st["pending"] or "-",
                 ("\nFAULT " + st["fault"]) if st["fault"] else "")
+            if rx is not None:
+                age = rx.age()
+                label.text += "\nLEDs: " + ("waiting for TD (Art-Net :%d)" % args.artnet if age is None else
+                                            "%d packets, last %.1f s ago" % (rx.packets, age))
         if args.snapshot and runner.clock >= 3.0:
             from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
             capture_viewport_to_file(get_active_viewport(), os.path.abspath(args.snapshot))
@@ -261,6 +298,8 @@ def main():
     print("[show] summary " + json.dumps(summary))
     if bridge is not None:
         bridge.close()
+    if rx is not None:
+        rx.close()
 
 
 main()

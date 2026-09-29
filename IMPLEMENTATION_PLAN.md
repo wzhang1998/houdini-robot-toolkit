@@ -669,6 +669,28 @@ constant while only that joint turns, one off it does not; the layout
 search takes the axis clips; a chord through a link is caught.
 **Status**: In Progress
 
+## Stage 14: TouchDesigner's idle LEDs, previewed live in Isaac (2026-09-29, the user's go)
+**Goal**: TD lights the strip in greet (docs/td_idle_leds_and_isaac_link.md):
+layers driven by the show (breath over the clip, the arm's speed, the
+beat, facing the guests), a per-family table, capped, gated to greet +
+IDLE, the scan always first. Designed in TD, live: Isaac plays the show and
+sends TD its status; TD's LEDs come back over Art-Net and are drawn on the
+strip in real time (the user: no renders while tuning).
+**Steps**: 1. the show's OSC carries what the LEDs play from (/robot/family,
+/action, /clip_t, /clip_len, /beat, /bpm_now, /facing). 2. run_show
+--osc-out, --artnet (artnet.py, isaac/led_viz.py: 60 glowing LEDs), real
+time, TD's STOP holds. 3. TD: `idle_leds` (inputs, layers, table, cap,
+gate) and a second DMX Out to Isaac. 4. (later) bake per clip for offline
+videos.
+**Success Criteria**: TD leaves OFFLINE with Isaac as the player; the LEDs
+TD sends show on Isaac's strip within a frame; dark outside greet + IDLE.
+**Tests**: show self-test (beat at the played tempo, wall-time clip_t,
+facing 1 / 0, greet faces the guests more than rest, the OSC list);
+artnet self-test (ArtDmx parse, levels, the receiver's newest packet);
+led_viz self-test (60 along the strip, LED 0's end); an Isaac snapshot
+with a fake Art-Net sender (geo/isaac/leds_live_test.png).
+**Status**: In Progress (steps 1-2 done)
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's

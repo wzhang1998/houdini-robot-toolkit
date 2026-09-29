@@ -925,6 +925,42 @@ def family_of(seg):
     return lab.get("family") or lab.get("action") or seg.name
 
 
+def clip_beat(labels, seg_t):
+    """(phase 0..1, bpm) of a clip's beat at seg_t (segment seconds): the
+    tempo it was made at (labels bpm) slowed as it was (params slowed: its
+    length over the nominal one). (0, 0) for a clip with no tempo."""
+    bpm = float((labels or {}).get("bpm") or 0.0)
+    if bpm <= 0.0:
+        return 0.0, 0.0
+    bpm /= float(((labels or {}).get("params") or {}).get("slowed") or 1.0)
+    return (seg_t * bpm / 60.0) % 1.0, bpm
+
+
+def tool_pose(q, robot="fr20"):
+    """(R, tcp, LED direction) of pose q (degrees): the LEDs face out along
+    the tool frame's z (gestures.Rig.tool)."""
+    import ur_ik
+    import urdf_rig as U
+    fo = watched_points(robot)[0]
+    R, p6 = ur_ik.pose_of(_WATCH[robot][0], q)
+    return R, U._add(p6, U._mat_vec(R, fo)), (R[0][2], R[1][2], R[2][2])
+
+
+def audience_eyes(cfg):
+    """Where the guests' faces are: the audience zone's middle, 1.5 m up;
+    None when the room has no audience."""
+    a = (cfg.get("zones") or {}).get("audience")
+    return None if not a else (a["center"][0], a["center"][1], 1.5)
+
+
+def facing(q, eyes, robot="fr20"):
+    """How squarely the LEDs point at the eyes, 0 (side on or away) .. 1."""
+    _, tcp, d = tool_pose(q, robot)
+    to = [e - p for e, p in zip(eyes, tcp)]
+    n = math.sqrt(sum(x * x for x in to)) or 1.0
+    return max(0.0, sum(a * b / n for a, b in zip(d, to)))
+
+
 def report(graph, cfg=None):
     """The library as numbers (motion_stats per idle clip) and whether it
     meets the variety the show asks for (cfg["library"]["variety"], or the
@@ -1216,7 +1252,12 @@ class Runner:
     def status(self, lag_s=0.0, rate=1.0):
         prog = self.seg_t / self.seg.duration if self.seg.duration > 0 else 1.0
         u, led, mps = self.scan_state(lag_s, rate)
+        lab = self.seg.labels or {}
+        beat, bpm = clip_beat(lab, self.seg_t)
         return {"state": self.state, "clip": self.seg.name, "hub": self.hub, "sequence": self.sequence,
+                "family": lab.get("family") or "", "action": lab.get("action") or "",
+                "clip_t": round(self.seg_t / rate, 3), "clip_len": round(self.seg.duration / rate, 3),
+                "beat": round(beat, 4), "bpm_now": round(bpm * rate, 2),
                 "progress": round(min(1.0, prog), 4),
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
                 "scan_u": u, "scan_led": led, "scan_mps": mps,
@@ -1237,15 +1278,35 @@ def runner_for(graph, seed=None, log=None, scan_speed=1.0):
 # OSC (TouchDesigner)
 # --------------------------------------------------------------------------
 
+def osc_messages(s, q, eyes=None):
+    """[(address, value)] of a status s (Runner.status) at pose q: what
+    TouchDesigner hears. /robot/facing: facing(q, eyes), -1 with no eyes."""
+    return [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
+            ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
+            ("/robot/scan/u", float(s["scan_u"])), ("/robot/scan/led", int(s["scan_led"])),
+            ("/robot/scan/speed", float(s["scan_mps"])),
+            ("/robot/joints", [float(x) for x in q]),
+            ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
+            ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
+            ("/robot/time_left", float(s.get("time_left", 0.0))), ("/robot/fault", s.get("fault") or ""),
+            ("/robot/energy_now", float(s.get("energy", 0.0))), ("/robot/clip_energy", float(s.get("clip_energy", 0.0))),
+            ("/robot/family", s.get("family") or ""), ("/robot/action", s.get("action") or ""),
+            ("/robot/clip_t", float(s.get("clip_t", 0.0))), ("/robot/clip_len", float(s.get("clip_len", 0.0))),
+            ("/robot/beat", float(s.get("beat", 0.0))), ("/robot/bpm_now", float(s.get("bpm_now", 0.0))),
+            ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0)]
+
+
 class OscBridge:
     """/robot/* in and out; python-osc (the usual TouchDesigner link)."""
 
-    def __init__(self, runner, listen_port, send_host, send_port, also=(), lag_s=0.0):
+    def __init__(self, runner, listen_port, send_host, send_port, also=(), lag_s=0.0, cfg=None):
         """Status goes to send_host:send_port and to each (host, port) in
         `also` -- a control window and TouchDesigner can both listen. lag_s:
         how far the arm is behind the commands (the scan's position is sent
-        where the arm is, for the LEDs)."""
+        where the arm is, for the LEDs). cfg: the show, for where the
+        audience is (/robot/facing)."""
         self.lag_s = lag_s
+        self.eyes = audience_eyes(cfg) if cfg else None
         from pythonosc import dispatcher, osc_server, udp_client
         import threading
         self.runner = runner
@@ -1265,16 +1326,7 @@ class OscBridge:
         self.clients = [udp_client.SimpleUDPClient(h, p) for h, p in [(send_host, send_port)] + list(also)]
 
     def send(self, q):
-        s = self.runner.status(lag_s=self.lag_s)
-        msgs = [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
-                ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
-                ("/robot/scan/u", float(s["scan_u"])), ("/robot/scan/led", int(s["scan_led"])),
-                ("/robot/scan/speed", float(s["scan_mps"])),
-                ("/robot/joints", [float(x) for x in q]),
-                ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
-                ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
-                ("/robot/time_left", float(s.get("time_left", 0.0))), ("/robot/fault", s.get("fault") or ""),
-                ("/robot/energy_now", float(s.get("energy", 0.0))), ("/robot/clip_energy", float(s.get("clip_energy", 0.0)))]
+        msgs = osc_messages(self.runner.status(lag_s=self.lag_s), q, self.eyes)
         if hasattr(self.runner, "speed_now"):                  # the streaming backend
             msgs.append(("/robot/speed_now", float(self.runner.speed_now)))
             msgs.append(("/robot/skipped", int(self.runner.skipped)))
@@ -1594,6 +1646,40 @@ def self_test():
           out_of_range(rng_cfg, [[0, 0, 0, 0, 0, 0], [40, 0, 0, 0, 0, 0]], None) is not None)
     check("... and a TCP too high", out_of_range(rng_cfg, [[0] * 6], [(0, 0, 1.7)]) is not None)
     check("... and lets a motion inside it through", out_of_range(rng_cfg, [[10] * 6], [(0, 0, 1.0)]) is None)
+    # what TouchDesigner's idle LEDs play from
+    beat, bpm = clip_beat({"bpm": 60, "params": {"slowed": 2.0}}, 1.0)
+    check("the beat runs at the tempo a clip plays at (made at 60 bpm, slowed x2: 30 bpm, half a beat in 1 s)",
+          abs(beat - 0.5) < 1e-9 and abs(bpm - 30.0) < 1e-9, (beat, bpm))
+    check("... and no tempo, no beat", clip_beat({}, 1.0) == (0.0, 0.0))
+    r = Runner(g, Selector(g.idle(), 1, seed=0), seed=0)
+    r.seg.labels = dict(r.seg.labels, family="wave", bpm=120)
+    r.step(0.75)
+    st, slow = r.status(), r.status(rate=0.5)
+    check("the status names the clip's family and action, its time, length and beat",
+          st["family"] == "wave" and st["action"] == r.seg.labels["action"] and st["clip_t"] == 0.75
+          and st["clip_len"] == r.seg.duration and abs(st["beat"] - 0.5) < 1e-6 and st["bpm_now"] == 120.0, st)
+    check("... in wall time: at half speed the clip is twice as long, its beat half as fast",
+          slow["clip_t"] == 1.5 and slow["clip_len"] == 2 * r.seg.duration and slow["bpm_now"] == 60.0
+          and slow["beat"] == st["beat"], slow)
+    q0 = [10.0, -80.0, 100.0, -60.0, 70.0, 20.0]
+    _, tcp, d = tool_pose(q0)
+    ahead, behind = [tcp[i] + 2.0 * d[i] for i in range(3)], [tcp[i] - 2.0 * d[i] for i in range(3)]
+    check("facing: 1 with the LEDs pointed at the eyes, 0 turned away from them",
+          abs(facing(q0, ahead) - 1.0) < 1e-6 and facing(q0, behind) == 0.0, (facing(q0, ahead), facing(q0, behind)))
+    party = Graph.load(compiled_path(os.path.join(ROOT, "shows", "party.json")))
+    eyes = audience_eyes(json.load(open(os.path.join(ROOT, "shows", "party.json"))))
+    mean = {h: sum(facing(x.q[len(x.q) // 2], eyes) for x in party.idle() if x.start == h)
+            / max(1, sum(x.start == h for x in party.idle())) for h in party.idle_hubs()}
+    check("party's greet clips face the audience more than its rest clips (the arm turned to the guests)",
+          mean.get("greet", 0.0) > mean.get("rest", 1.0), {k: round(v, 2) for k, v in mean.items()})
+    msgs = dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, ahead))
+    check("OSC carries them: /robot/family, /action, /clip_t, /clip_len, /beat, /bpm_now, /facing",
+          msgs["/robot/family"] == "wave" and msgs["/robot/clip_t"] == 0.75 and msgs["/robot/beat"] == st["beat"]
+          and abs(msgs["/robot/facing"] - 1.0) < 1e-6 and "/robot/bpm_now" in msgs and "/robot/action" in msgs
+          and "/robot/clip_len" in msgs, sorted(msgs))
+    check("... and -1 for facing when the room has no audience",
+          dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, None))["/robot/facing"]
+          == -1.0)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
@@ -1648,7 +1734,7 @@ def main(argv=None):
     cfg = json.load(open(cfg_path))
     r = runner_for(g, log=print)
     o = cfg["osc"]
-    bridge = OscBridge(r, o["listen_port"], o["send_host"], o["send_port"])
+    bridge = OscBridge(r, o["listen_port"], o["send_host"], o["send_port"], cfg=cfg)
     print("OSC in :%d, out %s:%d -- Ctrl+C to stop" % (o["listen_port"], o["send_host"], o["send_port"]))
     try:
         while True:
