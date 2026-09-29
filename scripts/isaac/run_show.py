@@ -48,6 +48,8 @@ ap.add_argument("config")
 ap.add_argument("--headless", action="store_true")
 ap.add_argument("--minutes", type=float, default=0.0, help="stop after this long (0: run until the window closes)")
 ap.add_argument("--auto-trigger", type=float, default=0.0, help="a scan trigger every ~S s")
+ap.add_argument("--auto-triggers", default="scan",
+                help="what --auto-trigger fires, in turn, comma separated (e.g. scan,low_wipe_rows,scan,greet_wipe_cols)")
 ap.add_argument("--no-osc", action="store_true")
 ap.add_argument("--no-tool", action="store_true", help="the bare arm (the profile's tool left off)")
 ap.add_argument("--seed", type=int, default=None)
@@ -205,6 +207,7 @@ def main():
     import random
     rng = random.Random(args.seed)
     next_trig = args.auto_trigger * (0.5 + rng.random()) if args.auto_trigger else None
+    auto_names, n_trig = [x.strip() for x in args.auto_triggers.split(",") if x.strip()] or ["scan"], 0
     t_trig, waits, worst, sq, n = None, [], [0.0] * 6, [0.0] * 6, 0
     end = args.minutes * 60.0 if args.minutes else None
     frames, shots, corner = None, 0, []
@@ -297,8 +300,11 @@ def main():
         log.write("%.4f,%s,%s,%s,%s\n" % (runner.clock, st["state"], st["clip"],
                                           ",".join("%.4f" % x for x in q), ",".join("%.4f" % x for x in sim)))
         if next_trig is not None and runner.clock >= next_trig:
-            runner.trigger("scan")
-            t_trig = runner.clock
+            name = auto_names[n_trig % len(auto_names)]
+            n_trig += 1
+            runner.trigger(name)
+            if name == "scan":
+                t_trig = runner.clock
             next_trig = runner.clock + args.auto_trigger * (0.5 + rng.random())
         if t_trig is not None and st["state"] == "SCAN":
             waits.append(runner.clock - t_trig)
