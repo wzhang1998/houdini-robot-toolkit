@@ -505,7 +505,43 @@ overlapping the canvas, which sits behind them.
 cable; canvas_parts' rails overlap the canvas edges and stand proud of it;
 the scan's first point is at the left end; no segment above the ceiling
 margin; the run-time scan speed slows only the scan.
-**Status**: In Progress
+**Status**: Complete (2026-09-28: library v7, 70 idle clips; mop waits for a
+gesture hub over the floor)
+
+## Stage 9: Cleanup after the strip day (2026-09-28, the user's go: cleanup first)
+**Goal**: remove what the day's patches left behind and make the build's
+inputs single-sourced, before new features (tracking, LED sync). From the
+review of 4125c7d..27b1ca0. Each step small, its self-tests green, committed
+alone; steps marked (verify) rebuild + dry run + SimMachine after.
+1. Dead code and stale text (mechanical): `show.find_approach` (no caller
+   since scan_way), `fairino_player.Controller.system_clock` (no caller),
+   `safe_move.ROOT_LINK` (unused); the stream's motion-queue poll slowed from
+   every 20 ms to a 1 s diagnostic (its report stat stays; one RPC less on
+   the feedback thread 50 times a second); gestures' volvox_lab.json fallback;
+   docs describing queue pacing / the placeholder scan; `canvas.placeholder`.
+2. Pacing names (verify): `clock_ppm` is a playback rate -- `playback_ppm`
+   in the CLI, report and playback.toml (the old key still read);
+   controller_clock.py reports the clock only (its --write put the clock's
+   -126 where the playback's -950 belongs).
+3. A compiled show knows its inputs (verify): `info.inputs` = hashes of the
+   config, profile, tool URDF and room; show_stream, the dry run and Isaac
+   refuse a compiled file whose inputs changed ("rebuild first").
+4. One canvas module, one TCP helper (mechanical, compare outputs): the
+   canvas parts / boxes / fixture points / USD extras from one place (kind
+   carried through, colours shared); one `tool_point(q, local)`; the strip
+   picked one way.
+5. One source for margins and bands (verify): the ceiling margin and the
+   strip's top from the show config (safe_move's constants the fallback);
+   gestures' TCP_Z / STRIP_TOP_M from the config's range.
+6. Failing self-tests fixed or re-baselined (choreo wring vs the TV wall with
+   the strip, gestures' synthetic high hub, clip_library's fixtures) --
+   before any module split.
+7. Module splits (import-only, later): show.py -> graph/runner, build, scan,
+   stats; show_rig.py; gestures.py.
+**Tests**: each module's --self-test; after 2, 3, 5: rebuild, report, dry run
+30 min, SimMachine 3 min; after 4: the review render and shows/party.usda
+unchanged but for the order of prims.
+**Status**: Not Started
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
