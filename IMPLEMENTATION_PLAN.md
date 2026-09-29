@@ -692,6 +692,29 @@ led_viz self-test (60 along the strip, LED 0's end); an Isaac snapshot
 with a fake Art-Net sender (geo/isaac/leds_live_test.png).
 **Status**: In Progress (steps 1-4 done; the idle LEDs play wherever /robot/paper < 0.001)
 
+## Stage 15: The stream's lag held over a day (2026-09-29, from 11 real-arm runs)
+**Goal**: The lag between command and arm (~105-143 ms with the -950 ppm
+calibration) stays put over a whole day. 1. play_ui.py's save no longer
+drops what it does not own from playback.toml ([controller_playback_ppm]:
+without it the PC's clock paces, +55 ms/min). 2. show_stream.py measures
+the lag as it runs (a delay-locked loop on the feedback, target: the first
+minute after a warm-up) and, at a rest only (the same pose as the 25
+points before it, never in the scan), leaves one rest point out (lag >10 ms
+too long) or sends it twice (too short), at most one every 5 s. On for
+--hardware, --no-lag-correction turns it off; no feedback, no correction.
+**Success Criteria**: a play_ui save keeps [controller_playback_ppm] word
+for word; a long run's lag stays within its target +- 15 ms where it grew
+before; the motion itself is unchanged; the report counts the corrections
+(lag_correction: drops, repeats, corrected_ms, the ticks).
+**Tests**: play_ui self-test (foreign tables and keys kept, show_stream
+reads -950 after a save, a second save changes nothing); show_stream
+self-test (the meter on made-up feedback: target, lag now, drop, repeat,
+one per gap; a fake controller 1000 ppm slow over 30 s: the lag grows
+without, held with; the poses tick for tick the same, only rest ticks
+missing; every correction at a rest; no feedback: off).
+**Status**: Complete (on the robot PC: check playback.toml has the section;
+a 1-2 h run to see the lag held)
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
