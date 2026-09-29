@@ -87,6 +87,73 @@ def sheet_label(card):
     return text.replace("\\", "\\\\").replace("%", "%%")
 
 
+VERSION = "v9"                   # the library: v8's clips, the big wipes, the scan top to bottom on the floor canvas
+PAGE = (4, 2)                    # the Houdini review's pages and overview (render_clip_review.build_videos)
+OVERVIEW = (5, 5)
+TILE_WH = (640, 360)             # the frame whole (16:9): a wide strip is never cut
+OVERVIEW_TILE = (448, 252)           # even sides (yuv420p)
+
+
+def tile_span(first, frames, duration, fps=FPS_VIDEO, hold_in=HOLD_IN_S):
+    """(first frame, frame count) of the clip itself in its pass: after the
+    held first pose, its length (+1 frame), inside what was shot."""
+    start = first + int(round(hold_in * fps))
+    return start, max(1, min(first + frames - start, int(round(duration * fps)) + 1))
+
+
+def sim_line(version, cam, sim):
+    """A tile's foot: the library's version, the camera, the run in Isaac."""
+    return "%s  isaac %s   track %.2f deg   contacts %d" % (version, cam, sim["track_deg"], sim["contacts"])
+
+
+def preview_path(name, src, show_dirs):
+    """The show's preview of a clip (show.write_preview, what the Houdini
+    review reads): geo/show/<show>/<name>.json, the extra show's for its clips."""
+    return os.path.join(show_dirs[src], name + ".json")
+
+
+def review_pages(frames, sp, plist, sims, cam, out_dir, show_dirs, version=VERSION):
+    """The Houdini review's grid from Isaac's frames: a tile per clip (a
+    square from the middle of the frame; render_clip_review's header -- id,
+    length, verdict, action, acc % per joint, vel, room, wrist, bpm -- and
+    timecode; the version, camera and Isaac's tracking at its foot), pages of
+    PAGE and every clip in overview pages of OVERVIEW. [video paths]."""
+    sys.path.insert(0, SCRIPTS)
+    import render_clip_review as RCR
+    w, h = TILE_WH
+    tdir = os.path.join(out_dir, "tiles_" + cam)
+    shutil.rmtree(tdir, ignore_errors=True)
+    os.makedirs(tdir)
+    tiles = []
+    for k, ((seg, src), x, sim) in enumerate(zip(plist, sp, sims)):
+        clip = json.load(open(preview_path(seg.name, src, show_dirs)))
+        start, n = tile_span(x["first"], x["frames"], seg.duration)
+        text = os.path.join(tdir, "text_%02d" % (k + 1))
+        vf = RCR.tile_filter(clip, text, w, h)
+        foot = os.path.join(text, "foot.txt")
+        with open(foot, "w", encoding="utf-8") as f:
+            f.write(sim_line(version, cam, sim))
+        fs = max(10, int(w / 36))
+        vf += (",drawtext=fontfile='%s':textfile='%s':expansion=none:x=6:y=h-%d:fontsize=%d:fontcolor=0xd0d0d0"
+               ":box=1:boxcolor=black@0.55:boxborderw=3"
+               % (RCR.FONT, RCR._esc(foot), int(fs * 3.2), fs))             # above the dance's bar line
+        tile = os.path.join(tdir, "%02d_%s.mp4" % (k + 1, seg.name))
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS_VIDEO), "-start_number", str(start),
+                            "-i", os.path.join(frames, "f_%05d.png"), "-frames:v", str(n), "-vf", vf,
+                            "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "20", tile], capture_output=True, text=True)
+        if r.returncode:
+            print("[library] tile %s: %s" % (seg.name, r.stderr[-300:]))
+            continue
+        tiles.append(tile)
+    out = []
+    for k, grp in enumerate(RCR.pages(tiles, PAGE[0] * PAGE[1])):
+        out.append(RCR.stack(grp, PAGE[0], PAGE[1], w, h, os.path.join(out_dir, "page_%s_%d.mp4" % (cam, k + 1))))
+    for k, grp in enumerate(RCR.pages(tiles, OVERVIEW[0] * OVERVIEW[1])):
+        out.append(RCR.stack(grp, OVERVIEW[0], OVERVIEW[1], OVERVIEW_TILE[0], OVERVIEW_TILE[1],
+                             os.path.join(out_dir, "overview_%s_%d.mp4" % (cam, k + 1)), crf=24))
+    return [os.path.relpath(x, ROOT).replace("\\", "/") for x in out]
+
+
 def self_test():
     import show
     fails = []
@@ -117,6 +184,13 @@ def self_test():
     check("the sheet's caption: name, length, hub and family, no library index",
           lab == "greet_16_wipe   11.92 s\nhub greet   family wipe   action slash", lab)
     check("... ImageMagick's escapes doubled", sheet_label(["a 5%", "b"]) == "a 5%%\nb")
+    check("a tile is the clip itself: after the held first pose, its length + 1 frame",
+          tile_span(100, 90, 2.0) == (118, 61) and tile_span(0, 20, 5.0) == (18, 2), (tile_span(100, 90, 2.0),))
+    check("a tile's foot: version, camera, Isaac's tracking and contacts",
+          sim_line("v9", "room", {"track_deg": 0.167, "contacts": 0}) == "v9  isaac room   track 0.17 deg   contacts 0")
+    dirs = {"main": os.path.join(ROOT, "geo", "show", "party"), "extra": os.path.join(ROOT, "geo", "show", "party_bigwipe")}
+    miss = [s.name for s, src in pl if not os.path.exists(preview_path(s.name, src, dirs))]
+    check("every clip of the library has its preview (the review's header comes from it)", not miss, miss[:5])
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
@@ -136,6 +210,8 @@ ap.add_argument("--guides", action="store_true", help="draw the safety guides (z
 ap.add_argument("--look", default="room", choices=("room", "plain"))
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac", "review"))
 ap.add_argument("--headless", action="store_true")
+ap.add_argument("--no-sequence", action="store_true", help="only the review pages, not the clips one after another")
+ap.add_argument("--version", default=VERSION, help="the library's version, on every tile and the output folder")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -178,6 +254,9 @@ def main():
     names = [n for n in args.extra_clips.split(",") if n] if extra is not None else []
     only = set(n for n in args.clips.split(",") if n) or None
     plist = playlist(graph, extra, names, not args.no_scan, only)
+    show_dirs = {"main": os.path.join(ROOT, "geo", "show", name),
+                 "extra": os.path.join(ROOT, "geo", "show", os.path.splitext(os.path.basename(args.extra))[0])
+                 if args.extra else None}
     segs = [s for s, _ in plist]
     sp = spans([s.duration for s in segs], PHYSICS_DT)
     print("[library] %d clips, %.0f s of video a camera" % (len(segs), sum(x["frames"] for x in sp) / float(FPS_VIDEO)),
@@ -288,11 +367,19 @@ def main():
                               os.path.join(args.out, "%s_library_%s_sheet.jpg" % (name, cam_name)))
         if sheet:
             shutil.rmtree(posters_dir, ignore_errors=True)
-        mp4 = os.path.join(args.out, "%s_library_%s.mp4" % (name, cam_name))
-        video = encode_video(app, frames, corner, shot, mp4, FPS_VIDEO, (1280, 720), "library")
+        vdir = os.path.join(args.out, args.version)
+        os.makedirs(vdir, exist_ok=True)
+        grid = review_pages(frames, sp, plist, sims, cam_name, vdir, show_dirs, args.version)
+        print("[library] %s pages: %s" % (cam_name, ", ".join(grid)), flush=True)
+        video = None
+        if args.no_sequence:
+            shutil.rmtree(frames, ignore_errors=True)
+        else:
+            mp4 = os.path.join(args.out, "%s_library_%s.mp4" % (name, cam_name))
+            video = encode_video(app, frames, corner, shot, mp4, FPS_VIDEO, (1280, 720), "library")
         for c, sim in zip(summary["clips"], sims):
             c["sim"][cam_name] = sim
-        summary["passes"][cam_name] = {"video": video, "sheet": sheet, "frames": shot,
+        summary["passes"][cam_name] = {"video": video, "pages": grid, "sheet": sheet, "frames": shot,
                                        "tracking_max_deg": max(s["track_deg"] for s in sims),
                                        "clips_with_contacts": [c["name"] for c, s in zip(summary["clips"], sims)
                                                                if s["contacts"]]}
