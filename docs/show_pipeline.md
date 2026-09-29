@@ -31,6 +31,20 @@ home --to_scan--> scan_start --scan--> scan_end --from_scan--> home
   work area. They are timed by Ruckig (`transitions.py`: jerk-limited,
   corners blended within 2 deg of the planned legs) and checked like any
   clip.
+- **cuRobo, when it runs** (`python scripts/curobo_bridge.py up`: NVIDIA's
+  GPU planner in Docker, port 8768). `safe_move.route` asks it first when
+  the straight MoveJ is blocked; its path is thinned and every leg checked
+  by `safe_move` (our capsules and margins -- cuRobo plans with 2 cm more),
+  then timed as above. Not running, no path, or not clear by our check: the
+  grid of folded postures as before, so a Build works without it; the log
+  says which made each detour. On the party hubs its detours are 28-41 %
+  shorter in joint travel (114-116 against 160-193 deg).
+- **Showpieces** (`showpieces` in the config, `showpiece.py`): big wipes
+  along a wall -- a boustrophedon on a pane inside the stage, the strip
+  upright (rows) or level (columns), at an even speed under the slow
+  zones' limit, in and out through the scan's approaches. They are idle
+  clips of their hub. `shows/party_bigwipe.json` has a row wipe from `low`
+  and a column wipe from `greet`.
 - **The scan is a design input to the library.** The paper is an obstacle
   with a margin for every idle clip, and the hubs sit where the move to the
   scan is short and clear. When the paper moves, rebuild:

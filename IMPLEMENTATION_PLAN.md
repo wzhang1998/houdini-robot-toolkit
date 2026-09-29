@@ -541,7 +541,25 @@ alone; steps marked (verify) rebuild + dry run + SimMachine after.
 **Tests**: each module's --self-test; after 2, 3, 5: rebuild, report, dry run
 30 min, SimMachine 3 min; after 4: the review render and shows/party.usda
 unchanged but for the order of prims.
-**Status**: Not Started
+**Status**: 1-4 done (2026-09-28, in v8). 5-6 open: gestures' self-test fails 7
+checks, all at its synthetic high hub (1.5 m, where the upright strip meets
+the 0.3 m ceiling margin) or on variety targets set before the strip and
+margin (median extent 0.269 < 0.28 m, ...); bounce at synth_high starts
+0.05-0.09 deg off rest -- the built library (v8) has every clip within
+0.0005 deg. To decide: move synth_high under the margin and re-baseline the
+targets, or keep them and widen the room. 7 after Wednesday.
+
+## Stage 10: cuRobo in the pipeline, showpieces (2026-09-28, the user's go)
+**Goal**: cuRobo plans the moves when its service runs, checked by ours;
+big wipes along the front wall as clips (a second show version to compare).
+**Success Criteria**: a Build with and without Docker; every cuRobo path
+passes safe_move; the wipes built, clear, under the slow zones' limit.
+**Tests**: curobo_bridge / safe_move / showpiece / show self-tests; the hub
+moves with and without cuRobo (4 detours 114-116 vs 160-193 deg); the
+rows wipe from low (1.45 x 0.66 m, 0.24 m/s) and columns from greet
+(1.65 x 0.60 m); build shows/party_bigwipe.json, dry run, SimMachine.
+**Status**: In Progress -- planner and showpieces done; the bigwipe build,
+its review reel and SimMachine next.
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
