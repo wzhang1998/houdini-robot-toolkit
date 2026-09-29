@@ -482,6 +482,14 @@ def build(cfg_path, log=print):
         if seg:
             segs.append(seg)
 
+    # showpieces (showpiece.py): big wipes along a wall, from a hub and back
+    if cfg.get("showpieces"):
+        import showpiece
+        for sp in cfg["showpieces"]:
+            seg = showpiece.make(sp, hubs, idle_env, cfg, log)
+            if seg:
+                segs.append(seg)
+
     # moves between the hubs, both ways
     for a in hubs:
         for b in hubs:
@@ -578,15 +586,22 @@ def approach_pose(rig, q, normal, back, down=0.0, side=(0.0, 0.0, 0.0)):
     return rig.solve(p, (R[0][2], R[1][2], R[2][2]), 0.0, q, R=R)
 
 
-def scan_way(rig, q, normal, backs, inward, model, env, home, out):
+def scan_way(rig, q, normal, backs, inward, model, env, home, out, grid=True):
     """The approach at a scan end and the checked route between it and home
     (out: from the approach to home, else home to it). Candidates back
     (backs, m) from the paper, lower (0.1 m steps) and slid inward (0.1 m
     steps towards the scan's middle; the LEDs are off there), the gentlest
     first; the first clear by the moves' margins whose route is a straight
-    MoveJ -- a detour's folded postures (the arm laid towards the floor,
-    2026-09-28) only when none is. (approach, (back, down, inward), path,
-    why) or None."""
+    MoveJ or cuRobo's detour (when its service runs) -- the grid's folded
+    postures (the arm laid towards the floor, 2026-09-28) only when none is.
+    When cuRobo runs, the candidates are tried with it first (no grid: a
+    second or two each), then -- grid=True -- once more with the grid, as
+    without it. (approach, (back, down, inward), path, why) or None."""
+    import curobo_bridge
+    if grid and curobo_bridge.available():
+        got = scan_way(rig, q, normal, backs, inward, model, env, home, out, grid=False)
+        if got is not None:
+            return got
     import safe_move
     menv = safe_move.move_env(env)
     first = None
@@ -596,12 +611,12 @@ def scan_way(rig, q, normal, backs, inward, model, env, home, out):
         a = approach_pose(rig, q, normal, b, d, [x * s for x in inward])
         if a is None or safe_move.blocked(model, menv, a):
             continue
-        path, why = safe_move.route(a, home, env, model) if out else safe_move.route(home, a, env, model)
+        path, why = safe_move.route(a, home, env, model, grid=grid) if out else safe_move.route(home, a, env, model, grid=grid)
         if path is None:
             continue
         got = (a, (b, d, s), path, why)
-        if len(path) == 1:                                 # a straight MoveJ, clear
-            return got
+        if len(path) == 1 or "cuRobo" in why.split(";")[-1]:   # a straight MoveJ, or cuRobo's
+            return got                                     # detour (the shortest, not folded down)
         first = first or got
         # a key pose between: J6 alone turns the strip level there (it
         # turns parallel to the paper, 0.2 m and more from it), and the
@@ -610,7 +625,8 @@ def scan_way(rig, q, normal, backs, inward, model, env, home, out):
             v = list(a[:5]) + [j6]
             if (safe_move.blocked(model, menv, v) or safe_move.segment_clear(model, menv, a, v) is not None):
                 continue
-            p2, why2 = safe_move.route(v, home, env, model) if out else safe_move.route(home, v, env, model)
+            p2, why2 = (safe_move.route(v, home, env, model, grid=grid) if out
+                        else safe_move.route(home, v, env, model, grid=grid))
             if p2 is not None and len(p2) == 1:
                 return (a, (b, d, s), [v] + p2 if out else p2 + [a],
                         "the strip turned level at J6 %.0f there, then %s" % (j6, why2))

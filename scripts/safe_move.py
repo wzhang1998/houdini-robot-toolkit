@@ -125,8 +125,10 @@ def _within(q, limits, pad=2.0):
     return all(lo + pad <= x <= hi - pad for x, (lo, hi) in zip(q, limits))
 
 
-def route(q_from, q_to, env, model=None, limits=None):
-    """(waypoints after q_from ending at q_to, description) or (None, why)."""
+def route(q_from, q_to, env, model=None, limits=None, grid=True):
+    """(waypoints after q_from ending at q_to, description) or (None, why).
+    grid=False: no search of folded postures when neither the straight
+    move nor cuRobo's path is clear (a caller with other poses to try)."""
     model = model or C.load_model("fr20")
     menv = move_env(env)
     direct = segment_clear(model, menv, q_from, q_to)
@@ -143,6 +145,8 @@ def route(q_from, q_to, env, model=None, limits=None):
     if path is not None:
         return path, why + "; " + how
     why += "; " + how
+    if not grid:
+        return None, why
     # folded postures: J2 / J3 on a grid, the wrist already at the goal's.
     # The fold happens facing J1 = t: where the arm is, where it goes, or
     # any other direction (a straightening arm needs open room around it)

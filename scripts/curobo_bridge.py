@@ -21,7 +21,9 @@ ROBOT_CUROBO=0 turns it off; ROBOT_CUROBO_URL points elsewhere.
 The robot for cuRobo: the vendor URDF's chain (no meshes) with J6 in the
 tool cable's range, spheres filling the toolkit's own capsules (the LED
 strip on a link of its own), self-collision per link pair only where the
-toolkit checks every capsule pair of it. The world: each obstacle and
+toolkit checks every capsule pair of it; PLAN_BUFFER_M more room to the
+world than our margins (a pose near a margin, as a hub can be, is a valid
+start: its check is ours). The world: each obstacle and
 keep-out zone grown by its margin, as cuboids (a halfspace a slab 1 m thick,
 a cylinder its bounding box).
 """
@@ -45,6 +47,8 @@ CONTAINER = "robot-curobo"
 WORK = os.path.join(ROOT, ".curobo")
 TOOL_LINK = "led_strip"                  # the tool on a link of its own (cuRobo extra_links)
 THIN_DEG = (3.0, 1.0)                    # waypoint tolerances tried, coarse first
+PLAN_BUFFER_M = 0.02                     # cuRobo keeps this much more than our margins: its spheres and
+                                         # 1 cm activation skimmed them (the wipe's moves, 2026-09-28)
 
 
 # --- the robot ---------------------------------------------------------------
@@ -97,7 +101,7 @@ def robot_config(prof, model, urdf_path):
         "base_link": links[0], "ee_link": links[-1],
         # the base is bolted on the plate: never checked against the room
         "collision_link_names": [l for l in links[1:] + [TOOL_LINK] if l in spheres],
-        "collision_spheres": {l: v for l, v in spheres.items() if l != links[0]}, "collision_sphere_buffer": 0.0,
+        "collision_spheres": {l: v for l, v in spheres.items() if l != links[0]}, "collision_sphere_buffer": PLAN_BUFFER_M,
         "extra_links": {TOOL_LINK: {"parent_link_name": links[-1], "link_name": TOOL_LINK,
                                     "joint_name": TOOL_LINK + "_joint", "joint_type": "FIXED",
                                     "fixed_transform": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]}},

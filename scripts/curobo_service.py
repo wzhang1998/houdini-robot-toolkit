@@ -53,7 +53,13 @@ def plan(body):
         t0 = time.time()
         start = JointState.from_position(ta.to_device([[math.radians(x) for x in body["start"]]]))
         goal = JointState.from_position(ta.to_device([[math.radians(x) for x in body["goal"]]]))
-        r = MG.plan_single_js(start, goal, MotionGenPlanConfig(max_attempts=8, enable_graph=True))
+        r = MG.plan_single_js(start, goal, MotionGenPlanConfig(max_attempts=8, enable_graph=True,
+                                                               check_start_validity=False))
+        if not r.success.item() and "GRAPH" in str(r.status):
+            # a start inside the planning buffer (a hub near a margin): the graph
+            # needs a valid start; trajectory optimisation alone moves out of it
+            r = MG.plan_single_js(start, goal, MotionGenPlanConfig(max_attempts=8, enable_graph=False,
+                                                                   check_start_validity=False))
         torch.cuda.synchronize()
         state["plans"] += 1
     out = {"ok": bool(r.success.item()), "status": str(r.status), "plan_s": round(time.time() - t0, 3)}
