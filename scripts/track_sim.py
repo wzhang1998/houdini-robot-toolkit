@@ -5,6 +5,7 @@ The messages are the agreed format (docs/next_steps_2026-09-28.md):
 
     /track/target  x y z conf t id    robot-base metres, ~30 Hz; t: when measured
     /track/lost                       nobody tracked any more
+    /track/people  t n  id x y z conf  (n times)     everybody in view, one frame (the crowd scenarios)
 
 Each scenario has a ground truth -- where the person's head (or hand) really
 is, or None when nobody is there -- and errors like the OAK-D's: a frame
@@ -123,6 +124,38 @@ def _run(t):                           # runs across at 2.5 m/s
     return u, 0.0, HEAD_Z, 1
 
 
+# several people: t -> [(u, v, z, person id), ...] ------------------------------
+
+def _two_standing(t):
+    return [] if t < 1.0 else [(-0.5, 0.0, HEAD_Z, 1), (0.5, 0.0, 1.66, 2)]
+
+
+def _crowd(t):                         # five, staggered: each more than GROUP_M from the next
+    return [(-1.0 + 0.5 * k, -0.4 * (k % 2), HEAD_Z + 0.03 * k, k + 1) for k in range(5) if t >= 0.5 + 0.7 * k]
+
+
+def _passer_by(t):
+    out = [(0.2, 0.0, HEAD_Z, 1)]
+    if 4.0 <= t:
+        u, t1 = _walk(t, 4.0, -1.2, 1.4, 1.2)
+        if t < t1:
+            out.append((u, -0.3, 1.7, 2))
+    return out
+
+
+def _group(t):                         # three within 0.3 m of each other: one group
+    return [(0.0, 0.0, HEAD_Z, 1), (0.3, 0.0, 1.62, 2), (0.15, -0.1, 1.55, 3)]
+
+
+def _handover(t):                      # A there; B comes at 4 s; A leaves at 8 s
+    out = [(-0.5, 0.0, HEAD_Z, 1)] if t < 8.0 else []
+    if t >= 4.0:
+        out.append((0.6, 0.1, 1.65, 2))
+    return out
+
+
+PEOPLE = {"two_standing", "crowd", "passer_by", "group", "handover"}
+
 SCENARIOS = {
     "walk_across": (_walk_across, 16.0, {}, "enters at the left, walks across at 1.2 m/s, stops, walks back"),
     "stand_still": (_stand_still, 12.0, {}, "stands still: only the noise moves"),
@@ -136,13 +169,21 @@ SCENARIOS = {
     "out_of_reach": (_out_of_reach, 14.0, {}, "walks past the zone's end, then ducks"),
     "run": (_run, 8.0, {}, "runs across at 2.5 m/s"),
     "noisy": (_stand_still, 12.0, {"noise": 3.0, "drop": 0.4}, "stands still, three times the noise, 40 % dropped"),
+    "two_standing": (_two_standing, 40.0, {}, "two people standing 1 m apart: looked at in turn"),
+    "crowd": (_crowd, 60.0, {}, "five people arriving one by one, staggered: everyone looked at in turn"),
+    "passer_by": (_passer_by, 14.0, {}, "one stands; another walks by at 1.2 m/s: never looked at"),
+    "group": (_group, 20.0, {}, "three people within 0.3 m: looked at as one, their middle"),
+    "handover": (_handover, 16.0, {}, "A there, B comes at 4 s, A leaves at 8 s: B next, at once"),
 }
 
 
 def scenario(name, seed=1, cfg=None):
     """(events, truth, duration): events sorted by arrival, each
     {"t": arrival s, "addr": "/track/target" | "/track/lost", "args": [...]};
-    truth(t) -> (x, y, z) in the robot base frame, or None."""
+    truth(t) -> (x, y, z) in the robot base frame, or None. A crowd scenario
+    (PEOPLE): /track/people events and truth(t) -> {person id: (x, y, z)}."""
+    if name in PEOPLE:
+        return _people_scenario(name, seed, cfg)
     fn, dur, opt, _ = SCENARIOS[name]
     rng = random.Random(seed)
     frame = zone_frame(cfg)
@@ -180,6 +221,42 @@ def scenario(name, seed=1, cfg=None):
         last_seen, lost_sent = tm, False
     events.sort(key=lambda e: e["t"])
     return events, truth, dur
+
+
+def _people_scenario(name, seed=1, cfg=None):
+    """Everybody in view each frame, as the OAK-D process would send them:
+    one /track/people message a frame (after the latency), each person with
+    their own noise, some dropped from a frame, some low-confidence."""
+    fn, dur, opt, _ = SCENARIOS[name]
+    rng = random.Random(seed)
+    frame = zone_frame(cfg)
+
+    def truth(t):
+        return {pid: _world(frame, u, v, z) for u, v, z, pid in fn(t)}
+
+    events = []
+    for i in range(int(dur * FPS)):
+        tm = i / FPS + rng.uniform(-FRAME_JITTER_S, FRAME_JITTER_S)
+        seen = []
+        for u, v, z, pid in fn(max(0.0, tm)):
+            if rng.random() < opt.get("drop", DROP_P):
+                continue
+            u += rng.gauss(0, NOISE_M[0])
+            v += rng.gauss(0, NOISE_M[1]) + rng.gauss(0, DEPTH_NOISE_M)
+            z += rng.gauss(0, NOISE_M[2])
+            conf = rng.uniform(0.25, 0.45) if rng.random() < LOW_CONF_P else rng.uniform(0.7, 0.95)
+            x, y, zz = _world(frame, u, v, z)
+            seen += [pid, round(x, 4), round(y, 4), round(zz, 4), round(conf, 3)]
+        events.append({"t": tm + rng.uniform(*LATENCY_S), "addr": "/track/people",
+                       "args": [round(tm, 4), len(seen) // 5] + seen})
+    events.sort(key=lambda e: e["t"])
+    return events, truth, dur
+
+
+def people_of(args):
+    """[(pid, x, y, z, conf)] of a /track/people message's arguments (t, n, then n people)."""
+    n = int(args[1])
+    return [tuple(args[2 + 5 * k:7 + 5 * k]) for k in range(n)]
 
 
 def self_test():
@@ -223,6 +300,16 @@ def self_test():
     check("in_and_out: two people, a /track/lost when the first leaves",
           sorted({e["args"][5] for e in ev if e["addr"] == "/track/target"}) == [1, 3]
           and sum(e["addr"] == "/track/lost" for e in ev) == 1 and truth(9.0) is None)
+    ev, truth, dur = scenario("crowd")
+    counts = [e["args"][1] for e in ev]
+    check("crowd: one /track/people a frame, up to five in it, arriving one by one",
+          all(e["addr"] == "/track/people" for e in ev) and max(counts) == 5 and counts[0] <= 1
+          and len(truth(30.0)) == 5, (min(counts), max(counts)))
+    first = people_of(ev[-1]["args"])
+    check("... each person's id and head in the robot frame",
+          first and all(len(p) == 5 and 1 <= p[0] <= 5 and abs(p[3] - HEAD_Z) < 0.3 for p in first), first[:1])
+    ev, truth, _ = scenario("handover")
+    check("handover: A gone after 8 s, B from 4 s", sorted(truth(6.0)) == [1, 2] and sorted(truth(9.0)) == [2])
     ev, _, _ = scenario("noisy")
     tg = [e for e in ev if e["addr"] == "/track/target"]
     check("noisy: 40 % dropped", 15 < len(tg) / 12.0 < 21, "%.1f Hz" % (len(tg) / 12.0))

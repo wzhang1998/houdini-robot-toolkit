@@ -45,7 +45,9 @@ HOLD_S = 0.7
 SHRINK = (1.0, 0.75, 0.5, 0.25, 0.0)
 AIM_ROOM_M = 0.02              # the aimed pose keeps this much more than the room's margins ...
 AIM_SELF_M = 0.01              # ... and this much between the links
-AHEAD_S = (0.2, 0.4, 0.6)      # the clip's poses this far ahead are checked with the offsets too
+AHEAD_S = (0.2, 0.4, 0.6, 1.0, 1.4)   # the clip's poses this far ahead are checked with the offsets too:
+                                     # taking back a full J1 offset at SHARE takes ~1.2 s (a crowd's edge)
+SLOW_NEAR_M = 0.15             # the tool point this near a slow zone, now or AHEAD_S ahead: the offsets hold still
 CHECK_EVERY = 4                # the aim and look-ahead checks every 4th tick (~31 Hz, the data's rate)
 
 
@@ -188,8 +190,12 @@ class Gaze:
       aim goes to zero now: 0.6 s is room enough to take them back;
     - the pose sent is checked; when it is not clear the aim goes to zero
       at once (and the tick is counted: it should never happen);
-    - in a slow zone the offsets' speed limit comes down while the tool
-      point is near the zone's speed (and goes back up after)."""
+    - near a slow zone (the tool point within SLOW_NEAR_M of it, now or at
+      a pose ahead) the offsets hold still: the arm does not turn to anyone
+      there, so the tool keeps the clip's own (checked) speed -- a turn from
+      one person to the next in the zone took it to twice the zone's limit
+      (track_eval crowd, 2026-09-29); and the speed limit still comes down
+      while the tool point is near the zone's speed."""
 
     def __init__(self, anchor=None, dt=0.008, share=SHARE, max_offset=MAX_OFFSET_DEG, hold_s=HOLD_S, env=None,
                  model=None, rig=None):
@@ -250,6 +256,10 @@ class Gaze:
             self.aim_for = (tuple(target), [max(-m, min(m, x)) for x, m in zip(off, self.max_offset)])
         return self.aim_for[1]
 
+    def _near_slow(self, q):
+        tcp = self.rig.tool(q)[1]
+        return any(self.C.sdf(o, tcp) < SLOW_NEAR_M for o in self.slow)
+
     def _govern(self, q):
         """The offsets' speed limit down while the tool point is fast in a slow zone."""
         tcp = self.rig.tool(q)[1]
@@ -285,6 +295,9 @@ class Gaze:
                 self.lost_at = now
             if now - self.lost_at >= self.hold_s:
                 self.want = [0.0] * len(GAZE_JOINTS)       # back to the clip
+        if self.slow and any(self._near_slow(p) for p in poses):
+            self.want = list(self.offsets)             # no turning in or on the way into a slow zone
+            self.held_slow = getattr(self, "held_slow", 0) + 1
         if heavy and ahead and any(abs(x) > 1e-6 for x in self.offsets):
             if not all(self._clear(self._with(p, self.offsets), None, 0.0) for p in ahead):
                 self.want = [0.0] * len(GAZE_JOINTS)       # trouble ahead: take them back now
@@ -320,7 +333,25 @@ DWELL_S = 1.0                 # in view this long before being looked at
 PASSER_MPS = 0.6              # moving faster than this (smoothed): walking by, not looked at
 GROUP_M = 0.6                 # people this close to the one looked at: one group, its middle is the target
 FORGET_S = 0.5                # a person not seen this long is gone
-SPEED_TAU_S = 0.3
+SPEED_WINDOW_S = 0.6          # walking speed: over this long (frame to frame, the depth noise alone reads ~1 m/s)
+
+
+def _walking_speed(hist, t):
+    """How fast a person moves along the floor (m/s): the middle of their
+    last few points against that of the points SPEED_WINDOW_S before --
+    frame to frame, a standing person's depth noise reads as walking. None
+    until the window is there."""
+    old = [p for tm, p in hist if tm <= t - SPEED_WINDOW_S]
+    if not old:
+        return None
+    t_old = max(tm for tm, _ in hist if tm <= t - SPEED_WINDOW_S)
+    a = [p for tm, p in hist if t_old - 0.1 <= tm <= t_old]
+    b = [p for tm, p in hist if tm >= t - 0.1]
+    ma = [sum(q[i] for q in a) / len(a) for i in range(2)]
+    mb = [sum(q[i] for q in b) / len(b) for i in range(2)]
+    tb = sum(tm for tm, _ in hist if tm >= t - 0.1) / len(b)
+    ta = sum(tm for tm, _ in hist if t_old - 0.1 <= tm <= t_old) / len(a)
+    return math.dist(ma, mb) / max(tb - ta, 1e-3)
 
 
 class Attention:
@@ -348,13 +379,13 @@ class Attention:
             p = (x, y, z)
             tr = self.tracks.get(pid)
             if tr is None or now - tr["last"] > FORGET_S:
-                self.tracks[pid] = {"pos": p, "t": t, "first": now, "last": now, "speed": None}
-                continue
-            dt = t - tr["t"]
-            if dt > 1e-4:
-                v = math.dist(p, tr["pos"]) / dt
-                tr["speed"] = v if tr["speed"] is None else tr["speed"] + (v - tr["speed"]) * min(1.0, dt / SPEED_TAU_S)
+                tr = self.tracks[pid] = {"pos": p, "t": t, "first": now, "last": now, "speed": None, "hist": []}
             tr.update(pos=p, t=t, last=now)
+            h = tr["hist"]
+            h.append((t, p))
+            while h and h[0][0] < t - 2.0 * SPEED_WINDOW_S:
+                del h[0]
+            tr["speed"] = _walking_speed(h, t)
         for pid in [k for k, tr in self.tracks.items() if now - tr["last"] > FORGET_S]:
             del self.tracks[pid]
 

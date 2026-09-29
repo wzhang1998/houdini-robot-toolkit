@@ -17,6 +17,11 @@ arrival times to tracking.TargetInput, tracking.Gaze each 8 ms tick. Measured:
 - the gaze error (the tool axis against the person's real head) while
   somebody is there, with the tracking against the clip alone;
 - lost: how long until the offsets are back to zero.
+Crowd scenarios (track_sim.PEOPLE, /track/people): tracking.Attention picks
+whom to look at and its target goes on as one person's; measured too: who
+was looked at, how long each time (at least ATTEND_MIN_S, but at the ends),
+never a passer-by, everyone in a crowd in turn, the next at once when the
+one looked at leaves, a group as one.
 Passes when the offsets and the arm stay within their limits, the motion is
 clear, and, where the scenario has one, its own condition holds.
 """
@@ -70,8 +75,9 @@ def run(name, graph, env, model, hub="greet", seed=1):
     events, truth, dur = TS.scenario(name, seed=seed)
     base, clips = base_motion(graph, hub, dur, seed)
     ti = TR.TargetInput()
+    att = TR.Attention()
     gz = TR.Gaze(anchor=graph.hubs[hub], dt=DT, env=env, model=model)
-    ts, qs, qb, offs, tgt = [], [], [], [], []
+    ts, qs, qb, offs, tgt, who = [], [], [], [], [], []
     k, n = 0, int(dur / DT)
     for i in range(n):
         now = i * DT
@@ -80,6 +86,14 @@ def run(name, graph, env, model, hub="greet", seed=1):
             if e["addr"] == "/track/target":
                 x, y, z, conf, tm, pid = e["args"]
                 ti.target(x, y, z, conf, tm, pid, now=now)
+            elif e["addr"] == "/track/people":
+                tm = e["args"][0]
+                att.update([p + (tm,) for p in TS.people_of(e["args"])], now)
+                ch = att.choose(now)
+                if ch is not None:
+                    ti.target(ch[0][0], ch[0][1], ch[0][2], 0.9, tm, ch[1], now=now)
+                elif ti.seen is not None:
+                    ti.lost()                          # nobody to look at (passers-by only): as lost
             else:
                 ti.lost()
             k += 1
@@ -91,8 +105,30 @@ def run(name, graph, env, model, hub="greet", seed=1):
         qb.append(b)
         offs.append(gz.offsets)
         tgt.append(target)
+        who.append(att.current if target is not None else None)
     return {"name": name, "t": ts, "q": qs, "base": qb, "offsets": offs, "target": tgt, "truth": truth, "dur": dur,
-            "gaze": gz, "input": ti, "clips": clips}
+            "gaze": gz, "input": ti, "clips": clips, "who": who, "attention": att, "people": name in TS.PEOPLE}
+
+
+def truth_at(r, i):
+    """The real head the arm should be looking at, tick i: the person's, or
+    in a crowd the one Attention picked (None: nobody)."""
+    t = r["truth"](r["t"][i])
+    if not r["people"]:
+        return t
+    return t.get(r["who"][i]) if r["who"][i] is not None else None
+
+
+def stints(who, ts):
+    """[(pid, seconds)] of the runs of `who` (None included)."""
+    out, cur, t0 = [], "start", 0.0
+    for p, t in zip(who, ts):
+        if p != cur:
+            if cur != "start":
+                out.append((cur, t - t0))
+            cur, t0 = p, t
+    out.append((cur, ts[-1] - t0))
+    return out
 
 
 def measure(r, rig, env, model):
@@ -114,7 +150,7 @@ def measure(r, rig, env, model):
     rep = C.check(model, env, ts[::2], qs[::2])
     err_t, err_b = [], []
     for i in range(0, len(ts), 5):
-        p = r["truth"](ts[i])
+        p = truth_at(r, i)
         if p is not None and r["target"][i] is not None:
             err_t.append(_angle(rig, qs[i], p))
             err_b.append(_angle(rig, r["base"][i], p))
@@ -137,6 +173,36 @@ def measure(r, rig, env, model):
     if r["name"] in ("lost_for_good", "in_and_out") and out.get("back_s", 0) > TR.HOLD_S + BACK_S:
         ok = False
         why.append("not back to the clip in %.1f s" % (TR.HOLD_S + BACK_S))
+    if r["people"]:
+        runs = [(p, d) for p, d in stints(r["who"], ts) if p is not None]
+        looked = sorted({p for p, _ in runs})
+        inner = [d for _, d in runs[1:-1]]
+        out["attention"] = {"looked_at": looked, "turns": r["attention"].turns,
+                            "shortest_s": round(min(inner), 2) if inner else None,
+                            "runs": [[p, round(d, 1)] for p, d in runs]}
+        if inner and min(inner) < TR.ATTEND_MIN_S - 0.2:
+            ok = False
+            why.append("looked at someone only %.1f s" % min(inner))
+        want = {"two_standing": [1, 2], "crowd": [1, 2, 3, 4, 5]}.get(r["name"])
+        if want and looked != want:
+            ok = False
+            why.append("looked at %s, not everyone" % looked)
+        if r["name"] == "passer_by" and 2 in looked:
+            ok = False
+            why.append("looked at the passer-by")
+        if r["name"] == "handover":
+            nxt = next((t for t, p in zip(ts, r["who"]) if t >= 8.0 and p == 2), None)
+            out["attention"]["next_s"] = round(nxt - 8.0, 2) if nxt is not None else None
+            if nxt is None or nxt - 8.0 > TR.FORGET_S + 0.5:
+                ok = False
+                why.append("B not looked at within %.1f s of A leaving" % (TR.FORGET_S + 0.5))
+        if r["name"] == "group":
+            mid = [sum(c) / 3.0 for c in zip(*r["truth"](10.0).values())]
+            far = max(math.dist(p, mid) for t, p in zip(ts, r["target"]) if p is not None and t >= 3.0)  # settled
+            out["attention"]["off_middle_m"] = round(far, 3)
+            if len(looked) > 1 and r["attention"].turns > 1 or far > 0.15:
+                ok = False
+                why.append("the group not looked at as one (%.2f m off its middle)" % far)
     if r["name"] == "outlier":
         worst = max(math.dist(p, r["truth"](t)) for t, p in zip(ts, r["target"]) if p is not None)
         out["target_err_m"] = round(worst, 3)
@@ -155,7 +221,9 @@ def export(r, m, out_dir):
     with open(os.path.join(out_dir, "%s.json" % r["name"]), "w") as f:
         json.dump({"name": r["name"], "dt": DT, "hub": "greet", "clips": r["clips"], "result": m,
                    "q": [[round(x, 4) for x in q] for q in r["q"]], "base": [[round(x, 4) for x in q] for q in r["base"]],
-                   "truth": [rnd(r["truth"](t)) for t in r["t"]], "target": [rnd(p) for p in r["target"]]}, f)
+                   "truth": [rnd(truth_at(r, i)) for i in range(len(r["t"]))], "target": [rnd(p) for p in r["target"]],
+                   "people": ([[[pid] + rnd(p) for pid, p in sorted(r["truth"](t).items())] for t in r["t"]]
+                              if r["people"] else None), "who": r["who"]}, f)
 
 
 def main(argv):
@@ -181,6 +249,11 @@ def main(argv):
                  m["arm_vel"], m["arm_acc"], "%.3f" % m["clearance_m"] if m["clear"] else "NO",
                  m["gaze_err_deg"], m["clip_err_deg"], m.get("back_s", "-"), m["taken"], m["dropped"], m["switches"],
                  m["why"]), flush=True)
+        if "attention" in m:
+            a = m["attention"]
+            print("%14s looked at %s, %d turns, shortest %s s, runs %s%s" % (
+                "", a["looked_at"], a["turns"], a["shortest_s"], a["runs"],
+                "".join(", %s %s" % (k, a[k]) for k in ("next_s", "off_middle_m") if k in a)), flush=True)
     if "--json" in argv:
         json.dump(rows, open(argv[argv.index("--json") + 1], "w"), indent=1)
     bad = [k for k, m in rows.items() if not m["pass"]]
