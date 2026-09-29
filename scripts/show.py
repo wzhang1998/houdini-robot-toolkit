@@ -440,7 +440,10 @@ def resolve_hubs(cfg, rig):
     return out
 
 
-def build(cfg_path, log=print):
+def build(cfg_path, log=print, scan_only=False):
+    """The show's clip graph from its config. scan_only: the scan and its
+    moves alone (no idle library, showpieces or moves between the hubs) --
+    to look at a new scan before the library is made again."""
     import choreo
     import collision as C
     import robot_profile as RP
@@ -464,48 +467,49 @@ def build(cfg_path, log=print):
     rng = random.Random(lib.get("seed", 1))
     kin = choreo.Kin()
     segs, dropped = [], {}
-    log("idle clips (%g-%g s, bars %s):" % (lib["duration_s"][0], lib["duration_s"][1], lib["bars"]))
-    for k, h in cfg["hubs"].items():
-        if h.get("generator", "choreo") == "gestures":
-            got, why = gesture_clips(k, hubs[k], h, cfg, idle_env, rig, rng, log)
-        else:
-            got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log, cfg)
-        segs += got
-        dropped[k] = why
-        if h.get("clips", 0) and not got:
-            raise SystemExit("hub %s: no clip could be made (%s)" % (k, "; ".join(why[:3])))
+    if not scan_only:        # the library: idle clips, authored clips, showpieces, the moves between the hubs
+        log("idle clips (%g-%g s, bars %s):" % (lib["duration_s"][0], lib["duration_s"][1], lib["bars"]))
+        for k, h in cfg["hubs"].items():
+            if h.get("generator", "choreo") == "gestures":
+                got, why = gesture_clips(k, hubs[k], h, cfg, idle_env, rig, rng, log)
+            else:
+                got, why = hub_clips(k, hubs[k], h.get("clips", 0), lib, idle_env, model, kin, rng, log, cfg)
+            segs += got
+            dropped[k] = why
+            if h.get("clips", 0) and not got:
+                raise SystemExit("hub %s: no clip could be made (%s)" % (k, "; ".join(why[:3])))
 
-    # authored clips (a curve drawn in Houdini, exported as a joint CSV):
-    # a checked move from the hub to its start, the clip, and back
-    for a in cfg.get("authored", []):
-        seg = authored_clip(a, hubs, idle_env, model, vel, acc, cfg, log)
-        if seg:
-            segs.append(seg)
-
-    # showpieces (showpiece.py): big wipes along a wall, from a hub and back
-    if cfg.get("showpieces"):
-        import showpiece
-        for sp in cfg["showpieces"]:
-            seg = showpiece.make(sp, hubs, idle_env, cfg, log)
+        # authored clips (a curve drawn in Houdini, exported as a joint CSV):
+        # a checked move from the hub to its start, the clip, and back
+        for a in cfg.get("authored", []):
+            seg = authored_clip(a, hubs, idle_env, model, vel, acc, cfg, log)
             if seg:
                 segs.append(seg)
 
-    # moves between the hubs, both ways
-    for a in hubs:
-        for b in hubs:
-            if a == b:
-                continue
-            path, why = safe_move.route(hubs[a], hubs[b], idle_env, model)
-            if path is None:
-                log("  no move %s -> %s: %s" % (a, b, why))
-                continue
-            t, q, rep = checked_move([hubs[a]] + path, cfg["transition_safety"], vel, acc, model, idle_env)
-            if not rep["ok"]:
-                log("  move %s -> %s refused: %s" % (a, b, C.describe(rep)))
-                continue
-            segs.append(Segment("move_%s_%s" % (a, b), "move", t, q, a, b))
+        # showpieces (showpiece.py): big wipes along a wall, from a hub and back
+        if cfg.get("showpieces"):
+            import showpiece
+            for sp in cfg["showpieces"]:
+                seg = showpiece.make(sp, hubs, idle_env, cfg, log)
+                if seg:
+                    segs.append(seg)
 
-    # the scan: one pass, left to right, and the moves to and from it. In
+        # moves between the hubs, both ways
+        for a in hubs:
+            for b in hubs:
+                if a == b:
+                    continue
+                path, why = safe_move.route(hubs[a], hubs[b], idle_env, model)
+                if path is None:
+                    log("  no move %s -> %s: %s" % (a, b, why))
+                    continue
+                t, q, rep = checked_move([hubs[a]] + path, cfg["transition_safety"], vel, acc, model, idle_env)
+                if not rep["ok"]:
+                    log("  move %s -> %s refused: %s" % (a, b, C.describe(rep)))
+                    continue
+                segs.append(Segment("move_%s_%s" % (a, b), "move", t, q, a, b))
+
+    # the scan: one pass (scan.direction), and the moves to and from it. In
     # and out as a painting cell does: the checked route ends at a pose
     # approach_m back from the scan's start (the same tool attitude, clear
     # by the moves' margins), then straight in; at the end straight back out
@@ -515,7 +519,7 @@ def build(cfg_path, log=print):
         st, sq, slab = scan_line(cfg, scan_env, prof)
         hubs["scan_start"], hubs["scan_end"] = list(sq[0]), list(sq[-1])
         segs.append(Segment("scan", "scan", st, sq, "scan_start", "scan_end", slab))
-        log("scan: %.2f m/s over the %.2f m opening, LEDs on %.2f-%.2f s of %.2f s, %.3f m clear"
+        log("scan: %.2f m/s over the %.2f m area, LEDs on %.2f-%.2f s of %.2f s, %.3f m clear"
             % (slab["speed_mps"], slab["exposed_m"], slab["led_on_s"][0], slab["led_on_s"][1], st[-1],
                slab["clearance_m"]))
         home = cfg["scan"]["from_hub"]
@@ -547,7 +551,7 @@ def build(cfg_path, log=print):
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
-                           "inputs": input_digests(cfg_path),
+                           "inputs": input_digests(cfg_path), "scan_only": scan_only,
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     bad = g.check_joins()
@@ -556,7 +560,7 @@ def build(cfg_path, log=print):
     out = limit_breaches(segs, RP.motion_limits(prof))
     if out:
         raise SystemExit("segments outside the motion limits (J6: the tool cable's range): %s" % out)
-    unreachable = [h for h in g.idle_hubs() if g.route(cfg["start_hub"], h) is None]
+    unreachable = [] if scan_only else [h for h in g.idle_hubs() if g.route(cfg["start_hub"], h) is None]
     if unreachable:
         raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
     return g
@@ -642,10 +646,11 @@ def scan_way(rig, q, normal, backs, inward, model, env, home, out, grid=True):
 
 def scan_line(cfg, env, prof, dt=0.016):
     """The scan (scan_ends, scan_profile): IK along the line with the tool
-    level and pointing at the paper (roll 0 keeps the LED strip, along the
-    flange's y, upright), inside the joint limits at scan.safety of them and
-    clear of the room. (times, joints, labels); labels["led_on_s"]: when the
-    strip is over the opening -- light it only then. SystemExit when it
+    level and pointing at the paper (scan_roll: 0 keeps the LED strip, along
+    the flange's y, upright; 90 lays it level for a pass down), inside the
+    joint limits at scan.safety of them and clear of the room. (times,
+    joints, labels); labels["led_on_s"]: when the strip is over the scan's
+    area -- light it only then. SystemExit when it
     cannot be done, saying why."""
     import capability as CAP
     import clip_factory as CF
@@ -662,7 +667,7 @@ def scan_line(cfg, env, prof, dt=0.016):
     d = info["direction"]
     pts = [tuple(start[i] + d[i] * x for i in range(3)) for x in ss]
     model, chain, fo, vel, acc = CF._model()
-    R = CAP.tool_frame(cfg["canvas"]["normal"], 0.0)
+    R = CAP.tool_frame(cfg["canvas"]["normal"], scan_roll(cfg))
     try:
         qs = CF._solve_along(model, R, pts, fo, list(CF.REFERENCE), 20.0)
     except CF.Rejected as e:
@@ -678,7 +683,8 @@ def scan_line(cfg, env, prof, dt=0.016):
     if not rep["ok"]:
         raise SystemExit("scan: %s" % C.describe(rep))
     labels = {"speed_mps": v, "exposed_m": round(info["exposed_m"], 4), "direction": s.get("direction", "left_to_right"),
-              "led_gap_m": s["led_gap_m"], "led_on_s": [round(t_on + lead / v, 4), round(t_off - lead / v, 4)],
+              "roll_deg": scan_roll(cfg), "led_gap_m": s["led_gap_m"],
+              "led_on_s": [round(t_on + lead / v, 4), round(t_off - lead / v, 4)],
               "u": [round(u, 5) for u in scan_positions(ss, info, lead, strip_w)],
               "travel": [round(x, 6) for x in d],
               "clearance_m": rep["min_env_clearance_m"]}
@@ -724,28 +730,60 @@ def canvas_opening(c):
     return min(c["size"][0], f["outer"][0] - 2 * f["face_width"]) if f else c["size"][0]
 
 
+SCAN_DIRECTIONS = ("left_to_right", "right_to_left", "top_to_bottom", "bottom_to_top")
+
+
+def scan_area(cfg):
+    """(centre, width, height) of the part of the paper the scan exposes:
+    scan.area {center, size [w, h]} (its centre put on the paper's face) --
+    a canvas much larger than the scan, standing on the floor (the fab team,
+    2026-09-29) -- else the canvas's middle, the frame's opening wide and the
+    canvas high."""
+    c, area = cfg["canvas"], cfg["scan"].get("area")
+    n = c["normal"]
+    if not area:
+        return list(c["center"]), canvas_opening(c), c["size"][1]
+    off = sum(n[i] * (area["center"][i] - c["center"][i]) for i in range(3))
+    return [area["center"][i] - n[i] * off for i in range(3)], area["size"][0], area["size"][1]
+
+
+def scan_roll(cfg):
+    """The tool's roll about its axis in the scan (capability.tool_frame):
+    0 keeps the LED strip upright, for a pass across the paper; a pass down
+    (or up) it wants the strip level, 90. scan.roll_deg overrides."""
+    s = cfg["scan"]
+    vertical = s.get("direction", "left_to_right") in ("top_to_bottom", "bottom_to_top")
+    return float(s.get("roll_deg", 90.0 if vertical else 0.0))
+
+
 def scan_ends(cfg, tool_z, strip_w=0.0254):
     """(start, end, info) of the scan's TCP line (the flange's working point;
-    the LED face tool_z beyond it): level, along the paper's width, the LED
-    face scan.led_gap_m from the paper's face, left to right as seen from the
-    robot's side facing it (scan.direction) -- one pass, so the paper is
-    exposed once. The line covers the opening, the strip's width and
-    scan.lead_m each side at the cruise speed, then the ramps (scan_profile)."""
+    the LED face tool_z beyond it): level, the LED face scan.led_gap_m from
+    the paper's face, over the scan's area (scan_area) one way
+    (scan.direction, left and right as seen from the robot's side facing the
+    paper) -- one pass, so the paper is exposed once. The line covers the
+    area, the strip's width and scan.lead_m each side at the cruise speed,
+    then the ramps (scan_profile)."""
     c, s = cfg["canvas"], cfg["scan"]
     n = c["normal"]
     right = (n[1], -n[0], 0.0)
-    way = 1.0 if s.get("direction", "left_to_right") == "left_to_right" else -1.0
+    d = s.get("direction", "left_to_right")
+    if d not in SCAN_DIRECTIONS:
+        raise SystemExit("scan.direction %r: one of %s" % (d, ", ".join(SCAN_DIRECTIONS)))
+    travel = {"left_to_right": right, "right_to_left": tuple(-x for x in right),
+              "top_to_bottom": (0.0, 0.0, -1.0), "bottom_to_top": (0.0, 0.0, 1.0)}[d]
+    middle, w, h = scan_area(cfg)
+    exposed = w if d in ("left_to_right", "right_to_left") else h
     standoff = s["led_gap_m"] + c.get("thickness", 0.02) / 2.0 + tool_z
-    centre = [c["center"][i] - n[i] * standoff for i in range(3)]
-    opening = canvas_opening(c)
-    cruise = opening + strip_w + 2 * s.get("lead_m", 0.05)
+    centre = [middle[i] - n[i] * standoff for i in range(3)]
+    cruise = exposed + strip_w + 2 * s.get("lead_m", 0.05)
     v, a = s["speed_mps"], s.get("accel_mps2", 0.5)
     ramp = v * (math.pi * v / (2.0 * a)) / 2.0
     half = cruise / 2.0 + ramp
-    start = [centre[i] - way * right[i] * half for i in range(3)]
-    end = [centre[i] + way * right[i] * half for i in range(3)]
-    return start, end, {"exposed_m": opening, "cruise_m": cruise, "ramp_m": ramp, "speed_mps": v,
-                        "direction": [way * x for x in right]}
+    start = [centre[i] - travel[i] * half for i in range(3)]
+    end = [centre[i] + travel[i] * half for i in range(3)]
+    return start, end, {"exposed_m": exposed, "cruise_m": cruise, "ramp_m": ramp, "speed_mps": v,
+                        "direction": list(travel)}
 
 
 def _canonical(x):
@@ -796,7 +834,11 @@ def stale_inputs(info, cfg_path, root=ROOT):
 def require_fresh(graph, cfg_path):
     """SystemExit, saying what to do, when the compiled show is out of date
     against its inputs -- a clip past the cable's J6 range streamed from a
-    stale file faults mid-show (the review, 2026-09-28)."""
+    stale file faults mid-show (the review, 2026-09-28). A scan-only build
+    (build --scan-only: no idle library) is never a show."""
+    if graph.info.get("scan_only"):
+        raise SystemExit("a scan-only build is a preview, not a show: uv run scripts/show.py build %s"
+                         % os.path.relpath(cfg_path, ROOT))
     changed = stale_inputs(graph.info, cfg_path)
     if changed:
         why = ("built before its inputs were recorded" if changed == ["inputs not recorded"]
@@ -1021,6 +1063,8 @@ class Runner:
         self.g, self.sel, self.log = graph, selector, log or (lambda *a: None)
         self.hub = start_hub or graph.info.get("start_hub") or graph.idle_hubs()[0]
         self.hub_stay, self.sequences = hub_stay, sequences if sequences is not None else graph.info.get("sequences", {})
+        # the showpieces (showpiece.py's big wipes): a trigger each, by name
+        self.showpieces = [x.name for x in graph.idle() if "showpiece" in (x.labels.get("intent") or [])]
         self.rng = random.Random(seed)
         self.pending, self.queue, self.paused, self.fault_reason = [], [], False, None
         self.clock, self.seg_t, self.sequence = 0.0, 0.0, None
@@ -1031,7 +1075,7 @@ class Runner:
 
     # events (from OSC, a keyboard, a test script)
     def trigger(self, name="scan"):
-        if name != "scan" and name not in self.sequences:
+        if name != "scan" and name not in self.sequences and name not in self.showpieces:
             self.log("%.2f unknown trigger %r" % (self.clock, name))
             return
         if name not in self.pending:
@@ -1060,6 +1104,12 @@ class Runner:
                 via = self.g.route(self.hub, self.g.one("to_scan").start)
                 self.queue += via + [self.g.one("to_scan"), self.g.one("scan"), self.g.one("from_scan")]
                 self.sequence = "scan"
+                return
+            if name in self.showpieces:
+                piece = next(x for x in self.g.idle() if x.name == name)
+                self.queue += (self.g.route(self.hub, piece.start) or []) + [piece]
+                self.sel.recent.append(name)                   # not picked again at once
+                self.sequence = name
                 return
             seq = self.sequences[name]
             via = self.g.route(self.hub, seq.get("hub", self.hub)) or []
@@ -1342,6 +1392,21 @@ def self_test():
             seen.append(r.seg.name)
     check("scan from another hub: move there first, then to_scan, scan, from_scan",
           seen[1:5] == ["move_b_a", "to_scan", "scan", "from_scan"], seen[:6])
+    piece = Segment("b_wipe_rows", "idle", [0.0, 3.0], [B, B], "b", "b", {"intent": ["showpiece"]})
+    gp = Graph(g.hubs, segs + [piece], g.info)
+    r = Runner(gp, Selector(gp.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, start_hub="a")
+    r.seg, r.hub = gp.idle("a")[0], "a"
+    r.trigger("b_wipe_rows")
+    r.trigger("b1")                                           # an ordinary clip: not a trigger
+    seen = []
+    for _ in range(200):
+        r.step(0.05)
+        if not seen or seen[-1] != r.seg.name:
+            seen.append(r.seg.name)
+    check("a showpiece is a trigger by its name (show_ui, a quick look at a big wipe): the move to its hub, then "
+          "it, then idling there; an ordinary clip is not",
+          seen[1:3] == ["move_a_b", "b_wipe_rows"] and seen[3] in ("b1", "b2") and r.showpieces == ["b_wipe_rows"],
+          seen[:5])
     # where the strip is over the paper, for the LEDs (TouchDesigner)
     us = scan_positions([0.0, 0.1, 0.5, 1.5, 1.6], {"exposed_m": 1.0, "ramp_m": 0.08}, 0.02, 0.0)
     check("the scan's position across the opening: 0 at its left edge, 1 at its right, beyond on the ramps",
@@ -1457,6 +1522,22 @@ def self_test():
           "led_gap_m from the paper",
           a[0] < -0.8 and b[0] > 0.8 and abs(a[1] - (0.99 - 0.06 - 0.07)) < 1e-9
           and abs(info["exposed_m"] - 1.435) < 1e-3, (a, b, info))
+    down = {"canvas": dict(cv, frame=None, size=[2.4, 1.8]),
+            "scan": dict(sc["scan"], direction="top_to_bottom", area={"center": [0.2, 0.5, 1.0], "size": [1.0, 0.9]})}
+    a, b, info = scan_ends(down, tool_z=0.07)
+    check("top to bottom over scan.area: the TCP line straight down the area's middle (its centre put on the "
+          "paper's face), 0.9 m exposed, the strip laid level",
+          a[2] > 1.45 + 0.06 and b[2] < 0.55 - 0.06 and abs(a[0] - 0.2) < 1e-9 and abs(b[0] - 0.2) < 1e-9
+          and abs(a[1] - b[1]) < 1e-12 and abs(a[1] - (0.99 - 0.06 - 0.07)) < 1e-9
+          and info["exposed_m"] == 0.9 and info["direction"] == [0.0, 0.0, -1.0]
+          and scan_roll(down) == 90.0 and scan_roll(sc) == 0.0, (a, b, info))
+    try:
+        scan_ends(dict(down, scan=dict(down["scan"], direction="diagonal")), tool_z=0.07)
+        bad_way = None
+    except SystemExit as e:
+        bad_way = str(e)
+    check("an unknown scan.direction is refused, naming the ones there are",
+          bad_way is not None and "top_to_bottom" in bad_way, bad_way)
     import shutil
     import tempfile
     root = tempfile.mkdtemp()
@@ -1480,6 +1561,12 @@ def self_test():
           "built before they were recorded (stale)",
           fresh == [] and noted == [] and crlf == [] and moved == ["env"] and stale_inputs({}, cp, root),
           (fresh, noted, crlf, moved))
+    try:
+        require_fresh(Graph({}, [], {"scan_only": True}), os.path.join(ROOT, "shows", "party.json"))
+        preview = None
+    except SystemExit as e:
+        preview = str(e)
+    check("a scan-only build is refused as a show", preview is not None and "scan-only" in preview, preview)
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
@@ -1518,8 +1605,19 @@ def main(argv=None):
     ap.add_argument("--minutes", type=float, default=10.0)
     ap.add_argument("--trigger-every", type=float, default=45.0)
     ap.add_argument("--triggers", default="scan", help="comma separated, used in turn")
+    ap.add_argument("--scan-only", action="store_true",
+                    help="build: the scan and its moves alone, to geo/show/<show>_scan (the show's own file untouched)")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
+    if a.command == "build" and a.scan_only:
+        t0 = time.time()
+        g = build(cfg_path, scan_only=True)
+        out = os.path.join(ROOT, "geo", "show", os.path.splitext(os.path.basename(cfg_path))[0] + "_scan")
+        write_preview(g, out)
+        g.save(os.path.join(out, "compiled.json"))
+        print("wrote %s: %s, %.0f s" % (os.path.relpath(out, ROOT),
+                                        ", ".join("%s %.1f s" % (x.name, x.duration) for x in g.segments), time.time() - t0))
+        return 0
     if a.command == "build":
         t0 = time.time()
         g = build(cfg_path)

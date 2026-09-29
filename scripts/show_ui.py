@@ -88,9 +88,11 @@ def missing_packages(names=REQUIRED):
 
 def show_choices(shows_dir=None, root=ROOT):
     """The shows the window can play: each shows/<name>.json with what its
-    compiled library says -- [{name, config, ready, clips, label}]. ready:
-    built and its inputs unchanged (show.stale_inputs); a version to test is
-    a config of its own (e.g. shows/party_bigwipe.json), built on its own."""
+    compiled library says -- [{name, config, ready, clips, label, triggers}].
+    ready: built and its inputs unchanged (show.stale_inputs); a version to
+    test is a config of its own (e.g. shows/party_bigwipe.json), built on its
+    own. triggers: its sequences, the scan, each showpiece by name (the
+    runner takes them all)."""
     import show as S
     shows_dir = shows_dir or os.path.join(root, "shows")
     out = []
@@ -100,13 +102,17 @@ def show_choices(shows_dir=None, root=ROOT):
         config = os.path.join(shows_dir, f)
         name = f[:-len(".json")]
         compiled = os.path.join(shows_dir, name + ".compiled.json")
-        c = {"name": name, "config": config, "ready": False, "clips": 0}
+        cfg = json.load(open(config, encoding="utf8"))
+        c = {"name": name, "config": config, "ready": False, "clips": 0,
+             "triggers": list(cfg.get("sequences", {})) + (["scan"] if cfg.get("scan") else [])}
         if not os.path.exists(compiled):
             c["label"] = "%s  (not built)" % name
         else:
             g = json.load(open(compiled, encoding="utf8"))
             info = g.get("info") or {}
             c["clips"] = sum(1 for s in g.get("segments", []) if s.get("kind") == "idle")
+            c["triggers"] += [s["name"] for s in g.get("segments", []) if s.get("kind") == "idle"
+                              and "showpiece" in ((s.get("labels") or {}).get("intent") or [])]
             stale = S.stale_inputs(info, config, root)
             if stale:
                 why = "built before inputs were recorded" if stale == ["inputs not recorded"] else ", ".join(stale) + " changed"
@@ -345,6 +351,7 @@ def run_window(config):
         if c:
             link.config = c["config"]
             root.title("Show -- %s" % c["name"])
+            fill_triggers(c["triggers"])
     ttk.Label(top, text="Show").grid(row=4, column=0, sticky="e", padx=(8, 2))
     show_box = ttk.Combobox(top, textvariable=show_pick, state="readonly", width=60, postcommand=refresh_shows)
     show_box.grid(row=4, column=1, columnspan=6, sticky="w", pady=(2, 4))
@@ -450,8 +457,20 @@ def run_window(config):
     # --- triggers -------------------------------------------------------------------
     tr = ttk.LabelFrame(root, text="Trigger  (taken when the running clip ends)")
     tr.pack(fill="x", **pad)
-    for i, name in enumerate(list(cfg.get("sequences", {})) + (["scan"] if cfg.get("scan") else [])):
-        ttk.Button(tr, text=name, width=10, command=lambda n=name: link.trigger(n)).grid(row=0, column=i, padx=3, pady=3)
+    trig_row = ttk.Frame(tr)
+    trig_row.grid(row=0, column=0, columnspan=8, sticky="w")
+
+    def fill_triggers(names):
+        """A button per trigger of the show picked (show_choices): its
+        sequences, the scan, its showpieces (the big wipes) by name."""
+        for w in trig_row.winfo_children():
+            w.destroy()
+        for i, n in enumerate(names):
+            ttk.Button(trig_row, text=n, width=max(10, len(n) + 2),
+                       command=lambda n=n: link.trigger(n)).grid(row=0, column=i, padx=3, pady=3)
+    picked = next((c for c in choices.values() if os.path.abspath(c["config"]) == os.path.abspath(link.config)), None)
+    fill_triggers(picked["triggers"] if picked else
+                  list(cfg.get("sequences", {})) + (["scan"] if cfg.get("scan") else []))
     ctl = ttk.Frame(tr)
     ctl.grid(row=1, column=0, columnspan=8, sticky="w", pady=4)
     ttk.Button(ctl, text="Pause at the next hub", command=link.pause).pack(side="left", padx=3)
@@ -610,9 +629,13 @@ def self_test():
     open(os.path.join(root, "envs", "room.usda"), "w").write("#usda 1.0")
     for n in ("a", "b", "c"):
         json.dump({"name": n, "env": "envs/room.usda"}, open(os.path.join(root, "shows", n + ".json"), "w"))
+    json.dump({"name": "a", "env": "envs/room.usda", "sequences": {"greet": {"hub": "h"}}, "scan": {"speed_mps": 0.2}},
+              open(os.path.join(root, "shows", "a.json"), "w"))
     for n in ("a", "c"):
         json.dump({"info": {"built": "2026-09-28 21:00", "inputs": S.input_digests(os.path.join(root, "shows", n + ".json"), root)},
-                   "segments": [{"kind": "idle"}, {"kind": "idle"}, {"kind": "scan"}]},
+                   "segments": [{"kind": "idle", "name": "h_1"}, {"kind": "idle", "name": "h_wipe_rows",
+                                                                   "labels": {"intent": ["showpiece"]}},
+                                {"kind": "scan"}]},
                   open(os.path.join(root, "shows", n + ".compiled.json"), "w"))
     json.dump({"name": "c", "env": "envs/room.usda", "hubs": {}}, open(os.path.join(root, "shows", "c.json"), "w"))
     ch = {c["name"]: c for c in show_choices(os.path.join(root, "shows"), root)}
@@ -622,6 +645,9 @@ def self_test():
           sorted(ch) == ["a", "b", "c"] and ch["a"]["ready"] and ch["a"]["clips"] == 2 and "21:00" in ch["a"]["label"]
           and not ch["b"]["ready"] and "not built" in ch["b"]["label"]
           and not ch["c"]["ready"] and "out of date" in ch["c"]["label"], {k: v["label"] for k, v in ch.items()})
+    check("... and its triggers: the sequences, the scan, and each showpiece by name (a quick look at a big wipe)",
+          ch["a"]["triggers"] == ["greet", "scan", "h_wipe_rows"] and ch["b"]["triggers"] == [],
+          {k: v["triggers"] for k, v in ch.items()})
     sc = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", scan_speed=0.4)
     check("the scan speed goes to the stream (the scan only, for tuning an exposure)",
           sc[sc.index("--scan-speed") + 1] == "0.4", sc)

@@ -1,0 +1,356 @@
+{
+ "schema": "motionlab.show/3",
+ "name": "party_vscan",
+ "note": "CANDIDATE (2026-09-29): party with the scan turned top to bottom over a large floor-standing canvas; merged into party.json once the user approves the scan preview (show.py build --scan-only).",
+ "env": "envs/volvox_lab.usda",
+ "start_hub": "rest",
+ "hubs": {
+  "rest": {
+   "q": [
+    -60.0,
+    -90.0,
+    90.0,
+    -90.0,
+    -90.0,
+    -15.0
+   ],
+   "clips": 12,
+   "generator": "choreo",
+   "zone": "idle",
+   "note": "the stage home; dance phrases (anticipation, overshoot, follow-through, breathing)"
+  },
+  "greet": {
+   "tcp": [
+    -0.1213,
+    -0.608,
+    1.28
+   ],
+   "look": [
+    -0.6659,
+    -1.8046,
+    1.5
+   ],
+   "near": [
+    64.0,
+    -100.0,
+    105.0,
+    -193.0,
+    -88.0,
+    4.0
+   ],
+   "clips": 22,
+   "generator": "gestures",
+   "zone": "greet",
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
+    "spin_sweep",
+    "window",
+    "mop",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ],
+   "note": "the tool looks at the audience; gestures and spatial paths"
+  },
+  "low": {
+   "clips": 18,
+   "generator": "gestures",
+   "zone": "low",
+   "tcp": [
+    -0.75,
+    -0.35,
+    0.55
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.5
+   ],
+   "near": [
+    6.3,
+    -69.1,
+    135.7,
+    -152.9,
+    34.1,
+    -96.6
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
+    "spin_sweep",
+    "window",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
+  },
+  "high": {
+   "clips": 18,
+   "generator": "gestures",
+   "zone": "high",
+   "tcp": [
+    -0.95,
+    0.0,
+    1.45
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.35
+   ],
+   "near": [
+    -16.7,
+    -73.8,
+    62.2,
+    -175.6,
+    26.4,
+    -53.0
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "salute",
+    "spin_sweep",
+    "window",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
+  }
+ },
+ "library": {
+  "bars": [
+   1,
+   2
+  ],
+  "bpm": [
+   70,
+   140
+  ],
+  "duration_s": [
+   3.0,
+   12.0
+  ],
+  "seed": 11,
+  "tries": 6,
+  "actions": [],
+  "intensity": [
+   0.2,
+   1.0
+  ]
+ },
+ "sequences": {
+  "greet": {
+   "hub": "greet",
+   "count": 2
+  },
+  "calm": {
+   "hub": "rest",
+   "count": 2,
+   "mood": "float"
+  }
+ },
+ "canvas": {
+  "placeholder": true,
+  "center": [
+   0.2117,
+   1.0764,
+   0.9
+  ],
+  "normal": [
+   0.193,
+   0.9812,
+   0.0
+  ],
+  "size": [
+   2.4,
+   1.8
+  ],
+  "thickness": 0.02,
+  "_note": "The fab team's canvas, standing on the floor, much larger than the scan (2026-09-29): its size a PLACEHOLDER (2.4 x 1.8 m, floor to 1.8 m) until they send it; no frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall."
+ },
+ "scan": {
+  "direction": "top_to_bottom",
+  "area": {
+   "center": [
+    0.2117,
+    1.0764,
+    1.0
+   ],
+   "size": [
+    1.0,
+    1.0
+   ]
+  },
+  "speed_mps": 0.2,
+  "accel_mps2": 0.8,
+  "led_gap_m": 0.06,
+  "lead_m": 0.02,
+  "safety": 0.5,
+  "from_hub": "rest",
+  "approach_m": 0.2,
+  "_note": "One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed)."
+ },
+ "margins": {
+  "idle_canvas_m": 0.15,
+  "scan_canvas_m": 0.03,
+  "ceiling_m": 0.3
+ },
+ "transition_safety": 0.5,
+ "select": {
+  "no_repeat": 6,
+  "hub_stay": [
+   2,
+   4
+  ]
+ },
+ "osc": {
+  "listen_port": 9000,
+  "send_host": "127.0.0.1",
+  "send_port": 9001
+ },
+ "zones": {
+  "audience": {
+   "center": [
+    -0.6561,
+    -1.7556,
+    0.95
+   ],
+   "size": [
+    2.0,
+    1.0,
+    1.9
+   ],
+   "yaw_deg": -11.28,
+   "note": "where people stand: outside the left partition, out of reach (placeholder)"
+  },
+  "greet": {
+   "center": [
+    -0.2606,
+    -0.5395,
+    1.2
+   ],
+   "size": [
+    1.3,
+    0.5,
+    0.7
+   ],
+   "yaw_deg": -11.28,
+   "note": "where the TCP performs for them"
+  },
+  "idle": {
+   "center": [
+    -0.57,
+    0.66,
+    1.09
+   ],
+   "size": [
+    0.8,
+    0.8,
+    0.6
+   ],
+   "yaw_deg": -11.28,
+   "note": "around the rest hub"
+  },
+  "low": {
+   "center": [
+    -0.75,
+    -0.35,
+    0.62
+   ],
+   "size": [
+    0.9,
+    0.9,
+    0.55
+   ],
+   "yaw_deg": 0.0
+  },
+  "high": {
+   "center": [
+    -0.95,
+    0.0,
+    1.36
+   ],
+   "size": [
+    0.8,
+    0.8,
+    0.46
+   ],
+   "yaw_deg": 0.0
+  }
+ },
+ "range": {
+  "j1_deg": [
+   -150.0,
+   150.0
+  ],
+  "tcp_z": [
+   0.35,
+   1.9
+  ],
+  "speed": 0.85,
+  "_note": "the show's operating range: the directions the arm may face (J1), the TCP's height band, the fraction of the measured limits clips are made at"
+ }
+}

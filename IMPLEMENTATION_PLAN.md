@@ -611,6 +611,36 @@ tool: no contact in 11, the simulated arm within 0.93 deg of the commands
 geo/tracking/. Next: a live mode (drag the target) once Isaac's Python
 has Ruckig; then 4 (modes B / C).
 
+## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
+**Goal**: The scan runs down the paper, the 1 m strip laid level, over a
+canvas the fab team makes much larger than the scan, standing on the
+floor on the old scan's plane; a preview to approve before the library is
+made again.
+**Success Criteria**: show.py scans any of four directions over
+`scan.area` (a part of the paper, centred on it); a scan-only build
+(`show.py build --scan-only`, geo/show/<show>_scan, refused as a show)
+plays in Isaac with no contact; the user approves the video; then
+party.json takes the candidate's canvas and scan, the library is built
+again and the TD pixel map reads rows (u down the image, the LEDs across).
+**Tests**: show.py self-test: top to bottom over scan.area, the strip
+level (roll 90), an unknown direction refused, a scan-only build refused
+as a show; the showpiece trigger (runner, show_ui).
+**Status**: In Progress
+1 done: shows/party_vscan.json, the candidate (party.json untouched, the
+real PC's show still plays). The paper plane 1.097 m from J1's axis; the
+area 1.0 x 1.0 m, 0.5-1.5 m high, centred on J1's axis's foot on it. Its
+top is the controller's work zone (Z 1600 mm, a WebUI safety setting)
+less the ramp and lead; the level strip reaches down to 0.2 m. The canvas
+2.4 x 1.8 m on the floor: a PLACEHOLDER until the fab team's size.
+2 done: scan 6.1 s at 0.2 m/s, to_scan 5.3 s, from_scan 5.8 s; Isaac
+(isaac/record_segments.py): no contact, 0.56 deg; the video
+geo/isaac/party_vscan_segments.mp4. From the audience's middle the
+forearm stands in front of the area's middle while it scans.
+Also: a showpiece is a trigger by its name (show_ui's buttons per show,
+e.g. party_bigwipe's low_wipe_rows / greet_wipe_cols), for a quick look.
+Next: the user's verdict; the canvas's real size; 3 (merge, rebuild,
+TD rows).
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
