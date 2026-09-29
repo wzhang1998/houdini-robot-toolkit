@@ -680,8 +680,9 @@ strip in real time (the user: no renders while tuning).
 /action, /clip_t, /clip_len, /beat, /bpm_now, /facing). 2. run_show
 --osc-out, --artnet (artnet.py, isaac/led_viz.py: 60 glowing LEDs), real
 time, TD's STOP holds. 3. TD: `idle_leds` (inputs, layers, table, cap,
-gate) and a second DMX Out to Isaac. 4. (later) bake per clip for offline
-videos.
+gate) and a second DMX Out to Isaac. 4. TD's canvas preview on the paper, live (canvas_link.py, isaac/canvas_viz.py,
+run_show --canvas). 5. offline: the canvas model and pixel_scan's image in Python for
+headless videos; (later) bake the LEDs per clip.
 **Success Criteria**: TD leaves OFFLINE with Isaac as the player; the LEDs
 TD sends show on Isaac's strip within a frame; dark outside greet + IDLE.
 **Tests**: show self-test (beat at the played tempo, wall-time clip_t,
@@ -689,7 +690,7 @@ facing 1 / 0, greet faces the guests more than rest, the OSC list);
 artnet self-test (ArtDmx parse, levels, the receiver's newest packet);
 led_viz self-test (60 along the strip, LED 0's end); an Isaac snapshot
 with a fake Art-Net sender (geo/isaac/leds_live_test.png).
-**Status**: In Progress (steps 1-2 done)
+**Status**: In Progress (steps 1-4 done; the idle LEDs play wherever /robot/paper < 0.001)
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard

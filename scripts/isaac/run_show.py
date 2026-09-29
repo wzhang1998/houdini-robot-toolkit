@@ -8,9 +8,10 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
         --auto-trigger 60 --seed 1 --camera audience --no-guides --video       the 5 min demo, recorded
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455 \
+        --canvas 6457
         TouchDesigner live: TD hears the show (as from show_stream) and its LEDs come back over Art-Net, drawn
-        as the strip's 60 LEDs, in real time. Only with show_stream, scan_test and show_ui closed (the one
+        as the strip's 60 LEDs, and its canvas preview on the paper (--canvas), in real time. Only with show_stream, scan_test and show_ui closed (the one
         OSC port, 9000; TD's STOP here holds the arm in Isaac) and TD's Controller IP cleared.
 
 The same Runner as the dry run and (next) the real arm: each physics step
@@ -63,6 +64,9 @@ ap.add_argument("--artnet", type=int, default=0, metavar="PORT",
 ap.add_argument("--led0", choices=("minus", "plus"), default="minus", help="the strip's end LED 0 is at (flange y)")
 ap.add_argument("--led-gain", type=float, default=1.0, help="brighten the drawn LEDs (a dim, capped pattern)")
 ap.add_argument("--realtime", action="store_true", help="the show's clock on the wall clock (TD live)")
+ap.add_argument("--canvas", type=int, default=0, metavar="PORT",
+                help="TD's canvas preview on the paper (canvas_link on 127.0.0.1:PORT, e.g. 6457), in place of the "
+                     "flat exposed area; implies --realtime")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -207,7 +211,14 @@ def main():
         rx = artnet.Receiver(args.artnet)
         leds = LedViz(stage, led0=args.led0, gain=args.led_gain)
         print("[show] LEDs from Art-Net on 127.0.0.1:%d" % args.artnet)
-    realtime = args.realtime or bool(args.artnet)
+    canvas_rx, canvas = None, None
+    if args.canvas and cfg.get("scan"):
+        import canvas_link
+        from canvas_viz import CanvasViz
+        canvas_rx = canvas_link.Receiver(args.canvas)
+        canvas = CanvasViz(stage, cfg)
+        print("[show] canvas preview from TD on 127.0.0.1:%d" % args.canvas)
+    realtime = args.realtime or bool(args.artnet) or bool(args.canvas)
     wall0, steps = time.monotonic(), 0
     if args.video:
         import shutil
@@ -232,7 +243,10 @@ def main():
                 viz_u = max(viz_u, s0["scan_u"])
             elif viz_u >= 0.0:
                 viz_u = 2.0                                    # after the pass: all of it, until the next
-            viz.update(viz_u, bool(s0["scan_led"]) and leds is None, q)      # TD's own LEDs drawn instead
+            img = canvas_rx.poll() if canvas_rx is not None else None
+            if img is not None:
+                canvas.update(*img)                                  # TD's paper instead of the flat area
+            viz.update(-1.0 if img is not None else viz_u, bool(s0["scan_led"]) and leds is None, q)
         world.step(render=draw)
         if realtime:
             ahead = runner.clock - (time.monotonic() - wall0)
@@ -271,6 +285,10 @@ def main():
                 age = rx.age()
                 label.text += "\nLEDs: " + ("waiting for TD (Art-Net :%d)" % args.artnet if age is None else
                                             "%d packets, last %.1f s ago" % (rx.packets, age))
+            if canvas_rx is not None:
+                age = canvas_rx.age()
+                label.text += "\nCanvas: " + ("waiting for TD (:%d)" % args.canvas if age is None else
+                                              "%d frames, last %.1f s ago" % (canvas_rx.packets, age))
         if args.snapshot and runner.clock >= 3.0:
             from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
             capture_viewport_to_file(get_active_viewport(), os.path.abspath(args.snapshot))
@@ -300,6 +318,8 @@ def main():
         bridge.close()
     if rx is not None:
         rx.close()
+    if canvas_rx is not None:
+        canvas_rx.close()
 
 
 main()
