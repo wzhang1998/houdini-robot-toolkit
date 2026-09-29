@@ -637,8 +637,10 @@ see that the mode began): scripts/engage.py.
   4d Isaac live: run_tracking --live --engage (the spot as a ring that lights up, the
      head and a pink hand to drag); headless 72 s: two engagements, 0 refused, 0 unsafe,
      0 contacts, faster than real time. Done.
-  Next: TD's light for TRACK (/robot/state), show_stream's Runner (a TRACK state, the
-  clips cut and resumed), the OAK-D process (people + hands).
+  On hold (the user, 2026-09-29): the interactive mode stays a test on its own
+  (engage.py, run_tracking --live --engage), apart from the party show; the user
+  looks at it in Isaac, then decides on a real-arm test of it alone. Not started
+  until then: TD's light for TRACK, show_stream's Runner, the OAK-D process.
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
