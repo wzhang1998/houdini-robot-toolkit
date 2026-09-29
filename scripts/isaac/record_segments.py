@@ -34,6 +34,7 @@ ap.add_argument("config")
 ap.add_argument("--graph", default="", help="a compiled show (default: geo/show/<show>_scan/compiled.json)")
 ap.add_argument("--segments", default="to_scan,scan,from_scan", help="comma separated, played in this order")
 ap.add_argument("--cameras", default="room,audience", help="room, audience, side")
+ap.add_argument("--guides", action="store_true", help="draw the safety guides (zones' outlines); hidden by default")
 ap.add_argument("--look", default="room", choices=("room", "plain"),
                 help="room: lights and surfaces after the lab's photo (room_look.py); plain: the flat grey room")
 ap.add_argument("--still", type=float, default=-1.0, help="only a PNG per camera at this time (s), to tune the look")
@@ -91,7 +92,7 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    env = load_room(stage, cfg_path, args.look)
+    env = load_room(stage, cfg_path, args.look, guides=args.guides)
     prim_path = import_robot()
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))

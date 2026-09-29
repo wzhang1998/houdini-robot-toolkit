@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.dirname(HERE))
 
 LEDS = 60
 LIT = (0.62, 0.3, 1.0)               # UV violet
+GLOW = 3.0                           # a lit LED glows past white paper in the lit room (HDR colour)
+EYE_GAMMA = 2.2                      # an LED at a tenth of its power still looks bright: levels as seen
 DARK = (0.06, 0.06, 0.07)
 DOT_M = 0.012
 LIFT_M = 0.004                       # the dots just in front of the strip's face
@@ -50,10 +52,11 @@ def led_positions(R, tcp, face, length, n=LEDS, led0="minus"):
 
 
 def colour(level, gain=1.0):
-    """A dot's colour at a level: dark grey off, violet lit (gain: see a dim
-    pattern -- the preview's, not the strip's)."""
-    k = min(1.0, max(0.0, level * gain))
-    return tuple(DARK[i] + (LIT[i] - DARK[i]) * k for i in range(3))
+    """A dot's colour at a level: dark grey off, glowing violet lit, the level
+    as the eye sees it (EYE_GAMMA); gain: see a dim pattern -- the
+    preview's, not the strip's."""
+    k = min(1.0, max(0.0, level * gain)) ** (1.0 / EYE_GAMMA)
+    return tuple(DARK[i] + (LIT[i] * GLOW - DARK[i]) * k for i in range(3))
 
 
 def glow(stage, path, prim):
@@ -116,9 +119,12 @@ def self_test():
     face, length = strip_geometry()
     check("the strip's face and length come from the profile's tool (FR20: 1 m, ~7 cm out)",
           abs(length - 1.0) < 1e-6 and 0.05 < face < 0.1, (face, length))
-    check("dark off, violet at full, the gain brightens a dim level up to full",
-          near(colour(0.0), DARK) and near(colour(1.0), LIT) and near(colour(0.1, 10.0), LIT)
-          and colour(0.5)[2] < LIT[2] - 0.1)
+    check("dark off, glowing violet at full, the gain brightens a dim level up to full",
+          near(colour(0.0), DARK) and near(colour(1.0), [x * GLOW for x in LIT])
+          and near(colour(0.1, 10.0), colour(1.0)) and colour(0.5)[2] < colour(1.0)[2] - 0.1)
+    check("a tenth of the power looks a third as bright, not a tenth (the eye)",
+          0.3 < colour(0.1)[2] / colour(1.0)[2] < 0.42,
+          round(colour(0.1)[2] / colour(1.0)[2], 3))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

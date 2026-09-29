@@ -7,11 +7,11 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
-        --auto-trigger 60 --seed 1 --camera audience --no-guides --video       the 5 min demo, recorded
+        --auto-trigger 60 --seed 1 --camera audience --video       the 5 min demo, recorded
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455 \
         --canvas 6457
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
-        --auto-trigger 60 --seed 1 --camera audience --no-guides --canvas-sim --video
+        --auto-trigger 60 --seed 1 --camera audience --canvas-sim --video
         the demo with the paper as TD would show it (canvas_model.py: pixel_scan and canvas_sim in numpy;
         --canvas-image, default TD's banana), no TD needed
         TouchDesigner live: TD hears the show (as from show_stream) and its LEDs come back over Art-Net, drawn
@@ -59,7 +59,8 @@ ap.add_argument("--video", action="store_true",
 ap.add_argument("--camera", default="room",
                 help="room (the whole room), audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame)")
 ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
-ap.add_argument("--no-guides", action="store_true", help="hide the safety guides (zones' outlines): the demo's look")
+ap.add_argument("--guides", action="store_true", help="draw the safety guides (zones' outlines); hidden by default")
+ap.add_argument("--no-guides", action="store_true", help=argparse.SUPPRESS)          # the default now
 ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
                 help="the status to this target too (TouchDesigner: 127.0.0.1:9002), as show_stream --osc-out")
 ap.add_argument("--artnet", type=int, default=0, metavar="PORT",
@@ -126,7 +127,7 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    env = load_room(stage, cfg_path, args.look, guides=not args.no_guides)                           # the show's room, lit as the lab
+    env = load_room(stage, cfg_path, args.look, guides=args.guides and not args.no_guides)                           # the show's room, lit as the lab
     prim_path = import_robot()
     if not args.no_tool:
         attach_tool(stage)

@@ -79,10 +79,11 @@ def _room_frame(fp):
     return u, v, (min(us), max(us), min(vs), max(vs))
 
 
-def apply(stage, env, room="/World/Room", guides=True):
+def apply(stage, env, room="/World/Room", guides=False):
     """Lights, surfaces and the ceiling's wood as in the photo. guides: the
-    safety guides (the zones' and walls' outlines) stay drawn -- the user,
-    2026-09-29; False hides them. Returns the notes (what was estimated)."""
+    safety guides (the zones' and walls' outlines) drawn; hidden by default
+    (the user, 2026-09-29, later that day). Returns the notes (what was
+    estimated)."""
     fp = RG.footprint(env)
     z0, z1 = RG.heights(env)
     UsdGeom.Scope.Define(stage, Sdf.Path(ROOT_PATH))

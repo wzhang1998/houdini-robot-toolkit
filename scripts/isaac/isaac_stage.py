@@ -20,7 +20,7 @@ from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdLux, UsdPhysics  # noqa: E402,
 PHYSICS_DT = 1.0 / 120.0
 
 
-def load_room(stage, cfg_path, look="room", guides=True, log=print):
+def load_room(stage, cfg_path, look="room", guides=False, log=print):
     """The show's room at /World/Room (shows/<show>.usda: the room with the
     show's paper and stage), lit and coloured as the lab (room_look.py) --
     the one look of every Isaac view of the project (the user, 2026-09-29);
