@@ -10,6 +10,10 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
         --auto-trigger 60 --seed 1 --camera audience --no-guides --video       the 5 min demo, recorded
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455 \
         --canvas 6457
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
+        --auto-trigger 60 --seed 1 --camera audience --no-guides --canvas-sim --video
+        the demo with the paper as TD would show it (canvas_model.py: pixel_scan and canvas_sim in numpy;
+        --canvas-image, default TD's banana), no TD needed
         TouchDesigner live: TD hears the show (as from show_stream) and its LEDs come back over Art-Net, drawn
         as the strip's 60 LEDs, and its canvas preview on the paper (--canvas), in real time. Only with show_stream, scan_test and show_ui closed (the one
         OSC port, 9000; TD's STOP here holds the arm in Isaac) and TD's Controller IP cleared.
@@ -67,6 +71,9 @@ ap.add_argument("--realtime", action="store_true", help="the show's clock on the
 ap.add_argument("--canvas", type=int, default=0, metavar="PORT",
                 help="TD's canvas preview on the paper (canvas_link on 127.0.0.1:PORT, e.g. 6457), in place of the "
                      "flat exposed area; implies --realtime")
+ap.add_argument("--canvas-sim", action="store_true",
+                help="the paper as TD's canvas preview would show it, without TD (canvas_model.py): for videos")
+ap.add_argument("--canvas-image", default="", help="the image the --canvas-sim scan writes (default: TD's banana)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -218,6 +225,16 @@ def main():
         canvas_rx = canvas_link.Receiver(args.canvas)
         canvas = CanvasViz(stage, cfg)
         print("[show] canvas preview from TD on 127.0.0.1:%d" % args.canvas)
+    model, img_levels, t_model = None, None, 0.0
+    if args.canvas_sim and cfg.get("scan") and canvas is None:
+        import canvas_model as CM
+        from canvas_viz import CanvasViz
+        area_w, area_h = show.scan_area(cfg)[1:]
+        model = CM.CanvasModel(max(1, int(round(90 * area_w / area_h))), 90)
+        img_levels = CM.prepare_image(args.canvas_image or CM.BANANA)
+        canvas = CanvasViz(stage, cfg)
+        canvas.update(*model.view())
+        print("[show] canvas simulated (canvas_model.py): %s" % (args.canvas_image or CM.BANANA))
     realtime = args.realtime or bool(args.artnet) or bool(args.canvas)
     wall0, steps = time.monotonic(), 0
     if args.video:
@@ -244,6 +261,12 @@ def main():
             elif viz_u >= 0.0:
                 viz_u = 2.0                                    # after the pass: all of it, until the next
             img = canvas_rx.poll() if canvas_rx is not None else None
+            if model is not None:                                    # TD's model without TD
+                on = s0["state"] == "SCAN" and bool(s0["scan_led"])
+                u = s0["scan_u"] if on else -1.0
+                model.step(runner.clock - t_model, u, CM.leds_at(img_levels, u) * CM.PIXEL_SCAN["master"])
+                t_model = runner.clock
+                img = model.view()
             if img is not None:
                 canvas.update(*img)                                  # TD's paper instead of the flat area
             viz.update(-1.0 if img is not None else viz_u, bool(s0["scan_led"]) and leds is None, q)
