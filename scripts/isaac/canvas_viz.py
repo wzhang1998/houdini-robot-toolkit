@@ -68,7 +68,10 @@ class CanvasViz:
             self.mesh.GetFaceVertexIndicesAttr().Set(idx)
             self.size = (w, h)
             UsdGeom.Imageable(self.mesh).MakeVisible()
-        self.color.Set([Gf.Vec3f(*c) for c in colours(rgb)])
+        import numpy as np
+        from pxr import Vt
+        px = np.frombuffer(rgb, dtype=np.uint8).reshape(-1, 3).astype(np.float32) / 255.0
+        self.color.Set(Vt.Vec3fArray.FromNumpy(px))              # one array, not 8100 Python objects
 
     def hide(self):
         from pxr import UsdGeom

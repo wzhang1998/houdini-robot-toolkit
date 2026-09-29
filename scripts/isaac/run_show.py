@@ -225,7 +225,7 @@ def main():
         canvas_rx = canvas_link.Receiver(args.canvas)
         canvas = CanvasViz(stage, cfg)
         print("[show] canvas preview from TD on 127.0.0.1:%d" % args.canvas)
-    model, img_levels, t_model = None, None, 0.0
+    model, img_levels, t_model, canvas_seen = None, None, 0.0, -1
     if args.canvas_sim and cfg.get("scan") and canvas is None:
         import canvas_model as CM
         from canvas_viz import CanvasViz
@@ -260,16 +260,21 @@ def main():
                 viz_u = max(viz_u, s0["scan_u"])
             elif viz_u >= 0.0:
                 viz_u = 2.0                                    # after the pass: all of it, until the next
-            img = canvas_rx.poll() if canvas_rx is not None else None
-            if model is not None:                                    # TD's model without TD
-                on = s0["state"] == "SCAN" and bool(s0["scan_led"])
+            img = None
+            if canvas_rx is not None:                                # a new image only (TD sends 15 a second)
+                got = canvas_rx.poll()
+                if got is not None and canvas_rx.packets != canvas_seen:
+                    img, canvas_seen = got, canvas_rx.packets
+            on = s0["state"] == "SCAN" and bool(s0["scan_led"])
+            if model is not None and (runner.clock - t_model >= 1.0 / 15 or shoot):    # TD's model without TD
                 u = s0["scan_u"] if on else -1.0
                 model.step(runner.clock - t_model, u, CM.leds_at(img_levels, u) * CM.PIXEL_SCAN["master"])
                 t_model = runner.clock
                 img = model.view()
             if img is not None:
                 canvas.update(*img)                                  # TD's paper instead of the flat area
-            viz.update(-1.0 if img is not None else viz_u, bool(s0["scan_led"]) and leds is None, q)
+            painted = canvas is not None and canvas.size is not None
+            viz.update(-1.0 if painted else viz_u, bool(s0["scan_led"]) and leds is None, q)
         world.step(render=draw)
         if realtime:
             ahead = runner.clock - (time.monotonic() - wall0)
