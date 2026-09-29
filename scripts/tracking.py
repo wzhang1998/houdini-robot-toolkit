@@ -351,7 +351,17 @@ class Gaze:
         return list(self.inp.current_position)
 
 
-NEAR_TIE_M = 0.3              # people this much further from the arm than the nearest are as near: they take turns
+BAND_M = 1.2                  # only people within this of the glass count -- looked at, or waving (the user)
+ACT_WINDOW_S = 1.5            # activity: a hand's movement about the head over this long ...
+ACT_BIN_S = 0.25
+ACT_FLOOR_MPS = 0.1           # ... less this (the noise of a still hand) ...
+ACT_FULL_MPS = 0.8            # ... this and more counts fully (capped: the wildest does not rule)
+WAVE_MIN_S = 1.0              # waving: the hand up (above head - WAVE_UP_M) this long, swinging to and fro
+WAVE_UP_M = 0.45
+WAVE_AMP_M = 0.08             # ... each swing at least this far
+WAVE_SWINGS = 2               # ... this many turns in the window
+SCORE_WAVE, SCORE_ACTIVE, SCORE_NEAR = 2.0, 1.0, 1.5   # whom to look at: waving, then active, then near the arm
+SCORE_TIE = 0.25              # scores this close to the best: as good -- they take turns
 ATTEND_MIN_S = 5.0            # a person is looked at this long at least before the arm turns to another ...
 ATTEND_MAX_S = 12.0           # ... and at most this long while somebody else waits (they take turns)
 DWELL_S = 1.0                 # in view this long before being looked at
@@ -379,27 +389,80 @@ def _walking_speed(hist, t):
     return math.dist(ma, mb) / max(tb - ta, 1e-3)
 
 
+def glass_distance(glass, p):
+    """How far p is in front of the glass (glass: (normal, offset) of the room's halfspace, the guests
+    on its far side): > 0 on the guests' side."""
+    n, off = glass
+    return off - sum(a * b for a, b in zip(n, p))
+
+
+def hand_activity(samples):
+    """0..1: how much a hand moves about the head -- the path of (hand - head), its mean every
+    ACT_BIN_S (frame to frame, a still hand's 1-2 cm of noise reads as 0.6 m/s), per second, less
+    ACT_FLOOR_MPS, over ACT_FULL_MPS; samples [(t, rel)]."""
+    if len(samples) < 3 or samples[-1][0] - samples[0][0] < 0.3:
+        return 0.0
+    bins = {}
+    for t, r in samples:
+        bins.setdefault(int(t / ACT_BIN_S), []).append(r)
+    means = [[sum(r[i] for r in rs) / len(rs) for i in range(3)] for _, rs in sorted(bins.items())]
+    if len(means) < 2:
+        return 0.0
+    v = sum(math.dist(a, b) for a, b in zip(means, means[1:])) / ((len(means) - 1) * ACT_BIN_S)
+    return max(0.0, min(1.0, (v - ACT_FLOOR_MPS) / (ACT_FULL_MPS - ACT_FLOOR_MPS)))
+
+
+def is_waving(samples, now):
+    """The hand up over the last WAVE_MIN_S and swinging to and fro (WAVE_SWINGS turns of WAVE_AMP_M
+    or more, along its widest horizontal direction); samples [(t, rel)] (hand - head)."""
+    last = [(t, r) for t, r in samples if t >= now - WAVE_MIN_S - 0.2]
+    if len(last) < 8 or last[-1][0] - last[0][0] < WAVE_MIN_S - 0.1 or any(r[2] < -WAVE_UP_M for _, r in last):
+        return False
+    xs, ys = [r[0] for _, r in last], [r[1] for _, r in last]
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    ang = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    h = [(x - mx) * math.cos(ang) + (y - my) * math.sin(ang) for x, y in zip(xs, ys)]
+    turns, ext, up = 0, h[0], None
+    for v in h[1:]:
+        if up is None:
+            if abs(v - ext) >= WAVE_AMP_M:
+                up, ext = v > ext, v
+        elif (v > ext) == up:
+            ext = v
+        elif abs(v - ext) >= WAVE_AMP_M:
+            turns, up, ext = turns + 1, not up, v
+    return turns >= WAVE_SWINGS
+
+
 class Attention:
     """Whom to look at when several people are there (/track/people): only
-    those in view DWELL_S, not walking by, confident, inside the zone; the
-    ones nearest the arm first (the user) -- those within NEAR_TIE_M of the
-    nearest -- one at a time, at least ATTEND_MIN_S each; among them someone
+    those in view DWELL_S, not walking by, confident, inside the zone and
+    within BAND_M of the glass; scored -- waving (SCORE_WAVE), a hand's
+    activity (SCORE_ACTIVE), nearness to the arm (SCORE_NEAR: the nearest 1)
+    -- the best first (the user: the nearest, then those moving; waving calls
+    it), those within SCORE_TIE of the best as good; one at a time, at least
+    ATTEND_MIN_S each; among them someone
     not looked at yet, or after ATTEND_MAX_S whoever waited longest (they
-    take turns); someone clearly nearer is turned to once the one looked at
-    has had ATTEND_MIN_S; the arm does not flit; people close together are
+    take turns); someone clearly better (above the tie: waving, more active,
+    nearer) is turned to once the one looked at has had ATTEND_MIN_S; the
+    arm does not flit; people close together are
     one group (their middle). Its target goes to TargetInput as the one person's
     would (TargetInput's gate and filter, Gaze's limits: a turn from one to
     the next is as smooth as any)."""
 
-    def __init__(self, inside=None, min_conf=MIN_CONF, origin=(0.0, 0.0)):
-        self.inside, self.min_conf, self.origin = inside, min_conf, origin
+    def __init__(self, inside=None, min_conf=MIN_CONF, origin=(0.0, 0.0), glass=None):
+        self.inside, self.min_conf, self.origin, self.glass = inside, min_conf, origin, glass
         self.tracks = {}              # pid -> {"pos", "t", "first", "last", "speed"}
         self.last_end = {}            # pid -> when the arm last turned away from them
         self.current, self.since = None, 0.0
         self.turns = 0
 
-    def update(self, people, now):
-        """people: [(pid, x, y, z, conf, t measured)] -- one frame's detections."""
+    def update(self, people, now, hands=()):
+        """people: [(pid, x, y, z, conf, t measured)] -- one frame's detections; hands likewise, a hand
+        a person (its height and swing: activity, waving)."""
         for pid, x, y, z, conf, t in people:
             if conf < self.min_conf:
                 continue
@@ -413,13 +476,33 @@ class Attention:
             while h and h[0][0] < t - 2.0 * SPEED_WINDOW_S:
                 del h[0]
             tr["speed"] = _walking_speed(h, t)
+        for pid, x, y, z, conf, t in hands:
+            tr = self.tracks.get(pid)
+            if conf < self.min_conf or tr is None:
+                continue
+            hs = tr.setdefault("hands", [])
+            hs.append((t, (x - tr["pos"][0], y - tr["pos"][1], z - tr["pos"][2])))
+            while hs and hs[0][0] < t - ACT_WINDOW_S:
+                del hs[0]
         for pid in [k for k, tr in self.tracks.items() if now - tr["last"] > FORGET_S]:
             del self.tracks[pid]
+
+    def activity(self, pid, now):
+        """0..1: their hand's movement (0 while they walk: arms swing then too)."""
+        tr = self.tracks.get(pid)
+        if tr is None or (tr["speed"] or 0.0) > PASSER_MPS:
+            return 0.0
+        return hand_activity([x for x in tr.get("hands", []) if x[0] >= now - ACT_WINDOW_S])
+
+    def waving(self, pid, now):
+        tr = self.tracks.get(pid)
+        return tr is not None and (tr["speed"] or 0.0) <= PASSER_MPS and is_waving(tr.get("hands", []), now)
 
     def _eligible(self, now):
         return [pid for pid, tr in self.tracks.items()
                 if now - tr["first"] >= DWELL_S and tr["speed"] is not None and tr["speed"] <= PASSER_MPS
-                and (self.inside is None or self.inside(tr["pos"]))]
+                and (self.inside is None or self.inside(tr["pos"]))
+                and (self.glass is None or -0.2 <= glass_distance(self.glass, tr["pos"]) <= BAND_M)]
 
     def _waited(self, pid, now):
         return now - max(self.tracks[pid]["first"], self.last_end.get(pid, -1e9))
@@ -438,8 +521,12 @@ class Attention:
                 self.last_end[self.current] = now
             self.current = None
         cur = self.tracks[self.current]["pos"] if self.current is not None else None
-        dist = lambda p: math.dist(self.tracks[p]["pos"][:2], self.origin)                         # noqa: E731
-        front = [p for p in el if dist(p) <= min(dist(q) for q in el) + NEAR_TIE_M] if el else []
+        dist = lambda p: max(0.3, math.dist(self.tracks[p]["pos"][:2], self.origin))               # noqa: E731
+        dmin = min(dist(q) for q in el) if el else 1.0
+        score = lambda p: (SCORE_WAVE * self.waving(p, now) + SCORE_ACTIVE * self.activity(p, now)   # noqa: E731
+                           + SCORE_NEAR * dmin / dist(p))
+        top = max(score(q) for q in el) if el else 0.0
+        front = [p for p in el if score(p) >= top - SCORE_TIE]
         cands = [p for p in front if cur is None or math.dist(self.tracks[p]["pos"], cur) > GROUP_M]
         fresh = [p for p in cands if p not in self.last_end]
         best = lambda ps: max(ps, key=lambda p: (p not in self.last_end, self._waited(p, now), -p))  # noqa: E731
@@ -447,7 +534,7 @@ class Attention:
         if self.current is None and cands:
             self._turn_to(best(cands), now)
         elif self.current is not None and self.current not in front and stint >= ATTEND_MIN_S and cands:
-            self._turn_to(min(cands, key=dist), now)              # someone clearly nearer the arm
+            self._turn_to(max(cands, key=score), now)             # someone clearly more: waving, active, nearer
         elif self.current is not None and stint >= ATTEND_MAX_S and cands:
             self._turn_to(best(cands), now)
         elif self.current is not None and stint >= ATTEND_MIN_S and fresh:
@@ -496,12 +583,14 @@ def self_test():
     check("/track/lost: lost at once", ti.now(2.01) is None)
 
     # attention: whom to look at when several are there
-    def feed(att, people_at, t0, t1, fps=30.0):
-        """Runs att over [t0, t1): people_at(t) -> [(pid, x, y, z, conf)]; the chosen pid per frame."""
+    def feed(att, people_at, t0, t1, fps=30.0, hands_at=None):
+        """Runs att over [t0, t1): people_at(t) -> [(pid, x, y, z, conf)], hands_at(t) likewise; the chosen
+        pid per frame."""
         out = []
         for i in range(int(round((t1 - t0) * fps))):
             t = t0 + i / fps
-            att.update([(pid, x, y, z, c, t) for pid, x, y, z, c in people_at(t)], t)
+            att.update([(pid, x, y, z, c, t) for pid, x, y, z, c in people_at(t)], t,
+                       [(pid, x, y, z, c, t) for pid, x, y, z, c in (hands_at(t) if hands_at else [])])
             ch = att.choose(t)
             out.append((t, ch[1] if ch else None, ch[0] if ch else None))
         return out
@@ -557,6 +646,39 @@ def self_test():
     runs = spans(seq)
     check("someone nearer comes: after the one looked at had %.0f s, the arm turns to them, and stays" % ATTEND_MIN_S,
           [p for p, _ in runs if p is not None] == [1, 2] and abs(runs[0][1] - ATTEND_MIN_S) < 0.2, runs)
+    # waving and moving (the glass: y = -1.2, the guests at y < -1.2)
+    glass = ((0.0, 1.0, 0.0), -1.2)
+
+    def wave(pid, x, y, t, t0=0.0, t1=1e9, hz=1.2, amp=0.15):
+        """A hand: waving above the head from t0 to t1, else down by the side."""
+        if t0 <= t < t1:
+            return (pid, x + amp * math.sin(2 * math.pi * hz * t), y, 1.75, 0.9)
+        return (pid, x + 0.25, y, 0.95, 0.9)
+    stand2 = lambda t: [(1, 0.0, -1.6, 1.6, 0.9), (2, 0.9, -2.1, 1.6, 0.9)]
+    seq = feed(Attention(glass=glass), stand2, 0.0, 16.0,
+               hands_at=lambda t: [wave(1, 0.0, -1.6, t, 1e9), wave(2, 0.9, -2.1, t, 4.0)])
+    first_b = next((t for t, pid, _ in seq if pid == 2), None)
+    check("the nearer one looked at; then the further one waves (from 4 s): the arm turns to the waver once the "
+          "near one has had %.0f s, and stays" % ATTEND_MIN_S,
+          seq[45][1] == 1 and first_b is not None and first_b <= 1.0 + ATTEND_MIN_S + 0.3
+          and all(pid == 2 for t, pid, _ in seq if t > first_b), first_b)
+    beyond = lambda t: [(3, 0.0, -2.6, 1.6, 0.9)]
+    seq = feed(Attention(glass=glass), beyond, 0.0, 8.0, hands_at=lambda t: [wave(3, 0.0, -2.6, t)])
+    check("someone waving %.1f m from the glass (beyond %.1f m): not looked at" % (1.4, BAND_M),
+          all(pid is None for _, pid, _ in seq))
+    kid = lambda t: [(1, 0.4, -1.7, 1.6, 0.9), (4, -0.9 + 1.5 * (abs((t % 2.4) - 1.2)), -1.5, 1.2, 0.9)]
+    seq = feed(Attention(glass=glass), kid, 0.0, 16.0,
+               hands_at=lambda t: [wave(1, 0.4, -1.7, t, 1e9), wave(4, -0.9 + 1.5 * abs((t % 2.4) - 1.2), -1.5, t,
+                                                                  hz=2.0, amp=0.25)])
+    check("a child running to and fro at the glass, arms flying: not followed (walking, not waving at it)",
+          sum(pid == 4 for _, pid, _ in seq) < 0.1 * len(seq), sum(pid == 4 for _, pid, _ in seq))
+    att = Attention(glass=glass)
+    rng2 = random.Random(3)
+    noisy_hand = lambda t: [(1, 0.25 + rng2.gauss(0, 0.01), -1.6 + rng2.gauss(0, 0.02), 0.95 + rng2.gauss(0, 0.01), 0.9)]
+    feed(att, lambda t: [(1, 0.0, -1.6, 1.6, 0.9)], 0.0, 4.0, hands_at=noisy_hand)
+    check("a still hand's noise (1-2 cm a frame) is not activity", att.activity(1, 4.0) < 0.1,
+          round(att.activity(1, 4.0), 3))
+    check("... nor waving", not att.waving(1, 4.0))
     group = lambda t: [(1, 0.0, -1.8, 1.6, 0.9), (2, 0.3, -1.8, 1.62, 0.9), (3, 0.15, -1.9, 1.55, 0.9)]
     seq = feed(Attention(), group, 0.0, 20.0)
     pts = [p for _, pid, p in seq if p is not None]
