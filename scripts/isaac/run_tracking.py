@@ -189,7 +189,8 @@ def live():
     graph = S.Graph.load(S.compiled_path(os.path.abspath(args.config)))
     model = C.load_model("fr20")
     base, clips = TE.base_motion(graph, "greet", 4 * 3600.0, seed=args.seed)
-    ti, att = TR.TargetInput(), TR.Attention()
+    g_obj = next((o for o in env["objects"] if o["name"] == "partition_left"), None)       # the glass
+    ti, att = TR.TargetInput(), TR.Attention(glass=(g_obj["normal"], g_obj["offset"]) if g_obj else None)
     new_gaze = lambda: TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=model)  # noqa: E731
     gz = new_gaze()
     en = player = None
@@ -221,14 +222,15 @@ def live():
         bodies.append((b, b.AddTranslateOp()))
     target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
     gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
-    hand = spot_curve = None
-    if en is not None:                                   # the spot on the floor, a hand for person 1 (mode C)
+    spot_curve = None
+    if en is not None:                                   # the spot on the floor
         spot_root, spot_op = ring(stage, "/World/Spot", en.r, (0.9, 0.85, 0.3))
         spot_op.Set(Gf.Vec3d(en.spot[0], en.spot[1], 0.012))
         spot_curve = UsdGeom.BasisCurves(stage.GetPrimAtPath("/World/Spot/Curve"))
-        hand, hand_op = marker(stage, "/World/LiveHand1", 0.06, (1.0, 0.45, 0.7))
-        hand_home = tuple(homes[0][i] + along[i] * 0.25 for i in range(2)) + (homes[0][2] - 0.5,)
-        hand_op.Set(Gf.Vec3d(*hand_home))
+    hand, hand_op = marker(stage, "/World/LiveHand1", 0.06, (1.0, 0.45, 0.7))     # person 1's hand (mode C, waving)
+    hand_home = tuple(homes[0][i] + along[i] * 0.25 for i in range(2)) + (homes[0][2] - 0.5,)
+    hand_op.Set(Gf.Vec3d(*hand_home))
+    wave_until = [-1.0]
     world.reset()
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
@@ -270,9 +272,11 @@ def live():
                     for k in range(n):
                         heads[k][1].Set(Gf.Vec3d(*homes[k]))
                 ui.Button("Heads back to the audience", clicked_fn=home_all)
+                ui.Button("Person 1 waves (3 s)", clicked_fn=lambda: wave_until.__setitem__(0, ticks_now[0] + 3.0))
         print("[track] live: select a head, W, drag it; the 'Tracking' panel says who is there%s"
               % ("; the one looked at turns green" if n > 1 else ""))
 
+    ticks_now = [0.0]
     wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
     worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
     tracked_ticks, looked, green, looked_at = 0, None, None, set()
@@ -295,8 +299,15 @@ def live():
                 p = tuple(UsdGeom.Xformable(h.GetPrim()).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
                           .ExtractTranslation())
             pos.append(p)
+        ticks_now[0] = now
         hand_p = None
-        if hand is not None:
+        if args.headless and en is None and 6.0 <= now < 9.0:
+            wave_until[0] = 9.0                              # the headless check: person 1 waves 6-9 s
+        if now < wave_until[0]:                              # waving: the hand swings above the head
+            sw = 0.15 * math.sin(2.0 * math.pi * 1.2 * now)
+            hand_p = (pos[0][0] + sw * along[0], pos[0][1] + sw * along[1], pos[0][2] + 0.15)
+            hand_op.Set(Gf.Vec3d(*hand_p))
+        elif hand is not None:
             if args.headless:
                 hand_p = (pos[0][0] + 0.2 * along[0], pos[0][1] + 0.2 * along[1],
                           2.0 if 16.0 <= now < 21.0 else pos[0][2] - 0.5)          # raised 16-21 s
@@ -312,7 +323,8 @@ def live():
                 if there[0]:
                     ti.target(pos[0][0], pos[0][1], pos[0][2], 1.0, now, 0, now=now)
             else:
-                att.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now)
+                att.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now,
+                           [(1,) + hand_p + (1.0, now)] if hand_p and there[0] else [])
                 ch = att.choose(now)
                 looked = ch[1] if ch else None
                 if ch is not None:

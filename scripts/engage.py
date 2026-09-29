@@ -97,6 +97,9 @@ def face_pose(rig, hub_q, axes, offset, aim, near=None):
     return rig.solve(p, z, 0.0, near or hub_q, R=R)
 
 
+GLASS = "partition_left"           # the room's halfspace between the guests and the arm
+WAVE_S = 1.0                       # waving this long (tracking.is_waving), within the follow zone and BAND_M of
+                                   # the glass: as good as stepping onto the spot (the user)
 DWELL_S = 1.0                      # on the spot this long (not walking) before the arm turns to them
 FOLLOW_M = (0.8, 0.5)              # once engaged, followed while within this of the spot (along, across): the
                                    # spot says "me"; then they may move -- and the edge does not flap
@@ -147,6 +150,8 @@ class Engage:
         self.spot, self.r = track_spot(cfg, hub_q)
         self.axes = box_axes(cfg, hub_q, self.spot)
         self.slow = [o for o in (env or {}).get("objects", []) if o["role"] == "slow"]
+        g = next((o for o in (env or {}).get("objects", []) if o["name"] == GLASS), None)
+        self.glass = (g["normal"], g["offset"]) if g else None
         prof = RP.load("fr20")
         vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
         self.vmax = [v * SHARE for v in vel]
@@ -235,17 +240,31 @@ class Engage:
         for pid, x, y, z, conf, t in hands:
             if conf >= TR.MIN_CONF:
                 self.hands[pid] = (x, y, z, now)
+                pr = self.people.get(pid)
+                if pr is not None:                             # the hand about the head: waving?
+                    hs = pr.setdefault("hands", [])
+                    hs.append((t, (x - pr["pos"][0], y - pr["pos"][1], z - pr["pos"][2])))
+                    while hs and hs[0][0] < t - TR.ACT_WINDOW_S:
+                        del hs[0]
         keep = self._engaged()
         for pid in [k for k, pr in self.people.items()
                     if now - pr["last"] > (LOST_CROWD_S if k == keep else LEAVE_S)]:
             del self.people[pid]
         self.fresh = True                                  # TRACK aims again (not every tick: the data's rate)
 
+    def _waving(self, pr, now):
+        """Waving at the arm: the hand swinging above the head (tracking.is_waving: over WAVE_S), not
+        walking, in the follow zone (the arm can face them) and within BAND_M of the glass."""
+        import tracking as TR
+        return (pr.get("speed") is not None and pr["speed"] <= TR.PASSER_MPS and self._in_follow(pr["pos"])
+                and (self.glass is None or TR.glass_distance(self.glass, pr["pos"]) <= TR.BAND_M)
+                and TR.is_waving(pr.get("hands", []), now))
+
     def _candidate(self, now):
         import tracking as TR
-        ok = [(pr["in_since"], pid) for pid, pr in self.people.items()
-              if pr["in_since"] is not None and now - pr["in_since"] >= DWELL_S and not pr["done"]
-              and pr.get("speed") is not None and pr["speed"] <= TR.PASSER_MPS]
+        ok = [(pr["in_since"] if pr["in_since"] is not None else now, pid) for pid, pr in self.people.items()
+              if not pr["done"] and pr.get("speed") is not None and pr["speed"] <= TR.PASSER_MPS
+              and ((pr["in_since"] is not None and now - pr["in_since"] >= DWELL_S) or self._waving(pr, now))]
         near = lambda pid: math.dist(self.people[pid]["pos"][:2], (0.0, 0.0))                  # noqa: E731
         return min(ok, key=lambda x: (near(x[1]), x[0]))[1] if ok else None             # the nearest the arm
 
@@ -379,6 +398,8 @@ class Engage:
             return
         self.who, self.t_engaged, self.t_gone, self.reached, self.mode = who, now, now, False, "B"
         self.people[who]["done"] = True                    # once per stay on the spot
+        if self.people[who]["in_since"] is None:           # called by waving: followed in the zone from now
+            self.people[who]["in_since"] = now
         self.inp.target_position, self.inp.target_velocity = list(perk), [0.0] * 6
         self.engagements += 1
         self._set("ENTER", now)
@@ -422,6 +443,7 @@ class ClipPlayer:
 
 def self_test():
     import json
+    from tracking import BAND_M, glass_distance
     import collision as C
     import gestures as G
     import show as S
@@ -611,6 +633,36 @@ def self_test():
     en, log = run_many(both, 4.0)
     check("two step onto the spot together: the one nearer the arm is followed",
           first(log, "ENTER") is not None and log[-1][3] == 2, log[-1][3])
+    def run_wave(person, waving_from, dur):
+        """person(t) -> (du, dv, z); the hand swings above the head from waving_from, else hangs down."""
+        en = Engage(cfg, hub, env0, model)
+        log = []
+        for i in range(int(dur / en.dt)):
+            now = i * en.dt
+            if i % 4 == 0:
+                du, dv, z = person(now)
+                x = spot[0] + du * axes[0][0] + dv * axes[2][0]
+                y = spot[1] + du * axes[0][1] + dv * axes[2][1]
+                if now >= waving_from:
+                    sw = 0.15 * math.sin(2 * math.pi * 1.2 * now)
+                    hand = (1, x + sw * axes[0][0], y + sw * axes[0][1], z + 0.15, 0.9, now)
+                else:
+                    hand = (1, x + 0.25 * axes[0][0], y + 0.25 * axes[0][1], z - 0.7, 0.9, now)
+                en.update([(1, x, y, z, 0.9, now)], now, [hand])
+            q = en.step(hub, now)
+            log.append((now, en.state, list(q), en.who))
+        return en, log
+    en, log = run_wave(lambda t: (0.6, 0.0, 1.62), 2.0, 8.0)
+    t_in = first(log, "ENTER")
+    d_glass = glass_distance(en.glass, (spot[0] + 0.6 * axes[0][0], spot[1] + 0.6 * axes[0][1], 0.0))
+    check("waving off the spot (0.6 m along it, %.2f m from the glass): the arm turns to them after %.0f s of it, "
+          "and follows" % (d_glass, WAVE_S), t_in is not None and 2.0 + WAVE_S <= t_in < 2.0 + WAVE_S + 0.6
+          and log[-1][1] == "TRACK" and d_glass <= BAND_M, (t_in, log[-1][1]))
+    en, log = run_wave(lambda t: (1.2, 0.0, 1.62), 2.0, 8.0)
+    check("waving beyond the follow zone (1.2 m along): not engaged (the arm cannot face them there)",
+          en.engagements == 0)
+    en, log = run_wave(lambda t: (-1.2 + 0.9 * t, 0.0, 1.62), 0.5, 3.0)
+    check("waving while walking past (0.9 m/s, through the zone): not engaged", en.engagements == 0)
     hidden = lambda t: [p for p in [(1, 0.0, 0.0, 1.62), (2, 0.5, 0.3, 1.7)] if not (p[0] == 1 and 8.0 <= t < 9.2)]
     en, log = run_many(hidden, 14.0)
     check("hidden behind someone for 1.2 s: still followed (%.1f s allowed with people near)" % LOST_CROWD_S,
