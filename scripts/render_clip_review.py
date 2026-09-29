@@ -46,6 +46,10 @@ FFMPEG = "ffmpeg"
 FONT = "C\\:/Windows/Fonts/consola.ttf"
 SETS = {"dance": ROOT + "/geo/dance", "clips": ROOT + "/geo/clips", "stage": ROOT + "/geo/stage",
         "show": ROOT + "/geo/show/party"}
+# every other built show version too, as show_<name> (show.py build writes geo/show/<name>)
+SETS.update({"show_" + d: ROOT + "/geo/show/" + d for d in sorted(os.listdir(ROOT + "/geo/show"))
+             if d != "party" and os.path.exists(ROOT + "/geo/show/" + d + "/manifest.json")}
+            if os.path.isdir(ROOT + "/geo/show") else {})
 FPS = 24.0
 TILE = (480, 480)
 # the user's viewport in FR20_rig, 2026-09-25 (the robot's right-front, above, a
