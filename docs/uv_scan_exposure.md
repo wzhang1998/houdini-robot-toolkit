@@ -57,6 +57,16 @@ column and fading back in about a minute.
   contrast. Visible and white light bleach the coloured form a little;
   daylight or fluorescent UV tints the whole canvas: a dim room without UV.
 
+### The pigment bought
+
+[Sun UV activated photochromic powder pigment, white to violet](https://www.amazon.com/dp/B0747XQ3X9)
+(sold for slime, nails and resin; the listing gives no wavelength or fade
+time). A powder: it needs a clear binder. Ours, from the notes above: a few
+per cent by weight in a clear water-based acrylic (matte / gel medium) over a
+white gesso ground, no UV-blocking top coat; violet on white is the contrast.
+Mix swatches at ~2, 5 and 10 % and let the bench test pick the loading
+(saturation, evenness, and how fast it fades back).
+
 ## The strip bought: Adafruit 5722
 
 [Adafruit High Density NeoPixel UV LED Strip, 60 LED/m, 1 m](https://www.adafruit.com/product/5722)
@@ -145,7 +155,10 @@ cut shorter than the opening (53 LEDs ~0.885 m) passing between the rails
 A coated swatch under the strip at 3 cm and at 6 cm, lit statically for 0.5,
 1, 2.5, 5, 10 and 20 s; photograph the fade every 10 s; compare with a 365 nm
 torch. That gives the dose curve and the half-life of this coating at 395 nm,
-and so the scan speed.
+and so the scan speed. With the white-to-violet powder: one swatch per
+loading (2, 5, 10 %), each strip of it lit for a different time -- the step
+where the violet stops deepening is the dose to aim for; the dwell of a scan
+point is (1.5 d + 5 mm) / v.
 
 ## Safety
 
