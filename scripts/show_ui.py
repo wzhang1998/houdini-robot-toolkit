@@ -86,6 +86,38 @@ def missing_packages(names=REQUIRED):
     return [n for n in names if importlib.util.find_spec(n) is None]
 
 
+def show_choices(shows_dir=None, root=ROOT):
+    """The shows the window can play: each shows/<name>.json with what its
+    compiled library says -- [{name, config, ready, clips, label}]. ready:
+    built and its inputs unchanged (show.stale_inputs); a version to test is
+    a config of its own (e.g. shows/party_bigwipe.json), built on its own."""
+    import show as S
+    shows_dir = shows_dir or os.path.join(root, "shows")
+    out = []
+    for f in sorted(os.listdir(shows_dir)):
+        if not f.endswith(".json") or f.endswith(".compiled.json"):
+            continue
+        config = os.path.join(shows_dir, f)
+        name = f[:-len(".json")]
+        compiled = os.path.join(shows_dir, name + ".compiled.json")
+        c = {"name": name, "config": config, "ready": False, "clips": 0}
+        if not os.path.exists(compiled):
+            c["label"] = "%s  (not built)" % name
+        else:
+            g = json.load(open(compiled, encoding="utf8"))
+            info = g.get("info") or {}
+            c["clips"] = sum(1 for s in g.get("segments", []) if s.get("kind") == "idle")
+            stale = S.stale_inputs(info, config, root)
+            if stale:
+                why = "built before inputs were recorded" if stale == ["inputs not recorded"] else ", ".join(stale) + " changed"
+                c["label"] = "%s  (out of date: rebuild -- %s)" % (name, why)
+            else:
+                c["ready"] = True
+                c["label"] = "%s  (built %s, %d idle clips)" % (name, info.get("built", "?"), c["clips"])
+        out.append(c)
+    return out
+
+
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
                 goto_start=False, scan_speed=1.0):
     """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
@@ -291,6 +323,30 @@ def run_window(config):
     td_entry.grid(row=2, column=2, columnspan=2, sticky="w")
     before_start += [td_check, td_entry]
 
+    # which show: each shows/<name>.json built on its own (a version to test)
+    choices = {}
+    show_pick = tk.StringVar()
+
+    def refresh_shows():
+        choices.clear()
+        for c in show_choices():
+            choices[c["label"]] = c
+        show_box["values"] = list(choices)
+        now = next((l for l, c in choices.items() if os.path.abspath(c["config"]) == os.path.abspath(link.config)), "")
+        show_pick.set(now)
+
+    def show_changed(*_):
+        c = choices.get(show_pick.get())
+        if c:
+            link.config = c["config"]
+            root.title("Show -- %s" % c["name"])
+    ttk.Label(top, text="Show").grid(row=3, column=0, sticky="e", padx=(8, 2))
+    show_box = ttk.Combobox(top, textvariable=show_pick, state="readonly", width=60, postcommand=refresh_shows)
+    show_box.grid(row=3, column=1, columnspan=6, sticky="w", pady=(2, 4))
+    show_box.bind("<<ComboboxSelected>>", show_changed)
+    before_start.append(show_box)
+    refresh_shows()
+
     # the real arm: a checklist, ticked again for every run
     checks = ttk.LabelFrame(root, text="Before the real arm moves")
     ticks = [tk.BooleanVar(value=False) for _ in range(3)]
@@ -322,6 +378,10 @@ def run_window(config):
     def ready(what):
         """Why the run cannot start, or None."""
         hw = target.get() == "hardware"
+        c = choices.get(show_pick.get())
+        if c is None or not c["ready"]:
+            return ("This show is not ready to play: %s\n\nuv run scripts/show.py build %s"
+                    % (show_pick.get() or os.path.basename(link.config), os.path.relpath(link.config, ROOT)))
         if not ip.get().strip():
             return "Type the controller's IP."
         if not 0.05 <= speed.get() <= (HARDWARE_MAX if hw else 1.0):
@@ -535,6 +595,28 @@ def self_test():
     hw = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware")
     check("the real arm: --hardware (never --sim), its slow move to the start hub (10 %)",
           "--hardware" in hw and "--sim" not in hw and hw[hw.index("--move-vel") + 1] == "10", hw)
+    import shutil
+    import tempfile
+    import show as S
+    root = tempfile.mkdtemp()
+    for d in ("profiles", "envs", "shows"):
+        os.makedirs(os.path.join(root, d))
+    open(os.path.join(root, "profiles", "fr20.json"), "w").write('{"robot": {}, "tool": null}')
+    open(os.path.join(root, "envs", "room.usda"), "w").write("#usda 1.0")
+    for n in ("a", "b", "c"):
+        json.dump({"name": n, "env": "envs/room.usda"}, open(os.path.join(root, "shows", n + ".json"), "w"))
+    for n in ("a", "c"):
+        json.dump({"info": {"built": "2026-09-28 21:00", "inputs": S.input_digests(os.path.join(root, "shows", n + ".json"), root)},
+                   "segments": [{"kind": "idle"}, {"kind": "idle"}, {"kind": "scan"}]},
+                  open(os.path.join(root, "shows", n + ".compiled.json"), "w"))
+    json.dump({"name": "c", "env": "envs/room.usda", "hubs": {}}, open(os.path.join(root, "shows", "c.json"), "w"))
+    ch = {c["name"]: c for c in show_choices(os.path.join(root, "shows"), root)}
+    shutil.rmtree(root, ignore_errors=True)
+    check("the window's shows: each config with its compiled library -- ready (built, idle clips), not built, "
+          "or out of date (refused)",
+          sorted(ch) == ["a", "b", "c"] and ch["a"]["ready"] and ch["a"]["clips"] == 2 and "21:00" in ch["a"]["label"]
+          and not ch["b"]["ready"] and "not built" in ch["b"]["label"]
+          and not ch["c"]["ready"] and "out of date" in ch["c"]["label"], {k: v["label"] for k, v in ch.items()})
     sc = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", scan_speed=0.4)
     check("the scan speed goes to the stream (the scan only, for tuning an exposure)",
           sc[sc.index("--scan-speed") + 1] == "0.4", sc)
