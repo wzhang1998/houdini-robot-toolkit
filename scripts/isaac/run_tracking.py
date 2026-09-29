@@ -7,7 +7,7 @@ the room reported, and a video from the audience's side.
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py jump walk_across --headless --video
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live
-        live: the greet clips play on; drag the orange ball (the person's head: select it, W, drag) and
+        live: the greet clips play on; drag the person's head (select it, W, drag; the body follows) and
         the tracking layer (tracking.py, as show_stream would run it) turns the arm to it in real time;
         "Person there" off: the person lost. --headless --minutes 2: the ball walks by itself (a check).
 
@@ -158,9 +158,14 @@ def live():
     room = load_room(stage, os.path.abspath(args.config), args.look)
     robot = world.scene.add(SingleArticulation(import_robot(), name="fr20"))
     attach_tool(stage)
-    person, person_op = body(stage)
-    ball, ball_op = marker(stage, "/World/LiveTarget", 0.09, (1.0, 0.55, 0.1))
+    # the person: the head is what is dragged (its own prim, so the gizmo moves it), the body follows it
+    ball, ball_op = marker(stage, "/World/LiveHead", 0.11, (0.85, 0.7, 0.55))
     ball_op.Set(Gf.Vec3d(*eyes))
+    person = UsdGeom.Cylinder.Define(stage, Sdf.Path("/World/LiveBody"))
+    person.CreateRadiusAttr(0.17)
+    person.CreateHeightAttr(1.4)
+    person.CreateDisplayColorAttr([Gf.Vec3f(0.25, 0.3, 0.45)])
+    person_op = person.AddTranslateOp()
     target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
     gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
     world.reset()
@@ -178,7 +183,7 @@ def live():
             for h in headers:
                 if h.type == ContactEventType.CONTACT_FOUND:
                     a, b = contact_paths(h)
-                    if ("/Room" in a) != ("/Room" in b) and "/Person" not in a + b and "/Live" not in a + b:
+                    if ("/Room" in a) != ("/Room" in b) and "/Live" not in a + b:
                         contacts.append((a, b))
         sub = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841
     except Exception as e:
@@ -199,8 +204,8 @@ def live():
                     box.model.set_value(True)
                     box.model.add_value_changed_fn(lambda m: there.__setitem__(0, m.get_value_as_bool()))
                     ui.Label("Person there (off: lost)")
-                ui.Button("Ball back to the audience", clicked_fn=lambda: ball_op.Set(Gf.Vec3d(*eyes)))
-        print("[track] live: select the orange ball, W, drag it; the 'Tracking' panel toggles the person")
+                ui.Button("Head back to the audience", clicked_fn=lambda: ball_op.Set(Gf.Vec3d(*eyes)))
+        print("[track] live: select the person's head, W, drag it; the 'Tracking' panel toggles the person")
 
     wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
     worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
@@ -219,8 +224,9 @@ def live():
         qb = base(now)
         q = gz.step(qb, tgt, now, [base(now + d) for d in TR.AHEAD_S])
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
-        person_op.Set(Gf.Vec3d(*p))
+        person_op.Set(Gf.Vec3d(p[0], p[1], p[2] - 0.9))              # the body under the head
         show_or_hide(person.GetPrim(), there[0])
+        show_or_hide(ball.GetPrim(), there[0] or not args.headless)   # the head stays draggable
         show_or_hide(target.GetPrim(), tgt is not None)
         if tgt is not None:
             target_op.Set(Gf.Vec3d(*tgt))
