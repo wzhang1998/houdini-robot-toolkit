@@ -94,10 +94,18 @@ def main():
     for j, f in zip(chain, fk):
         world_of[j["child"]] = matrix(f["link_R"], f["link_p"])
     robot_prims = [p for p in stage.Traverse() if p.GetPath().pathString.startswith("/World/fr20")]
+    # the links are nested along the chain (Geometry/base_link/shoulder_link/...), each with a child of
+    # its own name holding its visual mesh (and a *_1 one its collision mesh, purpose guide): the link
+    # itself is the prim on the chain's path -- the first of that name found was the visual child,
+    # which left the links, and so the collision meshes, at zero (a second arm on the floor, 2026-09-29)
+    top = next(p for p in robot_prims if p.GetName() == chain[0]["parent"])
+    link_path = {chain[0]["parent"]: top.GetPath()}
+    for j in chain:
+        link_path[j["child"]] = link_path[j["parent"]].AppendChild(j["child"])
     posed = []
     for name, M in world_of.items():
-        prim = next((p for p in robot_prims if p.GetName() == name and p.IsA(UsdGeom.Xformable)), None)
-        if prim is None:
+        prim = stage.GetPrimAtPath(link_path[name])
+        if not prim.IsValid():
             continue
         parent = UsdGeom.Xformable(prim.GetParent())
         pw = parent.ComputeLocalToWorldTransform(Usd.TimeCode.Default()) if prim.GetParent().IsA(UsdGeom.Xformable) \
