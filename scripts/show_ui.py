@@ -119,12 +119,13 @@ def show_choices(shows_dir=None, root=ROOT):
 
 
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
-                goto_start=False, scan_speed=1.0):
+                goto_start=False, scan_speed=1.0, scan_test=False):
     """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
     given; status also to each HOST:PORT in `also` (TouchDesigner).
     goto_start: only the move to the start hub. scan_speed: the scan alone
-    slower than built (tuning an exposure). Refuses what the window does
-    not allow on the real arm (ValueError)."""
+    slower than built (tuning an exposure). scan_test: the scan step by step
+    (scan_test.py) instead of the show. Refuses what the window does not
+    allow on the real arm (ValueError)."""
     if not SCAN_SPEED[0] <= scan_speed <= SCAN_SPEED[1]:
         raise ValueError("scan speed %g: %g..%g of the built scan's" % ((scan_speed,) + SCAN_SPEED))
     if target not in ("sim", "hardware"):
@@ -140,6 +141,8 @@ def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, targ
     if goto_start:
         return argv + ["--goto-start"]
     argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed, "--scan-speed", "%g" % scan_speed]
+    if scan_test:
+        argv.append("--scan-test")
     for t in also:
         argv += ["--osc-out", t]
     return argv
@@ -154,13 +157,14 @@ class ShowLink:
         osc = json.load(open(config))["osc"]
         self.status = {"state": "-", "clip": "-", "hub": "-", "progress": 0.0, "scan": -1.0, "speed_now": 0.0,
                        "sequence": "", "next": "", "queue": "", "pending": "", "time_left": 0.0, "fault": "",
-                       "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0}
+                       "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0,
+                       "scan/u": -1.0, "scan/led": 0, "scan/speed": 0.0}
         self.log = queue.Queue()
         self.asks = queue.Queue()                   # show_stream's questions before the real arm moves
         self.proc, self.ip, self.target, self.goto_start = None, None, None, False
         d = dispatcher.Dispatcher()
         for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
-                    "time_left", "fault", "skipped", "energy_now", "clip_energy"):
+                    "time_left", "fault", "skipped", "energy_now", "clip_energy", "scan/u", "scan/led", "scan/speed"):
             d.map("/robot/" + key, self._status_setter(key))
         self.server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", send_port or osc["send_port"]), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -178,11 +182,12 @@ class ShowLink:
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False, scan_speed=1.0):
+    def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False, scan_speed=1.0,
+              scan_test=False):
         if self.running:
             return
         argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
-                           goto_start=goto_start, scan_speed=scan_speed)
+                           goto_start=goto_start, scan_speed=scan_speed, scan_test=scan_test)
         self.ip, self.target, self.goto_start = ip, target, goto_start
         self.spawn(argv)
 

@@ -5,6 +5,7 @@ the show's state machine (show.Runner), instead of one CSV per run.
     python scripts/show_stream.py shows/party.json --sim --minutes 5
     python scripts/show_stream.py shows/party.json --sim --minutes 30 --osc      # TouchDesigner drives it
     python scripts/show_stream.py shows/party.json --hardware --ip IP --speed 0.3 --minutes 10
+    python scripts/show_stream.py shows/party.json --sim --osc --scan-test     # the scan step by step (scan_test.py)
 
 Every segment of the compiled show (shows/*.compiled.json, from `show.py
 build`) was checked in the room at build time and meets the next at rest,
@@ -341,8 +342,8 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
                     osc.send(prev)
                 except Exception:
                     pass                            # status out is best effort; never stop the arm for it
-            if ending and runner.state == "PAUSED":
-                break
+            if (ending or getattr(runner, "ends_when_paused", False)) and runner.state == "PAUSED":
+                break                                 # the run's end; a scan test's Finish
     except StreamFault as e:
         fault = str(e)
     except KeyboardInterrupt:
@@ -772,6 +773,9 @@ def main(argv=None):
                          "for this IP; none: the PC's clock paces)")
     ap.add_argument("--goto-start", action="store_true",
                     help="only move to the start hub (checked against the room, --move-vel %%), then end")
+    ap.add_argument("--scan-test", action="store_true",
+                    help="the scan step by step instead of the show (scan_test.py): /robot/trigger to_scan, "
+                         "'scan F', back, return; /robot/pause finishes at the start pos")
     a = ap.parse_args(argv)
     speed = a.speed if a.speed is not None else (HARDWARE_SPEED if a.hardware else 1.0)
     if not MIN_SPEED <= speed <= 1.0:
@@ -791,7 +795,11 @@ def main(argv=None):
     dt = 1.0 / RATE_HZ
     if not 0.0 < a.scan_speed <= 1.0:
         ap.error("--scan-speed must be within 0..1 (the scan plays at most as fast as built)")
-    runner = S.runner_for(graph, seed=a.seed, scan_speed=a.scan_speed)
+    if a.scan_test:
+        import scan_test
+        runner = scan_test.ScanTest(graph, scan_speed=a.scan_speed)
+    else:
+        runner = S.runner_for(graph, seed=a.seed, scan_speed=a.scan_speed)
     start_q = runner.step(0.0)
 
     def ask(text):

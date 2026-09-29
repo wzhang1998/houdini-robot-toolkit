@@ -284,6 +284,29 @@ show_ui, "Status also to" `127.0.0.1:9002` (the default). Hand on the E-stop.
 Film steps 2 and 4. If TD misbehaves, the show does not depend on it: STOP in
 show_ui or the E-stop.
 
+## 6e. The scan step by step, on the real frame (scan_test_ui.py) 🔴
+
+When the frame and paper are up: line the strip up with them and try
+exposures, one step at a time. `uv run scripts/scan_test_ui.py` (the show in
+its dropdown; TD's pixel_scan follows it as in the show).
+
+1. **Move to start pos** (MoveJ % 10 on the real arm): the scan's home hub.
+2. **Start**: the stream holds the arm there.
+3. **To scan start**: the arm stops at the scan's first frame. Check the
+   strip against the frame: level, 6 cm from the paper (`scan.led_gap_m`),
+   its ends over the rails. Not right: **Back**, End (Finish), fix
+   `canvas` in the show config (or its placeholder position), rebuild, again.
+4. **Scan** at a Scan speed (0.05-1 of the built 0.2 m/s; 0.1 = 0.02 m/s):
+   with `pixel_scan` Enable LEDs on, the strip writes the image.
+5. **Return**: back to the start pos. Scan again at another speed.
+6. **Finish**: back to the start pos, the stream ends and writes its report.
+
+Only the allowed steps are enabled. STOP stops the arm at once (a software
+stop); after a STOP, TD's show_state needs Reset, and Move to start pos
+brings the arm back by the checked route.
+Tried on SimMachine 2026-09-29: every step, a scan at 0.5 (0.1 m/s), Back,
+Finish mid-move; 0 skipped; TD lit the strip over the image only.
+
 ## 7. Review the real-robot trajectory (does not move, Houdini)
 
 The `*_actual_*.csv` produced by Record can be played back directly: select it in robot_arm's **Output > Import CSV** and press Import. Even a locked instance can import now; the file is read live.
