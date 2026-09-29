@@ -28,14 +28,13 @@ LIFT_M = 0.004                       # the dots just in front of the strip's fac
 
 
 def strip_geometry(profile="fr20"):
-    """(offset along the tool's z to the LEDs' face, the strip's length) from
-    the profile's tool (collision.strip_box: its box in the flange's frame)."""
-    import collision as C
-    import robot_profile as RP
-    box = C.strip_box(C.tool_def(RP.load(profile)))
-    if not box:
+    """(offset along the tool's z to the dots, the strip's length): the
+    LEDs' face (show.strip_face) and LIFT_M in front of it."""
+    import show
+    face, length = show.strip_face(profile)
+    if not length:
         raise SystemExit("the profile's tool has no strip")
-    return box["xyz"][2] + box["size"][2] / 2.0 + LIFT_M, box["size"][1]
+    return face + LIFT_M, length
 
 
 def led_positions(R, tcp, face, length, n=LEDS, led0="minus"):
@@ -79,8 +78,8 @@ def glow(stage, path, prim):
 class LedViz:
     def __init__(self, stage, path="/World/LedViz", n=LEDS, led0="minus", gain=1.0):
         from pxr import Gf, Sdf, UsdGeom
-        import gestures as G
-        self.Gf, self.rig, self.n, self.led0, self.gain = Gf, G.Rig(), n, led0, gain
+        import show
+        self.Gf, self.pose, self.n, self.led0, self.gain = Gf, show.tool_pose, n, led0, gain
         self.face, self.length = strip_geometry()
         self.pts = UsdGeom.Points.Define(stage, Sdf.Path(path))
         self.pts.CreatePointsAttr([Gf.Vec3f(0.0, 0.0, -5.0)] * n)
@@ -91,7 +90,7 @@ class LedViz:
         glow(stage, path + "/Glow", self.pts.GetPrim())
 
     def update(self, levels, q):
-        R, tcp, _ = self.rig.tool(q)
+        R, tcp, _ = self.pose(q)
         Gf = self.Gf
         self.pts.GetPointsAttr().Set([Gf.Vec3f(*p) for p in led_positions(R, tcp, self.face, self.length, self.n,
                                                                            self.led0)])

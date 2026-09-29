@@ -65,12 +65,8 @@ def exposed_quad(cfg, u):
 
 class ScanViz:
     def __init__(self, stage, cfg, root="/World/ScanViz"):
-        import collision as C
-        import gestures as G
-        import robot_profile as RP
-        self.cfg, self.rig = cfg, G.Rig()
-        strip = C.strip_box(C.tool_def(RP.load("fr20")))
-        self.half = (max(strip["size"]) if strip else 1.0) / 2.0
+        self.cfg = cfg
+        self.half = (show.strip_face()[1] or 1.0) / 2.0
         UsdGeom.Scope.Define(stage, Sdf.Path(root))
         set_points(curve(stage, root + "/Area", (0.35, 0.35, 0.4), 0.006, closed=True), area_corners(cfg, 0.003))
         self.exposed = UsdGeom.Mesh.Define(stage, Sdf.Path(root + "/Exposed"))
@@ -88,7 +84,7 @@ class ScanViz:
         self.exposed.GetPointsAttr().Set([Gf.Vec3f(*p) for p in exposed_quad(self.cfg, u)] if u > 0 else
                                          [Gf.Vec3f(*HIDDEN)] * 4)
         if leds_on:
-            R, tcp, _ = self.rig.tool(q)
+            R, tcp, _ = show.tool_pose(q)
             ax = (R[0][1], R[1][1], R[2][1])                          # the strip along the flange's y
             set_points(self.leds, [[tcp[j] + ax[j] * k * self.half for j in range(3)] for k in (-1, 1)])
         else:
