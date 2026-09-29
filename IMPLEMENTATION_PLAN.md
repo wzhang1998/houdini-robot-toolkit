@@ -565,6 +565,37 @@ What is left of the build's time is the gestures' IK and FK in pure
 Python (87 %): numpy for them, or the hubs in parallel (each its own
 seed, so a new library), when it matters.
 
+## Stage 11: Tracking, gaze first -- tested on simulated data, then Isaac (2026-09-29, the user's go)
+**Goal**: the arm follows a person safely on top of the greet clips: a
+tracking layer that never makes a sudden move, whatever the data does.
+Defaults agreed: the head first; the track box ~40 x 30 x 15 cm on the
+wall's side, never towards the audience; Ruckig at 30 % of the joints'
+limits; lost: hold 0.7 s, then back to the clip in ~1.5 s.
+1. Simulated tracking data (track_sim.py): `/track/target x y z conf t id`
+   at ~30 Hz in robot-base metres, `/track/lost`; scenarios with a ground
+   truth and OAK-D-like errors (latency 60-110 ms, depth noise, frame
+   jitter, drops) -- walk across, stand still, hand wave, a jump to another
+   person, a one-frame outlier, lost 2 s, lost for good, in and out of the
+   zone, out of reach.
+2. The tracking layer (tracking.py), mode A (gaze): gate (speed, confidence,
+   timeout), One Euro filter, the target clamped to the box, J1 / J5
+   offsets bounded, Ruckig on the offsets, hold then back when lost, every
+   tick's pose checked against the room (else no further). An offline
+   harness (track_eval.py): each scenario on a greet clip at 125 Hz ->
+   joint velocity / acceleration / jerk against the limits, clearance,
+   gaze error, time to engage and to let go; pass / fail.
+3. Isaac (scripts/isaac/run_tracking.py): the same, physics on, scenarios
+   headless with a report and video; a window with a draggable target.
+4. Modes B / C (follow left-right, the hand up-down): an early exit from the
+   clip (transitions.exit_from / ramp_stop), a checked move to the track
+   pose; then SimMachine, then the real arm.
+5. OSC in from TD / the OAK-D process, the same format.
+**Success Criteria**: every scenario passes: joint velocity, acceleration
+and jerk within their share of the limits, no step at engage / lost / back,
+clear of the room by the margins; the gaze error small while tracked.
+**Tests**: track_sim / tracking / track_eval self-tests; the scenario report.
+**Status**: In Progress (1)
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
