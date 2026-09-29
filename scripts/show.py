@@ -590,47 +590,54 @@ def scan_way(rig, q, normal, backs, inward, model, env, home, out, grid=True):
     """The approach at a scan end and the checked route between it and home
     (out: from the approach to home, else home to it). Candidates back
     (backs, m) from the paper, lower (0.1 m steps) and slid inward (0.1 m
-    steps towards the scan's middle; the LEDs are off there), the gentlest
-    first; the first clear by the moves' margins whose route is a straight
-    MoveJ or cuRobo's detour (when its service runs) -- the grid's folded
-    postures (the arm laid towards the floor, 2026-09-28) only when none is.
-    When cuRobo runs, the candidates are tried with it first (no grid: a
-    second or two each), then -- grid=True -- once more with the grid, as
-    without it. (approach, (back, down, inward), path, why) or None."""
+    steps towards the scan's middle; the LEDs are off there), clear by the
+    moves' margins, the gentlest first. Three rounds over them, each only
+    when the ones before found nothing, each taking its first:
+      1. a straight MoveJ, or one after a key pose where J6 alone turns the
+         strip level (it turns parallel to the paper, 0.2 m and more from
+         it; the upright strip then swings no rail over);
+      2. cuRobo's detour, when its service runs (the shortest, not folded);
+      3. grid=True: the grid's detour -- folded postures, the arm laid
+         towards the floor (2026-09-28), so last.
+    (The build spent most of its 33 min running the grid on every
+    candidate while looking for a straight one, 2026-09-29.)
+    (approach, (back, down, inward), path, why) or None."""
     import curobo_bridge
-    if grid and curobo_bridge.available():
-        got = scan_way(rig, q, normal, backs, inward, model, env, home, out, grid=False)
-        if got is not None:
-            return got
     import safe_move
     menv = safe_move.move_env(env)
-    first = None
-    cands = sorted(((b, d, s) for b in backs for d in (0.0, 0.1, 0.2, 0.3) for s in (0.0, 0.1, 0.2, 0.3)),
-                   key=lambda c: (c[0] + c[1] + c[2], c))
-    for b, d, s in cands:
+
+    def route(a, **kw):
+        return safe_move.route(a, home, env, model, **kw) if out else safe_move.route(home, a, env, model, **kw)
+
+    cands = []
+    for b, d, s in sorted(((b, d, s) for b in backs for d in (0.0, 0.1, 0.2, 0.3) for s in (0.0, 0.1, 0.2, 0.3)),
+                          key=lambda c: (c[0] + c[1] + c[2], c)):
         a = approach_pose(rig, q, normal, b, d, [x * s for x in inward])
-        if a is None or safe_move.blocked(model, menv, a):
-            continue
-        path, why = safe_move.route(a, home, env, model, grid=grid) if out else safe_move.route(home, a, env, model, grid=grid)
-        if path is None:
-            continue
-        got = (a, (b, d, s), path, why)
-        if len(path) == 1 or "cuRobo" in why.split(";")[-1]:   # a straight MoveJ, or cuRobo's
-            return got                                     # detour (the shortest, not folded down)
-        first = first or got
-        # a key pose between: J6 alone turns the strip level there (it
-        # turns parallel to the paper, 0.2 m and more from it), and the
-        # arm goes home from that -- the upright strip swings no rail over
+        if a is not None and not safe_move.blocked(model, menv, a):
+            cands.append((a, (b, d, s)))
+    for a, key in cands:                                   # 1: straight, or straight after J6
+        path, why = route(a, grid=False, curobo=False)
+        if path is not None:
+            return a, key, path, why
         for j6 in (-90.0, 90.0, home[5]):
             v = list(a[:5]) + [j6]
-            if (safe_move.blocked(model, menv, v) or safe_move.segment_clear(model, menv, a, v) is not None):
+            if safe_move.blocked(model, menv, v) or safe_move.segment_clear(model, menv, a, v) is not None:
                 continue
-            p2, why2 = (safe_move.route(v, home, env, model, grid=grid) if out
-                        else safe_move.route(home, v, env, model, grid=grid))
-            if p2 is not None and len(p2) == 1:
-                return (a, (b, d, s), [v] + p2 if out else p2 + [a],
+            p2, why2 = route(v, grid=False, curobo=False)
+            if p2 is not None:
+                return (a, key, [v] + p2 if out else p2 + [a],
                         "the strip turned level at J6 %.0f there, then %s" % (j6, why2))
-    return first
+    if curobo_bridge.available():                          # 2: cuRobo
+        for a, key in cands:
+            path, why = route(a, grid=False)
+            if path is not None:
+                return a, key, path, why
+    if grid:                                               # 3: the grid
+        for a, key in cands:
+            path, why = route(a, curobo=False)
+            if path is not None:
+                return a, key, path, why
+    return None
 
 
 def scan_line(cfg, env, prof, dt=0.016):

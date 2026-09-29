@@ -368,17 +368,43 @@ def sdf(o, p):
     raise ValueError(t)
 
 
+GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
+BROAD_PHASE = True          # check(): skip an object a lower bound already puts beyond what matters
+
+
 def capsule_distance(o, a, b, r):
-    """Signed clearance between a capsule and a shape (negative = overlap)."""
+    """Signed clearance between a capsule and a shape (negative = overlap).
+    A halfspace and a sphere in closed form; a box or cylinder by a golden-
+    section search along the segment (the sdf of a convex set is convex
+    along a line) -- the same to 1e-7 m as the ternary search it replaced,
+    at half the evaluations (2026-09-29, the build's time went there)."""
+    t = o["type"]
+    if t == "halfspace":                   # linear along the segment: an end is closest
+        return min(sdf(o, a), sdf(o, b)) - r
+    if t == "sphere":
+        return _seg_point_dist(a, b, o["center"]) - o["radius"] - r
     f = lambda s: sdf(o, (a[0] + s * (b[0] - a[0]), a[1] + s * (b[1] - a[1]), a[2] + s * (b[2] - a[2])))
     lo, hi = 0.0, 1.0
-    for _ in range(40):                    # sdf of a convex set is convex along a line
-        m1, m2 = lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0
-        if f(m1) < f(m2):
-            hi = m2
+    x1, x2 = hi - GOLDEN, lo + GOLDEN
+    f1, f2 = f(x1), f(x2)
+    for _ in range(36):
+        if f1 < f2:
+            hi, x2, f2 = x2, x1, f1
+            x1 = hi - GOLDEN * (hi - lo)
+            f1 = f(x1)
         else:
-            lo = m1
-    return min(f(0.0), f(1.0), f((lo + hi) / 2.0)) - r
+            lo, x1, f1 = x1, x2, f2
+            x2 = lo + GOLDEN * (hi - lo)
+            f2 = f(x2)
+    return min(f(0.0), f(1.0), f1, f2) - r
+
+
+def capsule_lower_bound(o, a, b, r):
+    """A lower bound of capsule_distance at one sdf evaluation: the sdf
+    changes no faster than the point moves, so no point of the segment is
+    nearer than its middle's distance less half its length."""
+    m = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0)
+    return sdf(o, m) - math.dist(a, b) / 2.0 - r
 
 
 # --------------------------------------------------------------------------
@@ -403,12 +429,16 @@ def check(model, env, times, joints, max_violations=20):
             for k, (name, a, b, r) in enumerate(caps):
                 if name in FIXED_LINKS:
                     continue                # bolted down, or turning only about the base axis
-                d = capsule_distance(o, a, b, r)
-                if d < best_env[0]:
-                    best_env = (d, {"frame": f, "t": round(t, 4), "link": name, "with": o["name"]})
                 limit = o.get("margin_m", margin) if o["role"] == "obstacle" else 0.0
                 if contact_only(model, k, o["name"]):
                     limit = 0.0
+                if BROAD_PHASE and o["type"] in ("box", "cylinder"):
+                    lb = capsule_lower_bound(o, a, b, r)
+                    if lb >= limit and lb >= best_env[0]:
+                        continue            # it can neither be too near nor the nearest
+                d = capsule_distance(o, a, b, r)
+                if d < best_env[0]:
+                    best_env = (d, {"frame": f, "t": round(t, 4), "link": name, "with": o["name"]})
                 if d < limit and len(viol) < max_violations:
                     viol.append({"frame": f, "t": round(t, 4), "kind": o["role"], "link": name,
                                  "with": o["name"], "clearance_m": round(d, 4)})
@@ -568,6 +598,45 @@ if __name__ == "__main__":
         brute = min(sdf(o, tuple(a[k] + s / 2000.0 * (b[k] - a[k]) for k in range(3))) for s in range(2001)) - 0.1
         err = max(err, abs(exact - brute))
     ok("capsule-box clearance matches brute force", err < 1e-3, "worst %.1e m over 200 cases" % err)
+
+    def ternary(o, a, b, r):                          # capsule_distance before 2026-09-29: the reference
+        f = lambda s: sdf(o, (a[0] + s * (b[0] - a[0]), a[1] + s * (b[1] - a[1]), a[2] + s * (b[2] - a[2])))
+        lo, hi = 0.0, 1.0
+        for _ in range(40):
+            m1, m2 = lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0
+            if f(m1) < f(m2):
+                hi = m2
+            else:
+                lo = m1
+        return min(f(0.0), f(1.0), f((lo + hi) / 2.0)) - r
+    worst = {}
+    for kind in ("box", "cylinder", "sphere", "halfspace"):
+        e = 0.0
+        for _ in range(400):
+            c = [random.uniform(-1, 1) for _ in range(3)]
+            o = {"type": kind, "center": c, "size": [random.uniform(0.1, 0.8) for _ in range(3)],
+                 "yaw_deg": random.uniform(0, 90), "radius": random.uniform(0.05, 0.5), "height": random.uniform(0.1, 1.0),
+                 "normal": [random.uniform(-1, 1) for _ in range(3)], "offset": random.uniform(-1, 1)}
+            a = tuple(random.uniform(-1.5, 1.5) for _ in range(3))
+            b = tuple(random.uniform(-1.5, 1.5) for _ in range(3))
+            r = random.uniform(0.0, 0.1)
+            e = max(e, abs(capsule_distance(o, a, b, r) - ternary(o, a, b, r)))
+        worst[kind] = e
+    ok("capsule clearance as before for every shape (halfspace and sphere exact, boxes and cylinders by golden "
+       "section)", max(worst.values()) < 1e-6, str({k: "%.1e" % v for k, v in worst.items()}))
+    room = os.path.join(ROOT, "envs", "volvox_lab.usda")
+    if os.path.exists(room):
+        renv = load_env(room)
+        rng = random.Random(3)
+        qs = [[rng.uniform(-170, 170), rng.uniform(-150, -30), rng.uniform(-150, 150), rng.uniform(-200, 20),
+               rng.uniform(-150, 150), rng.uniform(-150, 150)] for _ in range(60)]
+        ts = [0.1 * k for k in range(len(qs))]
+        fast = check(m, renv, ts, qs, max_violations=1000)
+        BROAD_PHASE = False
+        full = check(m, renv, ts, qs, max_violations=1000)
+        BROAD_PHASE = True
+        ok("check skips far objects by a lower bound, and reports exactly what the full search does", fast == full,
+           str((fast["min_env_clearance_m"], full["min_env_clearance_m"], len(fast["violations"]), len(full["violations"]))))
     # slow zone: fast TCP inside is flagged, slow is not
     zone = {"name": "near_operator", "type": "sphere", "center": list(tcp), "radius": 0.3, "role": "slow", "tcp_speed_mps": 0.25}
     envz = dict(floor, objects=floor["objects"] + [zone])

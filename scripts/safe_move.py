@@ -79,6 +79,8 @@ def blocked(model, menv, q):
         for k, (name, a, b, r) in enumerate(caps):
             if name in C.FIXED_LINKS:
                 continue
+            if o["type"] in ("box", "cylinder") and C.capsule_lower_bound(o, a, b, r) >= limit:
+                continue                                 # beyond the margin whatever the exact distance
             d = C.capsule_distance(o, a, b, r)
             if C.contact_only(model, k, o["name"]):
                 d += limit                               # the upper arm's root: contact only (collision.check agrees)
@@ -125,10 +127,11 @@ def _within(q, limits, pad=2.0):
     return all(lo + pad <= x <= hi - pad for x, (lo, hi) in zip(q, limits))
 
 
-def route(q_from, q_to, env, model=None, limits=None, grid=True):
+def route(q_from, q_to, env, model=None, limits=None, grid=True, curobo=True):
     """(waypoints after q_from ending at q_to, description) or (None, why).
     grid=False: no search of folded postures when neither the straight
-    move nor cuRobo's path is clear (a caller with other poses to try)."""
+    move nor cuRobo's path is clear; curobo=False: cuRobo not asked (a
+    caller with other poses to try, the cheap searches first)."""
     model = model or C.load_model("fr20")
     menv = move_env(env)
     direct = segment_clear(model, menv, q_from, q_to)
@@ -139,12 +142,13 @@ def route(q_from, q_to, env, model=None, limits=None, grid=True):
         import robot_profile as RP
         limits = RP.motion_limits(RP.load("fr20"))
     # cuRobo's path when its service runs, every leg checked here; else the grid
-    import curobo_bridge
-    path, how = curobo_bridge.route(q_from, q_to, menv, model, limits,
-                                    lambda a, b: segment_clear(model, menv, a, b), lambda q: _within(q, limits))
-    if path is not None:
-        return path, why + "; " + how
-    why += "; " + how
+    if curobo:
+        import curobo_bridge
+        path, how = curobo_bridge.route(q_from, q_to, menv, model, limits,
+                                        lambda a, b: segment_clear(model, menv, a, b), lambda q: _within(q, limits))
+        if path is not None:
+            return path, why + "; " + how
+        why += "; " + how
     if not grid:
         return None, why
     # folded postures: J2 / J3 on a grid, the wrist already at the goal's.
