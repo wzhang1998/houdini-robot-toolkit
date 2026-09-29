@@ -682,7 +682,8 @@ strip in real time (the user: no renders while tuning).
 time, TD's STOP holds. 3. TD: `idle_leds` (inputs, layers, table, cap,
 gate) and a second DMX Out to Isaac. 4. TD's canvas preview on the paper, live (canvas_link.py, isaac/canvas_viz.py,
 run_show --canvas). 5. offline: the canvas model and pixel_scan's image in Python for
-headless videos; (later) bake the LEDs per clip.
+headless videos. 6. TD in a video: run_show --record keeps the arm, the status, TD's LEDs
+and canvas as they played live (td_capture.py); replay_render.py renders it at leisure, any camera.
 **Success Criteria**: TD leaves OFFLINE with Isaac as the player; the LEDs
 TD sends show on Isaac's strip within a frame; dark outside greet + IDLE.
 **Tests**: show self-test (beat at the played tempo, wall-time clip_t,
@@ -690,7 +691,7 @@ facing 1 / 0, greet faces the guests more than rest, the OSC list);
 artnet self-test (ArtDmx parse, levels, the receiver's newest packet);
 led_viz self-test (60 along the strip, LED 0's end); an Isaac snapshot
 with a fake Art-Net sender (geo/isaac/leds_live_test.png).
-**Status**: In Progress (steps 1-4 done; the idle LEDs play wherever /robot/paper < 0.001)
+**Status**: In Progress (steps 1-6 done; the idle LEDs play wherever /robot/paper < 0.001; tuning with the user)
 
 ## Stage 15: The stream's lag held over a day (2026-09-29, from 11 real-arm runs)
 **Goal**: The lag between command and arm (~105-143 ms with the -950 ppm

@@ -10,6 +10,10 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
         --auto-trigger 60 --seed 1 --camera audience --video       the 5 min demo, recorded
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455 \
         --canvas 6457
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 5 --auto-trigger 60 \
+        --seed 1 --osc-out 127.0.0.1:9002 --record
+        TD live, recorded (td_capture.py: the arm, the status, TD's LEDs and canvas) to render later with
+        replay_render.py -- TD in real time as in the show, the video at leisure
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
         --auto-trigger 60 --seed 1 --camera audience --canvas-sim --video
         the demo with the paper as TD would show it (canvas_model.py: pixel_scan and canvas_sim in numpy;
@@ -76,8 +80,14 @@ ap.add_argument("--canvas", type=int, default=0, metavar="PORT",
                      "flat exposed area; implies --realtime")
 ap.add_argument("--canvas-sim", action="store_true",
                 help="the paper as TD's canvas preview would show it, without TD (canvas_model.py): for videos")
+ap.add_argument("--record", action="store_true",
+                help="keep the run with TD's LEDs and canvas (<out>/td_capture_<stamp>/, td_capture.py) for "
+                     "replay_render.py; listens on --artnet (6455) and --canvas (6457) unless given; real time")
 ap.add_argument("--canvas-image", default="", help="the image the --canvas-sim scan writes (default: TD's banana)")
 args = ap.parse_args()
+if args.record:
+    args.artnet = args.artnet or 6455
+    args.canvas = args.canvas or 6457
 
 from isaacsim import SimulationApp  # noqa: E402
 
@@ -220,6 +230,15 @@ def main():
         print("[show] canvas simulated (canvas_model.py): %s" % (args.canvas_image or CM.BANANA))
     realtime = args.realtime or bool(args.artnet) or bool(args.canvas)
     wall0, steps = time.monotonic(), 0
+    recorder, next_rec, rec_seen = None, 0.0, -1
+    if args.record:
+        import td_capture
+        cap_dir = os.path.join(args.out, "td_capture_%s" % stamp)
+        recorder = td_capture.Writer(cap_dir, {
+            "config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "seed": args.seed,
+            "auto_trigger": args.auto_trigger, "auto_triggers": args.auto_triggers, "stamp": stamp,
+            "artnet_port": args.artnet, "canvas_port": args.canvas, "fps": FPS_VIDEO})
+        print("[show] recording to %s" % cap_dir)
     if args.video:
         import shutil
         from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
@@ -268,6 +287,13 @@ def main():
             st = runner.status()
             corner.append((shots / float(FPS_VIDEO), overlay.label(st["state"], st["clip"], st["scan"])))
             shots += 1
+        if recorder is not None and runner.clock >= next_rec:          # 30 a second, whether drawn or not
+            recorder.frame(runner.clock, runner.status(), q, rx.poll() if rx is not None else None)
+            got = canvas_rx.poll() if canvas_rx is not None else None
+            if got is not None and canvas_rx.packets != rec_seen:
+                recorder.canvas(runner.clock, *got)
+                rec_seen = canvas_rx.packets
+            next_rec += 1.0 / FPS_VIDEO
         sim = np.degrees(robot.get_joint_positions(joint_indices=np.array(idx)))
         if runner.clock > 1.0:                                     # settle first
             for j in range(6):
@@ -313,6 +339,9 @@ def main():
         if end is not None and runner.clock >= end:
             break
     log.close()
+    if recorder is not None:
+        recorder.close()
+        print("[show] recorded %d frames, %d canvas images: %s" % (recorder.frames, recorder.images, cap_dir))
     video = (encode_video(app, frames, corner, shots, os.path.join(args.out, "isaac_show_%s.mp4" % stamp), FPS_VIDEO)
              if frames is not None else None)
     played = [c for _, c in runner.history]
@@ -325,7 +354,8 @@ def main():
                "tracking_max_deg": [round(x, 3) for x in worst],
                "tracking_rms_deg": [round(math.sqrt(s / n), 4) if n else None for s in sq],
                "arm_room_contacts": len(contacts), "first_contacts": contacts[:5],
-               "video": video}
+               "video": video,
+               "capture": os.path.relpath(cap_dir, ROOT).replace("\\", "/") if recorder is not None else None}
     with open(os.path.join(args.out, "isaac_show_%s.json" % stamp), "w") as f:
         json.dump(summary, f, indent=1)
     print("[show] summary " + json.dumps(summary))
