@@ -716,6 +716,31 @@ missing; every correction at a rest; no feedback: off).
 **Status**: Complete (on the robot PC: check playback.toml has the section;
 a 1-2 h run to see the lag held)
 
+## Stage 16: the library reviewed in Isaac (2026-09-29, plan A)
+**Goal**: The show's clip library as the Houdini review showed it
+(render_clip_review.py: one clip after another, its metadata burnt in, a
+contact sheet), in Isaac's lab room with physics on:
+scripts/isaac/record_library.py plays every idle clip of party, the two
+big wipes of party_bigwipe (low_wipe_rows, greet_wipe_cols) and the scan,
+a cut to each clip's first pose, the card held 0.6 s.
+**Success Criteria**: per camera (room, audience) one mp4 with each
+clip's card in the corner (name, length, n/N; hub, family / intent,
+measured action; bpm made and played, energy, intensity; peak TCP speed,
+heights, the room's clearance, the wrist's share; the simulation's
+tracking and arm-room contacts) and a labelled contact sheet; a JSON of
+chapters (where each clip starts) with the tracking and contacts per
+clip; the lab look, the guides hidden, lights and cameras as they are.
+Out: geo/isaac/review/ (not in git).
+**Tests**: overlay self-test (clip_card for a gesture, a dance, a
+showpiece, the scan; lines within 52 characters, no ASS braces; block pads
+the lines to one column); record_library self-test (steps, frames and the
+poster frame per clip; the playlist: every idle clip, the big wipes, the
+scan last; the sheet's caption).
+**Status**: Complete (73 clips, 698 s of video a camera, both cameras in
+1064 s: geo/isaac/review/party_library_{room,audience}.mp4, _sheet.jpg,
+party_library.json; tracking worst 0.96 deg (low_14_pop), no arm-room
+contact in any clip)
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
