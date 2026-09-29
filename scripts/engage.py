@@ -95,6 +95,240 @@ def face_pose(rig, hub_q, axes, offset, aim, near=None):
     return rig.solve(p, z, 0.0, near or hub_q, R=R)
 
 
+DWELL_S = 1.0                      # on the spot this long (not walking) before the arm turns to them
+SPOT_OUT_M = 0.45                  # ... and off it only past this (hysteresis: the edge does not flap)
+LEAVE_S = 0.7                      # off the spot or unseen this long: goodbye
+MAX_S = 30.0                       # at most this long for one person (the user)
+REST_S = 3.0                       # after a goodbye, nobody new for this long
+PERK_S, BYE_S = 0.6, 0.5           # the perk-up and the nod, held
+PERK_UP_M = 0.35                   # perking up: looks this much above the head, the tool at the box's top, leaning in
+NOD_DOWN_M = 0.6                   # the nod: looks this much below the head
+HAND_UP_M = 0.15                   # a hand above (head - this) is raised: mode C follows it
+C_RANGE_M = (1.3, 2.1)             # a raised hand's height mapped onto the box's height
+SHARE = 0.35                       # of the joints' velocity, acceleration and jerk limits
+SLOW_SHARE = 0.08                  # ... near a slow zone
+SLOW_NEAR_M = 0.15
+BRANCH_DEG = 90.0                  # a target a joint this far from the pose sent is refused (another IK branch)
+PLAN_STEP_S = 0.05                 # a planned move is checked this often along it
+STATES = ("OFF", "ENTER", "PERK", "TRACK", "BYE", "RETURN")
+
+
+class Engage:
+    """The interactive mode, tick by tick: step(q_clip, now) -> the pose to
+    send. OFF: the clip's pose as it is (the caller's, gaze included). Someone
+    on the spot DWELL_S, not walking: ENTER -- a planned move from the clip's
+    pose and speed (every PLAN_STEP_S of it checked first; not clear: no
+    engagement) to the perk-up pose -- PERK (held) -- TRACK (B: the tool
+    along the wall with them; C: up with a raised hand, facing it) -- off the
+    spot or unseen LEAVE_S, or MAX_S: BYE (a nod) -- RETURN (planned, checked)
+    to the hub -- OFF with `resume` set once: the caller starts the clips
+    again from the hub. Every pose sent is checked; not clear: the arm stops
+    where it is. Near a slow zone the speed limit is SLOW_SHARE."""
+
+    def __init__(self, cfg, hub_q, env, model, dt=0.008, rig=None):
+        import collision as C
+        import gestures as G
+        import robot_profile as RP
+        import transitions as T
+        from ruckig import InputParameter, OutputParameter, Result, Ruckig, Trajectory
+        self.C, self.Result, self.Trajectory, self.RuckigCls = C, Result, Trajectory, Ruckig
+        self.rig = rig or G.Rig()
+        self.hub, self.env, self.model, self.dt = list(hub_q), env, model, dt
+        self.spot, self.r = track_spot(cfg, hub_q)
+        self.axes = box_axes(cfg, hub_q, self.spot)
+        self.slow = [o for o in (env or {}).get("objects", []) if o["role"] == "slow"]
+        prof = RP.load("fr20")
+        vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
+        self.vmax = [v * SHARE for v in vel]
+        self.vslow = [v * SLOW_SHARE for v in vel]
+        self.otg, self.inp, self.out = Ruckig(6, dt), InputParameter(6), OutputParameter(6)
+        self.inp.max_velocity = list(self.vmax)
+        self.inp.max_acceleration = [a * SHARE for a in acc]
+        self.inp.max_jerk = [j * SHARE for j in T.default_jerk(acc)]
+        self.state, self.t_state, self.who, self.t_engaged = "OFF", 0.0, None, 0.0
+        self.people = {}                 # pid -> {"pos", "hist", "in_since", "last", "speed", "done"}
+        self.hands = {}                  # pid -> (x, y, z, t)
+        self.q_prev = []                 # the last poses sent (for the speed at ENTER)
+        self.resume = False
+        self.rest_until = -1.0
+        self.unsafe = self.refused = self.engagements = 0
+        self.q = list(hub_q)
+
+    # --- the people -------------------------------------------------------------
+    def _on_spot(self, p, r):
+        return math.dist(p[:2], self.spot) <= r
+
+    def update(self, people, now, hands=()):
+        """people: [(pid, x, y, z, conf, t)]; hands: [(pid, x, y, z, conf, t)] (a hand each, raised or not)."""
+        import tracking as TR
+        for pid, x, y, z, conf, t in people:
+            if conf < TR.MIN_CONF:
+                continue
+            pr = self.people.get(pid)
+            if pr is None or now - pr["last"] > LEAVE_S:
+                pr = self.people[pid] = {"hist": [], "in_since": None, "done": False}
+            pr.update(pos=(x, y, z), last=now)
+            pr["hist"].append((t, (x, y, z)))
+            while pr["hist"] and pr["hist"][0][0] < t - 2.0 * TR.SPEED_WINDOW_S:
+                del pr["hist"][0]
+            pr["speed"] = TR._walking_speed(pr["hist"], t)
+            inside = self._on_spot((x, y), self.r if pr["in_since"] is None else SPOT_OUT_M)
+            if inside and pr["in_since"] is None:
+                pr["in_since"] = now
+            elif not inside:
+                pr["in_since"], pr["done"] = None, False         # stepped off: may come again
+        for pid, x, y, z, conf, t in hands:
+            if conf >= TR.MIN_CONF:
+                self.hands[pid] = (x, y, z, now)
+        for pid in [k for k, pr in self.people.items() if now - pr["last"] > LEAVE_S]:
+            del self.people[pid]
+
+    def _candidate(self, now):
+        import tracking as TR
+        ok = [(pr["in_since"], pid) for pid, pr in self.people.items()
+              if pr["in_since"] is not None and now - pr["in_since"] >= DWELL_S and not pr["done"]
+              and pr.get("speed") is not None and pr["speed"] <= TR.PASSER_MPS]
+        return min(ok)[1] if ok else None
+
+    # --- the motion -------------------------------------------------------------
+    def _clear(self, q):
+        rep = self.C.check(self.model, self.env, [0.0], [q])
+        return rep["ok"]
+
+    def _plan_ok(self, target):
+        """The move from where the arm is now to target, checked every PLAN_STEP_S."""
+        from ruckig import InputParameter
+        inp = InputParameter(6)
+        for k in ("current_position", "current_velocity", "current_acceleration", "max_velocity",
+                  "max_acceleration", "max_jerk"):
+            setattr(inp, k, list(getattr(self.inp, k)))
+        inp.target_position, inp.target_velocity = list(target), [0.0] * 6
+        traj = self.Trajectory(6)
+        if self.RuckigCls(6).calculate(inp, traj) not in (self.Result.Working, self.Result.Finished):
+            return False
+        n = max(1, int(traj.duration / PLAN_STEP_S))
+        return all(self._clear(list(traj.at_time(traj.duration * i / n)[0])) for i in range(n + 1))
+
+    def _pose(self, offset, aim):
+        """face_pose on the branch of the pose last sent (self.q); None when out of reach or on
+        another branch (a joint BRANCH_DEG or more away: that way lies a flip, not a turn)."""
+        q = face_pose(self.rig, self.hub, self.axes, offset, aim, near=self.q)
+        if q is None or max(abs(a - b) for a, b in zip(q, self.q)) >= BRANCH_DEG:
+            return None
+        return q
+
+    def _head(self):
+        pr = self.people.get(self.who)
+        return pr["pos"] if pr else None
+
+    def _set(self, state, now):
+        self.state, self.t_state = state, now
+
+    def _track_target(self, now):
+        """TRACK's pose: B along with the person, C up with a raised hand."""
+        head = self._head()
+        if head is None:
+            return None, "B"
+        du = (head[0] - self.spot[0]) * self.axes[0][0] + (head[1] - self.spot[1]) * self.axes[0][1]
+        hand = self.hands.get(self.who)
+        if hand is not None and now - hand[3] <= LEAVE_S and hand[2] > head[2] - HAND_UP_M:
+            f = (hand[2] - C_RANGE_M[0]) / (C_RANGE_M[1] - C_RANGE_M[0])
+            lo, hi = BOX_M[1]
+            up = lo + (hi - lo) * max(0.0, min(1.0, f))
+            return self._pose((du, up, 0.03), hand[:3]), "C"
+        return self._pose((du, 0.0, 0.03), head), "B"
+
+    def step(self, q_clip, now):
+        """The pose to send now; self.state says which mode."""
+        self.resume = False
+        if self.state == "OFF":
+            self.q_prev = (self.q_prev + [list(q_clip)])[-3:]
+            who = self._candidate(now) if now >= self.rest_until else None
+            if who is not None:
+                self._start(who, q_clip, now)
+            if self.state == "OFF":
+                self.q = list(q_clip)
+                return self.q
+        head = self._head()
+        gone = head is None or (self.people[self.who]["in_since"] is None)
+        if self.state in ("PERK", "TRACK") and gone:
+            if now - self.t_gone >= LEAVE_S:
+                self._goodbye(now)
+        else:
+            self.t_gone = now
+        if self.state == "TRACK" and now - self.t_engaged >= MAX_S:
+            self._goodbye(now)
+        target = None
+        if self.state == "ENTER":
+            if self.reached:
+                self._set("PERK", now)
+        elif self.state == "PERK":
+            if now - self.t_state >= PERK_S:
+                self._set("TRACK", now)
+        if self.state == "TRACK":
+            target, self.mode = self._track_target(now)
+        elif self.state == "BYE":
+            if self.reached and now - self.t_state >= BYE_S:
+                if self._plan_ok(self.hub):
+                    self._set("RETURN", now)
+                    target = self.hub
+                else:
+                    self.refused += 1                      # wait where it is, try again
+        elif self.state == "RETURN" and self.reached:
+            self._set("OFF", now)
+            self.resume, self.q_prev = True, []
+            self.rest_until = now + REST_S
+            self.who = None
+            self.q = list(self.hub)
+            return self.q
+        if target is not None:
+            self.inp.target_position, self.inp.target_velocity = list(target), [0.0] * 6
+        near = self.slow and any(self.C.sdf(o, self.rig.tool(self.q)[1]) < SLOW_NEAR_M for o in self.slow)
+        self.inp.max_velocity = list(self.vslow if near else self.vmax)
+        res = self.otg.update(self.inp, self.out)
+        q = list(self.out.new_position)
+        if not self._clear(q):
+            self.unsafe += 1                               # stop where it is (the last pose sent was clear)
+            self.inp.target_position = list(self.inp.current_position)
+            self.inp.current_velocity = [0.0] * 6
+            self.inp.current_acceleration = [0.0] * 6
+            return self.q
+        self.out.pass_to_input(self.inp)
+        self.reached = res == self.Result.Finished
+        self.q = q
+        return q
+
+    def _start(self, who, q_clip, now):
+        self.q = list(q_clip)
+        head = self.people[who]["pos"]
+        perk = self._pose((0.0, BOX_M[1][1], BOX_M[2][1]), (head[0], head[1], head[2] + PERK_UP_M))
+        dt = self.dt
+        qs = self.q_prev
+        v = [(b - a) / dt for a, b in zip(qs[-2], qs[-1])] if len(qs) >= 2 else [0.0] * 6
+        a = ([(c - 2 * b + x) / dt ** 2 for x, b, c in zip(qs[-3], qs[-2], qs[-1])] if len(qs) >= 3 else [0.0] * 6)
+        self.inp.current_position = list(q_clip)
+        self.inp.current_velocity = [max(-m, min(m, x)) for x, m in zip(v, self.vmax)]
+        self.inp.current_acceleration = [max(-m, min(m, x)) for x, m in zip(a, self.inp.max_acceleration)]
+        if perk is None or not self._plan_ok(perk):
+            self.refused += 1
+            self.people[who]["done"] = True                # not now: they may step off and on again
+            return
+        self.who, self.t_engaged, self.t_gone, self.reached, self.mode = who, now, now, False, "B"
+        self.people[who]["done"] = True                    # once per stay on the spot
+        self.inp.target_position, self.inp.target_velocity = list(perk), [0.0] * 6
+        self.engagements += 1
+        self._set("ENTER", now)
+
+    def _goodbye(self, now):
+        head = self._head() or (self.spot[0], self.spot[1], 1.6)
+        cur = self.inp.current_position
+        nod = self._pose((0.0, 0.0, 0.0), (head[0], head[1], head[2] - NOD_DOWN_M))
+        self.inp.target_position = list(nod if nod is not None else cur)
+        self.inp.target_velocity = [0.0] * 6
+        self.reached = False
+        self._set("BYE", now)
+
+
 def self_test():
     import json
     import collision as C
@@ -156,6 +390,82 @@ def self_test():
           "room's margins" % (n, 1000 * BOX_ROOM_M), not bad, bad[:3])
     check("... one branch: no joint turns more than 25 deg between neighbouring poses (5 cm apart)", jump < 25.0,
           round(jump, 1))
+
+    # --- the state machine, the clip at rest at the hub, people at 30 Hz -------------------
+    env0 = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
+    import robot_profile as RP
+    vel = RP.velocity_limits(RP.load("fr20"))
+
+    def run(person, dur, hand=None):
+        """person(t) -> (du along the spot, dv across, z) or None; hand(t) -> z or None. The run's log."""
+        en = Engage(cfg, hub, env0, model)
+        log, dt = [], en.dt
+        for i in range(int(dur / dt)):
+            now = i * dt
+            if i % 4 == 0:                                   # ~31 Hz, as the data
+                p = person(now)
+                ppl, hands = [], []
+                if p is not None:
+                    du, dv, z = p
+                    x = spot[0] + du * axes[0][0] + dv * axes[2][0]
+                    y = spot[1] + du * axes[0][1] + dv * axes[2][1]
+                    ppl.append((1, x, y, z, 0.9, now))
+                    hz = hand(now) if hand else None
+                    if hz is not None:
+                        hands.append((1, x + 0.2 * axes[0][0], y + 0.2 * axes[0][1], hz, 0.9, now))
+                en.update(ppl, now, hands)
+            q = en.step(hub, now)
+            log.append((now, en.state, list(q), en.resume, getattr(en, "mode", None)))
+        return en, log
+
+    def first(log, st):
+        return next((t for t, s, *_ in log if s == st), None)
+
+    stay = lambda t: (0.0, 0.0, 1.62) if t >= 1.0 else (0.0, 2.0, 1.62)     # steps onto the spot at 1 s
+    en, log = run(lambda t: stay(t) if t < 12.0 else (0.0, 2.0, 1.62), 20.0)
+    t_enter, t_track = first(log, "ENTER"), first(log, "TRACK")
+    check("steps onto the spot: the arm turns to them after %.0f s on it (ENTER), perks up, then follows (TRACK)"
+          % DWELL_S, t_enter is not None and DWELL_S + 1.0 <= t_enter < DWELL_S + 1.5 and t_track is not None
+          and t_track > t_enter, (t_enter, t_track))
+    q_tr = [q for t, s, q, *_ in log if s == "TRACK" and t <= 10.0][-1]          # still on the spot
+    R_, tp, d_ = S.tool_pose(q_tr)
+    to = _unit((spot[0] - tp[0], spot[1] - tp[1], 1.62 - tp[2]))
+    check("... the tool faces them", math.degrees(math.acos(min(1.0, _dot(d_, to)))) < 5.0,
+          round(math.degrees(math.acos(min(1.0, _dot(d_, to)))), 1))
+    t_bye, t_off = first(log, "BYE"), next((t for t, s, q, r, m in log if r), None)
+    q_end = log[-1][2]
+    check("steps off at 12 s: a nod %.1f s later, back to the hub, the clips told to go on (once)" % LEAVE_S,
+          t_bye is not None and 12.0 + LEAVE_S - 0.1 <= t_bye < 12.0 + LEAVE_S + 0.3 and t_off is not None
+          and sum(r for *_, r, m in log) == 1 and max(abs(a - b) for a, b in zip(q_end, hub)) < 1e-6
+          and log[-1][1] == "OFF", (t_bye, t_off))
+    peak = max(max(abs(b - a) / en.dt / v for a, b, v in zip(x[2], y[2], vel)) for x, y in zip(log, log[1:]))
+    check("... every joint within %.0f %% of its speed limit, every pose clear" % (100 * SHARE),
+          peak <= SHARE * 1.01 and en.unsafe == 0, (round(peak, 3), en.unsafe))
+
+    sway = lambda t: (0.0 if t < 5.0 else 0.25 * math.sin(2 * math.pi * (t - 5.0) / 6.0), 0.0, 1.62)
+    en, log = run(sway, 12.0)
+    along = [_dot(tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp)), axes[0]) for t, s, q, *_ in log
+             if s == "TRACK" and t > 6.0]
+    check("B: they sway 0.25 m left and right on the spot; the tool follows along the wall (within its box)",
+          max(along) > 0.08 and min(along) < -0.12, (round(min(along), 3), round(max(along), 3)))
+    en, log = run(stay, 12.0, hand=lambda t: 2.0 if t >= 6.0 else 1.1)
+    modes = {m for t, s, q, r, m in log if s == "TRACK" and t > 8.0}
+    up_b = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and 4.0 < t < 6.0]
+    up_c = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and t > 9.0]
+    check("C: a hand raised to 2 m: the tool rises and tilts up to it", modes == {"C"} and up_c and up_b
+          and min(up_c) > max(up_b) + 0.1, (modes, round(max(up_b), 2) if up_b else None,
+                                            round(min(up_c), 2) if up_c else None))
+    en, log = run(lambda t: (0.0, 0.0, 1.62), 45.0)
+    t_in, t_bye = first(log, "ENTER"), first(log, "BYE")
+    check("stays on: goodbye %.0f s after the arm turned to them, and not again while they stay" % MAX_S,
+          t_bye is not None and abs(t_bye - t_in - MAX_S) < 0.1 and en.engagements == 1, (t_in, t_bye, en.engagements))
+    walk = lambda t: (-1.2 + 1.2 * t, 0.0, 1.65) if t < 2.0 else None
+    en, log = run(walk, 6.0)
+    check("someone walking through the spot at 1.2 m/s: not engaged", en.engagements == 0)
+    hover = lambda t: (0.28 + 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.5)), 0.0, 1.62)
+    en, log = run(hover, 15.0)
+    check("hovering at the spot's edge (0.28-0.40 m out): engaged once, no goodbye from the edge",
+          en.engagements == 1 and first(log, "BYE") is None, (en.engagements, first(log, "BYE")))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
