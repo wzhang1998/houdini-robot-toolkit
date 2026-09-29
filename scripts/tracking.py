@@ -314,6 +314,89 @@ class Gaze:
         return list(self.inp.current_position)
 
 
+ATTEND_MIN_S = 5.0            # a person is looked at this long at least before the arm turns to another ...
+ATTEND_MAX_S = 12.0           # ... and at most this long while somebody else waits (they take turns)
+DWELL_S = 1.0                 # in view this long before being looked at
+PASSER_MPS = 0.6              # moving faster than this (smoothed): walking by, not looked at
+GROUP_M = 0.6                 # people this close to the one looked at: one group, its middle is the target
+FORGET_S = 0.5                # a person not seen this long is gone
+SPEED_TAU_S = 0.3
+
+
+class Attention:
+    """Whom to look at when several people are there (/track/people): only
+    those in view DWELL_S, not walking by, confident, inside the zone; one at
+    a time, at least ATTEND_MIN_S each; then someone who has not been looked
+    at yet, or after ATTEND_MAX_S anyone who has waited longest -- the
+    people take turns, the arm does not flit; people close together are one
+    group (their middle). Its target goes to TargetInput as the one person's
+    would (TargetInput's gate and filter, Gaze's limits: a turn from one to
+    the next is as smooth as any)."""
+
+    def __init__(self, inside=None, min_conf=MIN_CONF):
+        self.inside, self.min_conf = inside, min_conf
+        self.tracks = {}              # pid -> {"pos", "t", "first", "last", "speed"}
+        self.last_end = {}            # pid -> when the arm last turned away from them
+        self.current, self.since = None, 0.0
+        self.turns = 0
+
+    def update(self, people, now):
+        """people: [(pid, x, y, z, conf, t measured)] -- one frame's detections."""
+        for pid, x, y, z, conf, t in people:
+            if conf < self.min_conf:
+                continue
+            p = (x, y, z)
+            tr = self.tracks.get(pid)
+            if tr is None or now - tr["last"] > FORGET_S:
+                self.tracks[pid] = {"pos": p, "t": t, "first": now, "last": now, "speed": None}
+                continue
+            dt = t - tr["t"]
+            if dt > 1e-4:
+                v = math.dist(p, tr["pos"]) / dt
+                tr["speed"] = v if tr["speed"] is None else tr["speed"] + (v - tr["speed"]) * min(1.0, dt / SPEED_TAU_S)
+            tr.update(pos=p, t=t, last=now)
+        for pid in [k for k, tr in self.tracks.items() if now - tr["last"] > FORGET_S]:
+            del self.tracks[pid]
+
+    def _eligible(self, now):
+        return [pid for pid, tr in self.tracks.items()
+                if now - tr["first"] >= DWELL_S and tr["speed"] is not None and tr["speed"] <= PASSER_MPS
+                and (self.inside is None or self.inside(tr["pos"]))]
+
+    def _waited(self, pid, now):
+        return now - max(self.tracks[pid]["first"], self.last_end.get(pid, -1e9))
+
+    def _turn_to(self, pid, now):
+        if self.current is not None:
+            self.last_end[self.current] = now
+        self.current, self.since = pid, now
+        self.turns += 1
+
+    def choose(self, now):
+        """(the point to look at, whose) now, or None: nobody to look at."""
+        el = self._eligible(now)
+        if self.current not in el:
+            if self.current is not None:
+                self.last_end[self.current] = now
+            self.current = None
+        cur = self.tracks[self.current]["pos"] if self.current is not None else None
+        cands = [p for p in el if cur is None or math.dist(self.tracks[p]["pos"], cur) > GROUP_M]
+        fresh = [p for p in cands if p not in self.last_end]
+        best = lambda ps: max(ps, key=lambda p: (p not in self.last_end, self._waited(p, now), -p))  # noqa: E731
+        stint = now - self.since
+        if self.current is None and cands:
+            self._turn_to(best(cands), now)
+        elif self.current is not None and stint >= ATTEND_MAX_S and cands:
+            self._turn_to(best(cands), now)
+        elif self.current is not None and stint >= ATTEND_MIN_S and fresh:
+            self._turn_to(best(fresh), now)
+        if self.current is None:
+            return None
+        c = self.tracks[self.current]["pos"]
+        grp = [self.tracks[p]["pos"] for p in el if math.dist(self.tracks[p]["pos"], c) <= GROUP_M]
+        return tuple(sum(q[i] for q in grp) / len(grp) for i in range(3)), self.current
+
+
 def self_test():
     fails = []
 
@@ -349,6 +432,67 @@ def self_test():
     ti.target(1.3, -1.8, 1.7, 0.9, 2.0)
     ti.lost()
     check("/track/lost: lost at once", ti.now(2.01) is None)
+
+    # attention: whom to look at when several are there
+    def feed(att, people_at, t0, t1, fps=30.0):
+        """Runs att over [t0, t1): people_at(t) -> [(pid, x, y, z, conf)]; the chosen pid per frame."""
+        out = []
+        for i in range(int(round((t1 - t0) * fps))):
+            t = t0 + i / fps
+            att.update([(pid, x, y, z, c, t) for pid, x, y, z, c in people_at(t)], t)
+            ch = att.choose(t)
+            out.append((t, ch[1] if ch else None, ch[0] if ch else None))
+        return out
+
+    def spans(seq):
+        runs, cur, start = [], None, 0.0
+        for t, pid, _ in seq:
+            if pid != cur:
+                if cur is not None:
+                    runs.append((cur, t - start))
+                cur, start = pid, t
+        if cur is not None:
+            runs.append((cur, seq[-1][0] - start))
+        return runs
+
+    two = lambda t: [(1, -0.5, -1.8, 1.6, 0.9), (2, 0.5, -1.8, 1.6, 0.9)]
+    seq = feed(Attention(), two, 0.0, 40.0)
+    runs = spans(seq)
+    inner = [d for pid, d in runs[1:-1] if pid is not None]
+    check("two people standing: each looked at in turn, never less than %.0f s at a time" % ATTEND_MIN_S,
+          {p for p, _ in runs} >= {1, 2} and inner and min(inner) >= ATTEND_MIN_S - 0.05, runs)
+    check("... nobody before they have been there %.1f s" % DWELL_S,
+          all(pid is None for t, pid, _ in seq if t < DWELL_S - 0.05) and seq[int(DWELL_S * 30) + 3][1] is not None)
+
+    def passer(t):
+        out = [(1, 0.2, -1.8, 1.6, 0.9)]
+        if 4.0 <= t < 6.5:
+            out.append((2, -1.0 + 1.2 * (t - 4.0), -1.8, 1.65, 0.9))
+        return out
+    seq = feed(Attention(), passer, 0.0, 12.0)
+    check("someone walking by at 1.2 m/s is never looked at", all(pid != 2 for _, pid, _ in seq))
+
+    def leaver(t):
+        out = [(2, 0.6, -1.8, 1.6, 0.9)]
+        if t < 5.0:
+            out.append((1, -0.6, -1.8, 1.6, 0.9))
+        return out
+    att = Attention()
+    feed(att, leaver, 0.0, 2.0)
+    att.current, att.since = 1, 2.0                # looking at 1 (for 3 s, short of the minimum) when they leave
+    seq = feed(att, leaver, 2.0, 8.0)
+    held = all(pid == 1 for t, pid, _ in seq if t < 5.0)
+    after = [t for t, pid, _ in seq if t >= 5.0 and pid == 2]
+    check("the one looked at leaves before their turn is up: the next one within %.1f s" % (FORGET_S + 0.2),
+          held and after and after[0] - 5.0 <= FORGET_S + 0.2, after[:1])
+
+    group = lambda t: [(1, 0.0, -1.8, 1.6, 0.9), (2, 0.3, -1.8, 1.62, 0.9), (3, 0.15, -1.9, 1.55, 0.9)]
+    seq = feed(Attention(), group, 0.0, 20.0)
+    pts = [p for _, pid, p in seq if p is not None]
+    check("three people within %.1f m: looked at as one, their middle, never jumping between them" % GROUP_M,
+          pts and max(math.dist(p, (0.15, -1.833, 1.59)) for p in pts) < 0.02, pts[-1] if pts else None)
+    low = lambda t: [(1, 0.0, -1.8, 1.6, 0.3)]
+    check("a low-confidence person is not looked at", all(pid is None for _, pid, _ in feed(Attention(), low, 0.0, 5.0)))
 
     import show as S
     import json
