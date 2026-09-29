@@ -2615,13 +2615,13 @@ SYNTHETIC = (("synth_low", 0.55), ("synth_high", 1.5))   # hubs at the greet hub
 
 
 def _room(cfg=None, ceiling=None):
-    """The lab as the show sees it: envs/volvox_lab.usda (OpenUSD), or the
-    .json it came from, with the show's stage and paper (show.show_env);
+    """The lab as the show sees it: envs/volvox_lab.usda (OpenUSD), with the
+    show's stage and paper (show.show_env);
     with ceiling, that margin under the ceiling (the show build's
     CEILING_MARGIN_M) when its own is less."""
     import collision as CL
     errs = []
-    for name in ("volvox_lab.usda", "volvox_lab.json"):
+    for name in ("volvox_lab.usda",):
         path = os.path.join(ROOT, "envs", name)
         if not os.path.exists(path):
             continue

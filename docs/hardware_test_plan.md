@@ -244,7 +244,7 @@ stopped run keeps them):
   `lag_ms_by_window` should then stay flat;
 - `ended` should be `at a hub`;
 - `controller_error` should be null;
-- `skipped` should be 0 (with the queue pacing, a slow send no longer skips);
+- `skipped` should be 0 (a slow send is caught up by sending the owed points back to back);
 - look at `tracking_after_lag_max_deg`;
 - `lag_ms_by_window` (one value per 3 min): if it grows run after run, the
   controller's clock drifts against this PC's (SimMachine: +28 ms in 30

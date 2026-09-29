@@ -20,9 +20,12 @@ home --to_scan--> scan_start --scan--> scan_end --from_scan--> home
 - **Idle clips** come from the library (`tests/csv/stage`), turned to face the
   stage. Each is checked against the room and the controller's work area, and
   kept `idle_canvas_m` away from the paper, so idling can never touch it.
-- **The scan** is the one fixed motion. It is allowed near the paper
-  (`scan_canvas_m`). For now it is a placeholder straight sweep, until the
-  paper and the strip are decided.
+- **The scan** is the one fixed motion: one pass, left to right as seen
+  from the robot's side, crossing the frame's opening at `scan.speed_mps`
+  with its ramps over the rails, the LED face `scan.led_gap_m` from the
+  paper (`scan_line`). It is allowed near the paper (`scan_canvas_m`). In
+  and out at each end's own approach (`scan_way`): never back over the
+  paper. `docs/uv_scan_exposure.md` for the medium, dose and speed.
 - **Joining moves** (`to_scan`, `from_scan`) are planned once by
   `safe_move.route`, which detours round the ceiling and keeps the TCP in the
   work area. They are timed by Ruckig (`transitions.py`: jerk-limited,
@@ -91,18 +94,17 @@ Dry run, 20 minutes (2026-09-27):
 **one continuous ServoJ stream at 125 Hz**. It sends the Runner's joints
 tick by tick. There is no CSV per run and no stop between clips.
 
-- **Timing: the controller's clock paces.** ServoJ points wait in the
-  controller's motion queue and are played one per 8 ms on its own clock.
-  The stream reads the queue's length (`GetMotionQueueLength`, every 20 ms,
-  on the feedback connection) and keeps about 6 points waiting: a tick adds
-  none when it has more than 9, two when it has fewer than 3. The show's
-  clock advances with the points sent, so the lag is fixed (SimMachine:
-  36 ms) however the two clocks drift, and a slow send only lowers the
-  queue for a moment. Paced by the PC's clock instead, the real FR20's
-  lag grew 104 -> 352 ms in 10 min (it plays ServoJ ~0.04 % slower) --
-  the standard answer for a queued controller is to let its buffer set
-  the pace, as here. A controller that does not tell its queue falls back
-  to the PC's clock: a late tick is skipped, never burst.
+- **Timing: the controller's playback rate paces.** The FR20 plays ServoJ
+  a little slower than cmdT says (the real arm ~950 ppm, SimMachine ~14
+  ppm); points sent on the PC's clock pile up behind its motion queue (the
+  lag grew ~1 ms per s, while GetMotionQueueLength stayed put). So each
+  point's deadline is the last one's plus dt at the calibrated rate
+  (playback.toml `[controller_clock_ppm]` by IP, or `--clock-ppm`), as a
+  disciplined clock is steered by its measured rate; a late tick sends
+  the points it owes back to back (up to 4), more are skipped. The report
+  measures the lag per window on the PC times the points were sent at, and
+  says what rate to set when it drifts (`clock_ppm_suggested`). The motion
+  queue is read once a second, for the report only.
 - **Checks on every tick.** Before a pose is sent, its joint step must be
   within the velocity limits times the speed, and every joint within its
   limits. The feedback thread polls the controller's error code. Either

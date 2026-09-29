@@ -58,7 +58,7 @@ SLOW_READ_S = 0.02                 # a joint read slower than this has no trustw
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
 MAX_PPM = 3000.0                   # a controller clock calibration further off than this is refused
 MAX_BURST = 4                      # points sent back to back after a late tick; more are skipped
-QUEUE_POLL_S = 0.02                # how often the controller's motion queue length is read
+QUEUE_POLL_S = 1.0                 # the controller's motion queue, read once a second for the report (a diagnostic)
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
@@ -153,8 +153,7 @@ class Link(threading.Thread):
         self.error = None
         self._last_poll = 0.0
         self._halt = threading.Event()
-        self.queue_len, self.queue_seq = None, 0      # the controller's motion queue, read every QUEUE_POLL_S
-        self.queue_hist = array("i")
+        self.queue_hist = array("i")                  # the controller's motion queue, every QUEUE_POLL_S
         self._last_queue = 0.0
         self._queue_ok = hasattr(self.c, "queue_length")
 
@@ -180,9 +179,8 @@ class Link(threading.Thread):
                     self._last_queue = t0
                     n = self.c.queue_length()
                     if n is None:
-                        self._queue_ok = False            # this controller does not say: the PC's clock paces
+                        self._queue_ok = False            # this controller does not say
                     else:
-                        self.queue_len, self.queue_seq = n, self.queue_seq + 1
                         self.queue_hist.append(n)
                 if t0 - self._last_poll >= ERROR_POLL_S:
                     self._last_poll = t0

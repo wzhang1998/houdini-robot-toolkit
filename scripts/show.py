@@ -12,9 +12,10 @@ join without a jump.
 
     hub --idle clip--> same hub       generated for that hub (choreo.py phrases that start and
                                       end at the hub pose, facing the hub's own J1)
-    hub --move--> other hub           a checked MoveJ-like move (safe_move.route, retime_topp)
+    hub --move--> other hub           a checked move (safe_move.route, timed by Ruckig: transitions.py)
     scan hub --to_scan--> scan_start --scan--> scan_end --from_scan--> scan hub
-                                      the fixed sweep across the paper (a PLACEHOLDER line for now)
+                                      one pass across the paper at an even speed (scan_line),
+                                      in and out at each end's own approach (scan_way)
 
 The show config (shows/*.json) says where the hubs are, how many clips
 each gets, how long they may be, the stage (work zone) and the paper. The
@@ -611,26 +612,6 @@ def scan_way(rig, q, normal, backs, inward, model, env, home, out):
                 return (a, (b, d, s), [v] + p2 if out else p2 + [a],
                         "the strip turned level at J6 %.0f there, then %s" % (j6, why2))
     return first
-
-
-def find_approach(rig, q, normal, back, model, env, inward=None, backs=None):
-    """The first approach pose clear by the moves' margins (safe_move.blocked):
-    back back (then +0.1 m), lowered in 0.1 m steps -- a tall tool at a
-    paper near the ceiling has to come in from below -- and, given inward (a
-    unit vector towards the scan's middle), slid that way in 0.1 m steps: a
-    scan's end at the edge of the work zone, or with the arm folded, cannot
-    back straight out (the one-pass scan, 2026-09-28; the LEDs are off there,
-    0.2 m and more from the paper). (q, back, down, inward m) or None."""
-    import safe_move
-    menv = safe_move.move_env(env)
-    for s in ((0.0, 0.1, 0.2, 0.3) if inward else (0.0,)):
-        for b in (backs or (back, back + 0.1)):
-            for down in (0.0, 0.1, 0.2, 0.3):
-                side = [x * s for x in inward] if inward else (0.0, 0.0, 0.0)
-                a = approach_pose(rig, q, normal, b, down, side)
-                if a is not None and not safe_move.blocked(model, menv, a):
-                    return a, b, down, s
-    return None
 
 
 def scan_line(cfg, env, prof, dt=0.016):

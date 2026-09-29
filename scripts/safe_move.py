@@ -37,9 +37,6 @@ MOVE_MARGIN_M = 0.10
 CEILING_MARGIN_M = 0.30
 STEP_DEG = 2.0                      # joint-space sampling of a move
 KEEP_OWN = ("floor", "base_plate")  # contact-close by design: their own margins
-# the upper arm's root turns in place about J2, a few cm over the plate and
-# the floor whatever J2 is: only contact counts for it there
-ROOT_LINK = "upperarm_link"
 WORK_INSET_M = 0.03
 SEARCH_STEP_DEG = 6.0               # coarse sampling while searching a detour; the winner is re-checked at STEP_DEG
 

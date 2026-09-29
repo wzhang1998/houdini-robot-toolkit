@@ -330,14 +330,6 @@ class Controller:
     def stop(self):
         return self.rpc.StopMotion()
 
-    def system_clock(self):
-        """The controller's own clock (GetSystemClock), seconds, or None."""
-        try:
-            ret = self.rpc.GetSystemClock()
-        except xmlrpc.client.Fault:
-            return None
-        return float(ret[1]) / 1000.0 if isinstance(ret, (list, tuple)) and ret[0] == 0 else None
-
     def queue_length(self):
         """Commands waiting in the controller's motion queue (ServoJ points
         included: each is played for its cmdT), or None when the controller
