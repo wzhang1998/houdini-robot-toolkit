@@ -3,7 +3,9 @@ the floor straight in front of the greet hub and the arm stops its clip,
 turns to them -- visibly: it perks up, then settles facing them -- and
 follows them: left and right along the wall (B), a raised hand up and down
 (C), in a small box around the greet hub's tool point; they step off, are
-lost, or 30 s pass: a nod goodbye, back to the hub, the clips go on.
+lost, or 30 s pass: a nod goodbye, back to the hub, the clips go on. Once
+engaged they may move within FOLLOW_M of the spot (1.6 m along the wall,
+1 m across); a hand from about the chest up is followed.
 
     spot         SPOT_R_M around the point of the audience zone's middle line
                  straight across from the greet hub's tool point (track_spot)
@@ -96,15 +98,18 @@ def face_pose(rig, hub_q, axes, offset, aim, near=None):
 
 
 DWELL_S = 1.0                      # on the spot this long (not walking) before the arm turns to them
-SPOT_OUT_M = 0.45                  # ... and off it only past this (hysteresis: the edge does not flap)
+FOLLOW_M = (0.8, 0.5)              # once engaged, followed while within this of the spot (along, across): the
+                                   # spot says "me"; then they may move -- and the edge does not flap
 LEAVE_S = 0.7                      # off the spot or unseen this long: goodbye
 MAX_S = 30.0                       # at most this long for one person (the user)
 REST_S = 3.0                       # after a goodbye, nobody new for this long
 PERK_S, BYE_S = 0.6, 0.5           # the perk-up and the nod, held
 PERK_UP_M = 0.35                   # perking up: looks this much above the head, the tool at the box's top, leaning in
 NOD_DOWN_M = 0.6                   # the nod: looks this much below the head
-HAND_UP_M = 0.15                   # a hand above (head - this) is raised: mode C follows it
-C_RANGE_M = (1.3, 2.1)             # a raised hand's height mapped onto the box's height
+HAND_UP_M = 0.45                   # a hand above (head - this, about the chest) is up: mode C follows it
+C_RANGE_M = (1.0, 2.0)             # a hand's height mapped onto the box's height
+B_GAIN = 0.18                      # the tool moves along the wall this much of the person's own move (the box is small;
+                                   # the aim turns with them the whole way)
 SHARE = 0.35                       # of the joints' velocity, acceleration and jerk limits
 SLOW_SHARE = 0.08                  # ... near a slow zone
 SLOW_NEAR_M = 0.15
@@ -159,6 +164,13 @@ class Engage:
     def _on_spot(self, p, r):
         return math.dist(p[:2], self.spot) <= r
 
+    def _in_follow(self, p):
+        """Within FOLLOW_M of the spot, along the wall and across it."""
+        d = (p[0] - self.spot[0], p[1] - self.spot[1])
+        along = d[0] * self.axes[0][0] + d[1] * self.axes[0][1]
+        across = d[0] * self.axes[2][0] + d[1] * self.axes[2][1]
+        return abs(along) <= FOLLOW_M[0] and abs(across) <= FOLLOW_M[1]
+
     def update(self, people, now, hands=()):
         """people: [(pid, x, y, z, conf, t)]; hands: [(pid, x, y, z, conf, t)] (a hand each, raised or not)."""
         import tracking as TR
@@ -173,7 +185,7 @@ class Engage:
             while pr["hist"] and pr["hist"][0][0] < t - 2.0 * TR.SPEED_WINDOW_S:
                 del pr["hist"][0]
             pr["speed"] = TR._walking_speed(pr["hist"], t)
-            inside = self._on_spot((x, y), self.r if pr["in_since"] is None else SPOT_OUT_M)
+            inside = self._on_spot((x, y), self.r) if pr["in_since"] is None else self._in_follow((x, y))
             if inside and pr["in_since"] is None:
                 pr["in_since"] = now
             elif not inside:
@@ -237,8 +249,8 @@ class Engage:
             f = (hand[2] - C_RANGE_M[0]) / (C_RANGE_M[1] - C_RANGE_M[0])
             lo, hi = BOX_M[1]
             up = lo + (hi - lo) * max(0.0, min(1.0, f))
-            return self._pose((du, up, 0.03), hand[:3]), "C"
-        return self._pose((du, 0.0, 0.03), head), "B"
+            return self._pose((du * B_GAIN, up, 0.03), hand[:3]), "C"
+        return self._pose((du * B_GAIN, 0.0, 0.03), head), "B"
 
     def step(self, q_clip, now):
         """The pose to send now; self.state says which mode."""
@@ -472,13 +484,25 @@ def self_test():
     check("... every joint within %.0f %% of its speed limit, every pose clear" % (100 * SHARE),
           peak <= SHARE * 1.01 and en.unsafe == 0, (round(peak, 3), en.unsafe))
 
-    sway = lambda t: (0.0 if t < 5.0 else 0.25 * math.sin(2 * math.pi * (t - 5.0) / 6.0), 0.0, 1.62)
-    en, log = run(sway, 12.0)
-    along = [_dot(tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp)), axes[0]) for t, s, q, *_ in log
-             if s == "TRACK" and t > 6.0]
-    check("B: they sway 0.25 m left and right on the spot; the tool follows along the wall (within its box)",
-          max(along) > 0.08 and min(along) < -0.12, (round(min(along), 3), round(max(along), 3)))
-    en, log = run(stay, 12.0, hand=lambda t: 2.0 if t >= 6.0 else 1.1)
+    sway = lambda t: (0.0 if t < 5.0 else 0.7 * math.sin(2 * math.pi * (t - 5.0) / 8.0), 0.0, 1.62)
+    en, log = run(sway, 14.0)
+    tr = [(t, q) for t, s, q, *_ in log if s == "TRACK" and t > 6.0]
+    along = [_dot(tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp)), axes[0]) for t, q in tr]
+    yaw = [math.degrees(math.atan2(_dot(S.tool_pose(q)[2], axes[0]), _dot(S.tool_pose(q)[2], axes[2]))) for t, q in tr]
+    check("B: they walk 0.7 m left and right of the spot (inside the follow zone, %.1f x %.1f m): still engaged; "
+          "the tool moves along the wall and turns with them" % (2 * FOLLOW_M[0], 2 * FOLLOW_M[1]),
+          en.engagements == 1 and first(log, "BYE") is None and max(along) > 0.08 and min(along) < -0.1
+          and max(yaw) - min(yaw) > 30.0,
+          (round(min(along), 3), round(max(along), 3), round(min(yaw), 1), round(max(yaw), 1)))
+    far = lambda t: (0.0 if t < 5.0 else min(1.2, 0.3 * (t - 5.0)), 0.0, 1.62)
+    en, log = run(far, 14.0)
+    t_bye = first(log, "BYE")
+    check("... walking on past %.1f m along: goodbye" % FOLLOW_M[0],
+          t_bye is not None and 5.0 + FOLLOW_M[0] / 0.3 < t_bye < 5.0 + FOLLOW_M[0] / 0.3 + LEAVE_S + 0.5, t_bye)
+    en, log = run(stay, 12.0, hand=lambda t: 1.3 if t >= 6.0 else 0.9)
+    modes = {m for t, s, q, r, m in log if s == "TRACK" and t > 8.0}
+    check("C: a hand at chest height (1.3 m) is up already", modes == {"C"}, modes)
+    en, log = run(stay, 12.0, hand=lambda t: 2.0 if t >= 6.0 else 0.9)
     modes = {m for t, s, q, r, m in log if s == "TRACK" and t > 8.0}
     up_b = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and 4.0 < t < 6.0]
     up_c = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and t > 9.0]

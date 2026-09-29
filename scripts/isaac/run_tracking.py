@@ -15,7 +15,8 @@ the room reported, and a video from the audience's side.
         the one looked at turns green
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage
         the interactive mode: drag the head onto the ring in front of greet -- the arm stops, perks up, turns to
-        you and follows you along the wall (B); drag the pink hand above the head (C); step off: a nod, back
+        you and follows you (B: walk up to 0.8 m either way); drag the pink hand up to the chest or higher (C);
+        walk away: a nod, back
 
 Per scenario: geo/tracking/<name>.json in, geo/tracking/<name>_isaac.json out
 (tracking error of the simulated arm against the commands, contacts between
@@ -162,10 +163,10 @@ def walker(k, n, home, along, now):
 
 def engage_walker(en, now):
     """--live --engage --headless: person 1 -- off the spot, onto it at 3 s,
-    swaying 0.25 m along it from 8 s, (a hand up 16-21 s), off at 24 s, back
-    on at 32 s, staying past the 30 s cap."""
+    walking 0.6 m left and right of it from 8 s (inside the follow zone), (a
+    hand up 16-21 s), off at 24 s, back on at 32 s, staying past the 30 s cap."""
     on = 3.0 <= now < 24.0 or now >= 32.0
-    du = 0.25 * math.sin(2.0 * math.pi * (now - 8.0) / 6.0) if 8.0 <= now < 24.0 else 0.0
+    du = 0.6 * math.sin(2.0 * math.pi * (now - 8.0) / 8.0) if 8.0 <= now < 24.0 else 0.0
     dv = 0.0 if on else 1.2
     ax, tw = en.axes[0], en.axes[2]
     return (en.spot[0] + du * ax[0] - dv * tw[0], en.spot[1] + du * ax[1] - dv * tw[1], 1.62)
