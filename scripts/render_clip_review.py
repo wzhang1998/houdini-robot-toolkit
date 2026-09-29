@@ -232,35 +232,17 @@ def review_path(node):
 
 def review_fixtures(node, show_cfg=None):
     """Python SOP: the mounted tool (the profile's, e.g. the LED strip) on the
-    arm at this frame and the show's paper, as show_rig's fixture points
-    (P, orient, scale, Cd) for a unit Box -- the same boxes as the show file."""
-    import hou
+    arm at this frame and the show's paper in its frame -- show_rig's
+    fixture boxes and points, the same as the show file."""
     import cell_sop
     import collision as C
     import robot_profile as RP
     import show_rig as SR
-    geo = node.geometry()
-    for name, default in (("orient", (0.0, 0.0, 0.0, 1.0)), ("scale", (1.0, 1.0, 1.0)), ("Cd", (1.0, 1.0, 1.0))):
-        geo.addAttrib(hou.attribType.Point, name, default)
     node.evalParm("frame")                                     # cook again when the frame changes
-
-    def add(box, cd):
-        P, orient, scale = SR.box_instance(*box)
-        pt = geo.createPoint()
-        pt.setPosition(P)
-        pt.setAttribValue("orient", orient)
-        pt.setAttribValue("scale", scale)
-        pt.setAttribValue("Cd", cd)
-
     cfg = json.load(open(show_cfg or ROOT + "/shows/party.json"))
-    if cfg.get("canvas"):
-        for _, kind, box in SR.canvas_boxes(cfg["canvas"]):
-            add(box, SR.WOOD_RGB if kind == "wood" else SR.CANVAS_RGB)
-    tool = C.tool_def(RP.load("fr20"))
-    if tool:
-        m = C.load_model("fr20")
-        for _, c, R, s in SR.tool_boxes(m["chain"], m["flange_offset"], tool, cell_sop.q_at()):
-            add((c, R, s), SR.TOOL_RGB)
+    m = C.load_model("fr20")
+    SR.write_fixture_points(node.geometry(), SR.fixture_boxes(cfg.get("canvas"), C.tool_def(RP.load("fr20")),
+                                                              m["chain"], m["flange_offset"], cell_sop.q_at()))
 
 
 def setup_scene(w=TILE[0], h=TILE[1], room=ROOM, view=None):

@@ -59,8 +59,6 @@ ZONE_RGB = {"work": (0.2, 0.85, 0.35), "keep_out": (0.95, 0.2, 0.15), "slow": (1
 def look_key(name):
     """The LOOKS entry for an object, by its name."""
     n = name.lower()
-    if n.startswith("frame"):                     # the paper's frame (show.canvas_parts)
-        return "wood"
     for k in ("glass", "canvas", "base_plate", "cart", "tv", "shelves", "furniture", "plant", "floor"):
         if k in n:
             return k

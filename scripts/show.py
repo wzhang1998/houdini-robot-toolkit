@@ -628,8 +628,8 @@ def scan_line(cfg, env, prof, dt=0.016):
     import fairino_player as P
     tool = C.tool_def(prof)
     tool_z = (tool or {}).get("tcp", {}).get("xyz", [0.0, 0.0, 0.0])[2] if tool and tool.get("tcp") else 0.0
-    boxes = (tool or {}).get("boxes") or []
-    strip_w = max(boxes, key=lambda b: max(b["size"]))["size"][0] if boxes else 0.0254   # across the scan
+    strip = C.strip_box(tool)
+    strip_w = strip["size"][0] if strip else 0.0254                  # across the scan
     start, end, info = scan_ends(cfg, tool_z, strip_w)
     s = cfg["scan"]
     v, lead = s["speed_mps"], s.get("lead_m", 0.05)
@@ -788,10 +788,9 @@ def watched_points(robot="fr20"):
         prof = RP.load(robot)
         fo = float(prof["rig"].get("flange_offset_m", 0.0))
         pts = [(0.0, 0.0, fo)]
-        caps = C.tool_capsules(C.tool_def(prof), fo)
-        if caps:
-            longest = max(caps, key=lambda c: math.dist(c["a"], c["b"]))
-            pts += [longest["a"], longest["b"]]
+        strip = C.strip_capsule(C.tool_capsules(C.tool_def(prof), fo))
+        if strip:
+            pts += [strip["a"], strip["b"]]
         _WATCH[robot] = (U.parse_urdf(os.path.join(ROOT, prof["rig"]["urdf"]))["chain"], pts)
     return _WATCH[robot][1]
 

@@ -149,10 +149,10 @@ def tool_boxes(chain, flange_offset, tool, q):
     return out
 
 
-def canvas_boxes(c):
+def canvas_instances(c):
     """The show's paper in its frame (show.canvas_parts: the canvas and the
-    wooden rails) as [(name, kind, (centre, R, size))]: each upright, its x
-    along the normal (as room_usd.show_extras)."""
+    wooden rails) as [(name, kind, (centre, R, size))] for box_instance: each
+    upright, its x along the normal (as room_usd.show_extras)."""
     import show
     out = []
     for p in show.canvas_parts(c):
@@ -1344,24 +1344,35 @@ def zone_points(sop):
 
 
 TOOL_RGB = (1.0, 0.82, 0.3)
-CANVAS_RGB = (0.93, 0.93, 0.9)
-WOOD_RGB = (0.62, 0.43, 0.24)
 
 
-def fixture_points(sop):
-    """Python SOP: one point per box of what is mounted and placed -- the
-    show's paper, the tool (the profile's "tool", e.g. the LED strip) on the
-    arm at this frame and on every hub's pose -- with P, orient, scale, Cd,
-    name. A Box is copied onto them. Depends on the frame (its `frame` parm)."""
+def fixture_boxes(canvas, tool_def, chain, flange_offset, q, hubs=()):
+    """[(label, (centre, R, size), rgb)] of what is placed and mounted: the
+    show's paper in its frame (canvas: the config's, or None), the tool
+    (tool_urdf.read's, or None) on the arm at joints q and at each hub of
+    hubs [(name, q, refused)] -- one list for the show asset and the review
+    render. Wood and canvas coloured as the room's looks (room_geom.LOOKS)."""
+    import room_geom as RG
+    out = []
+    for name, kind, box in (canvas_instances(canvas) if canvas else []):
+        out.append((name, box, RG.LOOKS["wood" if kind == "wood" else "canvas"][0]))
+    if tool_def:
+        for name, c, R, s in tool_boxes(chain, flange_offset, tool_def, q):
+            out.append(("tool_" + name, (c, R, s), TOOL_RGB))
+        for hub, qh, refused in hubs:
+            for name, c, R, s in tool_boxes(chain, flange_offset, tool_def, qh):
+                out.append(("%s_tool_%s" % (hub, name), (c, R, s), BAD_RGB if refused else TOOL_RGB))
+    return out
+
+
+def write_fixture_points(geo, fixtures):
+    """One point per fixture_boxes box, with P, orient, scale, Cd, name, for
+    a unit Box copied onto them."""
     hou = _hou()
-    import robot_profile as RP
-    geo = sop.geometry()
     for name, default in (("orient", (0.0, 0.0, 0.0, 1.0)), ("scale", (1.0, 1.0, 1.0)), ("Cd", (1.0, 1.0, 1.0))):
         geo.addAttrib(hou.attribType.Point, name, default)
     geo.addAttrib(hou.attribType.Point, "name", "")
-    sop.evalParm("frame")                                     # cook again when the frame changes
-
-    def add(label, box, cd):
+    for label, box, cd in fixtures:
         P, orient, scale = box_instance(*box)
         pt = geo.createPoint()
         pt.setPosition(P)
@@ -1370,27 +1381,31 @@ def fixture_points(sop):
         pt.setAttribValue("Cd", cd)
         pt.setAttribValue("name", label)
 
+
+def fixture_points(sop):
+    """Python SOP: one point per box of what is mounted and placed -- the
+    show's paper in its frame, the tool (the profile's "tool", e.g. the LED
+    strip; the Tool page's, live) on the arm at this frame and on every hub's
+    pose (fixture_boxes). A Box is copied onto them. Depends on the frame
+    (its `frame` parm)."""
+    import robot_profile as RP
+    sop.evalParm("frame")                                     # cook again when the frame changes
     node = tool(sop)
     cfg = scene_config(sop)
-    if cfg.get("canvas"):
-        for name, kind, box in canvas_boxes(cfg["canvas"]):
-            add(name, box, WOOD_RGB if kind == "wood" else CANVAS_RGB)
     tool_def = tool_from_parms(node)                            # the Tool page, live as it is edited
     if tool_def is None:
         import collision as C
         tool_def = C.tool_def(RP.load(node.parm("robot_profile").evalAsString() or "fr20"))
-    if not tool_def:
-        return
     m = _cmodel()
     arm = node.node("robot_arm")
     q = [joint(arm, j) for j in range(1, 7)]
-    for name, c, R, s in tool_boxes(m["chain"], m["flange_offset"], tool_def, q):
-        add("tool_" + name, (c, R, s), TOOL_RGB)
+    hubs = []
     for name, h in cfg["hubs"].items():
         qh, why = hub_status(cfg, h)
         if qh is not None:
-            for sname, c, R, s in tool_boxes(m["chain"], m["flange_offset"], tool_def, qh):
-                add("%s_tool_%s" % (name, sname), (c, R, s), BAD_RGB if why else TOOL_RGB)
+            hubs.append((name, qh, bool(why)))
+    write_fixture_points(sop.geometry(), fixture_boxes(cfg.get("canvas"), tool_def, m["chain"], m["flange_offset"],
+                                                       q, hubs))
 
 
 def hub_poses(sop):
@@ -1650,6 +1665,20 @@ def self_test():
                       "greet": {"q": REST_Q, "clips": 2}},
              "range": {"j1_deg": [-90, 90], "tcp_z": [0.4, 1.8], "speed": 0.5},
              "library": {"seed": 3}, "select": {"hub_stay": [1, 2]}}
+    import collision as C
+    import robot_profile as RP
+    import room_geom as RG
+    cm = C.load_model("fr20")
+    cv = {"center": [0.0, 1.0, 1.3], "normal": [0.0, 1.0, 0.0], "size": [1.5, 1.0], "thickness": 0.02,
+          "frame": {"outer": [1.702, 1.168], "face_width": 0.1334, "depth": 0.02}}
+    fx = fixture_boxes(cv, C.tool_def(RP.load("fr20")), cm["chain"], cm["flange_offset"], REST_Q,
+                       [("rest", REST_Q, False), ("far", REST_Q, True)])
+    names = {n: rgb for n, _, rgb in fx}
+    check_("fixtures: the canvas and its four rails in the room's looks, the tool on the arm and at each hub "
+           "(a refused hub's red)",
+           names.get("canvas") == RG.LOOKS["canvas"][0] and names.get("frame_left") == RG.LOOKS["wood"][0]
+           and names.get("tool_strip") == TOOL_RGB and names.get("rest_tool_strip") == TOOL_RGB
+           and names.get("far_tool_strip") == BAD_RGB and len(fx) == 5 + 3 * 2, sorted(names))
     m = merge_config(cfg, scene)
     check_("merge keeps keys the scene does not show", m["osc"] == cfg["osc"] and m["sequences"] == cfg["sequences"])
     check_("merge keeps a hub's note", m["hubs"]["rest"]["note"] == "home")

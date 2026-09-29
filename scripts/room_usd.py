@@ -416,7 +416,7 @@ def _object(stage, room, o, margin, scope="Objects"):
             loc = [[_local(p, o["center"], yaw) for p in line] for line in lines]
             _curves(stage, path + "/outline", loc, RG.ZONE_RGB.get(o["role"], (1, 1, 1)))
     else:
-        _bind(g.GetPrim(), RG.look_key(o["name"]))
+        _bind(g.GetPrim(), o.get("look") or RG.look_key(o["name"]))
 
 
 def build_stage(room, stage=None, extra=()):
@@ -462,7 +462,7 @@ def show_extras(cfg):
         for p in show.canvas_parts(c):                  # the canvas and its frame's wooden rails
             note = "the show's paper" if p["kind"] == "canvas" else "the paper's frame (wood)"
             out.append({"name": p["name"], "type": "box", "center": p["center"], "role": "obstacle",
-                        "size": p["size"], "yaw_deg": p["yaw_deg"],
+                        "size": p["size"], "yaw_deg": p["yaw_deg"], "look": p["kind"],
                         "note": note + (" (placeholder)" if c.get("placeholder") else "")})
     st = cfg.get("stage")
     if st:

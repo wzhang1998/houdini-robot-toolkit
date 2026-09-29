@@ -270,7 +270,7 @@ def strip_geometry():
     if not _STRIP:
         import collision as CL
         m = CL.load_model("fr20")
-        cap = next((c for c in m["caps"] if c["name"] == "tool_strip"), None)
+        cap = CL.strip_capsule(m["caps"])
         if cap is None:
             _STRIP.append(STRIP_DEFAULT)
         else:
@@ -2585,9 +2585,10 @@ def strip_stats(rig, clip):
     model = CL.load_model("fr20")
     qs = [p["q"] for p in clip["points"]]
     lows = []
+    strip = CL.strip_capsule(model["caps"])
     for q in qs:
         caps, _ = CL.capsules(model, q)
-        s = next((c for c in caps if c[0] == "tool_strip"), None)
+        s = next((c for c in caps if strip and c[0] == strip["name"]), None)
         lows.append(min(s[1][2], s[2][2]) if s else math.nan)
     hub_z = rig.tool(qs[0])[1][2]
     out = {"s_j6": max(q[5] for q in qs) - min(q[5] for q in qs), "s_low": min(lows), "s_drop": hub_z - min(lows),

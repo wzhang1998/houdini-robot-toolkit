@@ -142,6 +142,19 @@ def tool_def(prof):
     return tool_urdf.read(os.path.join(ROOT, t["urdf"]))
 
 
+def strip_box(tool):
+    """The tool's main part -- its longest box (the LED strip) -- or None."""
+    boxes = (tool or {}).get("boxes") or []
+    return max(boxes, key=lambda b: max(b["size"])) if boxes else None
+
+
+def strip_capsule(caps):
+    """Of capsules (dicts with a, b: the model's or tool_capsules'), the
+    tool's longest (the LED strip's), or None: the one rule for "the strip"."""
+    tool = [c for c in caps if c["name"].startswith("tool_")]
+    return max(tool, key=lambda c: math.dist(c["a"], c["b"])) if tool else None
+
+
 def tool_capsules(tool, flange_offset):
     """The tool's boxes (tool_urdf.read: centre and axes in the mount frame)
     as capsules in the last link's frame, each containing its box: the
