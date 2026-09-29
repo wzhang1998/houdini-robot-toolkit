@@ -7,11 +7,13 @@ made again.
     C:/isaacsim6/python.bat scripts/isaac/record_segments.py shows/party.json --graph shows/party.compiled.json
 
 The room is the show's layer (shows/<show>.usda: write it with room_usd.py
---show). Drawn over it: the scan's area outlined on the paper, the strip
+--show), lit and coloured after the lab's photo (room_look.py; --look plain
+for the flat one). Drawn over it: the scan's area outlined on the paper, the strip
 violet while its LEDs are on (the scan's labels.led_on_s) and the paper it
-has exposed so far. One pass per camera (--cameras: audience, from behind
-the audience zone at eye height; side, from inside the room along the
-paper), then the passes side by side in <out>/<show>_segments.mp4, and a
+has exposed so far. One pass per camera (--cameras: room, the whole
+room from the corner behind the robot, as the photo; audience, the
+guests' side, from well behind the audience zone through the glass; side,
+along the paper), then the passes side by side in <out>/<show>_segments.mp4, and a
 JSON summary: tracking (commanded vs simulated), contacts with the room.
 """
 
@@ -32,7 +34,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("config")
 ap.add_argument("--graph", default="", help="a compiled show (default: geo/show/<show>_scan/compiled.json)")
 ap.add_argument("--segments", default="to_scan,scan,from_scan", help="comma separated, played in this order")
-ap.add_argument("--cameras", default="audience,side")
+ap.add_argument("--cameras", default="room,audience", help="room, audience, side")
+ap.add_argument("--look", default="room", choices=("room", "plain"),
+                help="room: lights and surfaces after the lab's photo (room_look.py); plain: the flat grey room")
+ap.add_argument("--still", type=float, default=-1.0, help="only a PNG per camera at this time (s), to tune the look")
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
 ap.add_argument("--headless", action="store_true")
 args = ap.parse_args()
@@ -57,14 +62,26 @@ HOLD_S = 0.5                     # still between the segments, as the show's hub
 VIOLET = (0.55, 0.2, 1.0)
 
 
-def cameras(cfg):
-    """{name: (eye, target, focal mm)}: what a guest sees, and the gap from the side."""
+def cameras(cfg, env):
+    """{name: (eye, target, focal mm)}: the whole room from the corner behind
+    the robot (the audience's wall and the back wall: where the photo was
+    taken, 2026-09-29); what the guests see, from 1.5 m behind the audience
+    zone; the gap from the side."""
+    import room_geom as RG
     a = cfg["zones"]["audience"]
     middle, w, h = show.scan_area(cfg) if cfg.get("scan") else (cfg["canvas"]["center"], 1.0, 1.0)
     n = cfg["canvas"]["normal"]
     right = (n[1], -n[0], 0.0)
+    fp = RG.footprint(env)
+    cx, cy = sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp)
+    corner = max(fp, key=lambda p: -n[0] * p[0] - n[1] * p[1] + right[0] * p[0] + right[1] * p[1])
+    k = 0.25 / math.hypot(cx - corner[0], cy - corner[1])
+    eye_room = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, 2.0]
+    away = (-n[0], -n[1])                                       # from the paper towards the guests
+    eye_aud = [a["center"][0] + away[0] * 1.5, a["center"][1] + away[1] * 1.5, 1.65]
     eye_side = [middle[0] + right[0] * 1.5 - n[0] * 1.4, middle[1] + right[1] * 1.5 - n[1] * 1.4, 1.8]
-    return {"audience": ([a["center"][0], a["center"][1], 1.6], middle, 18.0),
+    return {"room": (eye_room, [cx, cy, 0.7], 8.0),
+            "audience": (eye_aud, [(cx + middle[0]) / 2, (cy + middle[1]) / 2, 1.0], 13.0),
             "side": (eye_side, [middle[0] - n[0] * 0.4, middle[1] - n[1] * 0.4, middle[2]], 14.0)}
 
 
@@ -144,10 +161,17 @@ def main():
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
     add_reference_to_stage(room_usd, "/World/Room")
-    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
-    key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
-    key.CreateIntensityAttr(2500)
-    UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
+    import collision as C
+    env = C.load_env(os.path.join(ROOT, cfg["env"]))
+    if args.look == "room":
+        import room_look
+        for note in room_look.apply(stage, env):
+            print("[record] look: %s" % note)
+    else:
+        UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
+        key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
+        key.CreateIntensityAttr(2500)
+        UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
     prim_path = import_robot()
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
@@ -167,7 +191,6 @@ def main():
         u_of = scan_seg.labels["u"]
     import gestures as G
     rig = G.Rig()
-    import collision as C
     import robot_profile as RP
     strip = C.strip_box(C.tool_def(RP.load("fr20")))
     half = (strip["size"][1] if strip else 1.0) / 2.0
@@ -196,7 +219,8 @@ def main():
     st = carb.settings.get_settings()
     st.set("/rtx/rendermode", "RaytracedLighting")
     st.set("/rtx/hydra/faceCulling/enabled", True)             # the walls culled from outside: seen through
-    cams = cameras(cfg)
+    st.set("/rtx/raytracing/fractionalCutoutOpacity", True)     # the glass's opacity below 1: see-through
+    cams = cameras(cfg, env)
     os.makedirs(args.out, exist_ok=True)
     summary = {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                "graph": os.path.relpath(gpath, ROOT).replace("\\", "/"),
@@ -223,13 +247,14 @@ def main():
         os.makedirs(frames)
         worst, f, lit = [0.0] * 6, 0, 0
         every = int(round(1.0 / (FPS_VIDEO * PHYSICS_DT)))
+        still_i = int(args.still / PHYSICS_DT) if args.still >= 0 else -1
         for i in range(int(total / PHYSICS_DT)):
             t = i * PHYSICS_DT
             clock[0] = t
             seg, s = at(t)
             q = seg.at(s)
             robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
-            shoot = i % every == 0
+            shoot = i == still_i if still_i >= 0 else i % every == 0
             if scanning and shoot:
                 done = [p[0] for p in plan if p[1].name == "scan"][0]
                 if t < done:
@@ -247,6 +272,15 @@ def main():
                 set_points(leds, [[tcp[j] + ax[j] * k * half for j in range(3)] for k in (-1, 1)] if on else
                            [[0, 0, -5], [0, 0, -5.01]])
             world.step(render=shoot or not args.headless)
+            if shoot and still_i >= 0:                          # one converged picture, then the next camera
+                for _ in range(40):
+                    world.step(render=True)
+                png = os.path.join(args.out, "%s_%s_still.png" % (name, cam_name))
+                capture_viewport_to_file(vp, png)
+                for _ in range(20):
+                    app.update()
+                print("[record] still %s" % png, flush=True)
+                break
             if shoot:
                 capture_viewport_to_file(vp, os.path.join(frames, "f_%05d.png" % f))
                 f += 1
@@ -254,6 +288,9 @@ def main():
             if t > 0.5:
                 for j in range(6):
                     worst[j] = max(worst[j], abs(float(sim[j]) - q[j]))
+        if still_i >= 0:
+            shutil.rmtree(frames, ignore_errors=True)
+            continue
         for _ in range(60):
             app.update()                                        # the last captures written
         mp4 = os.path.join(args.out, "%s_%s.mp4" % (name, cam_name))

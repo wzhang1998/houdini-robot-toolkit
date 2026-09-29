@@ -636,6 +636,12 @@ less the ramp and lead; the level strip reaches down to 0.2 m. The canvas
 (isaac/record_segments.py): no contact, 0.56 deg; the video
 geo/isaac/party_vscan_segments.mp4. From the audience's middle the
 forearm stands in front of the area's middle while it scans.
+The recording lit and coloured after the user's photo of the lab
+(isaac/room_look.py: the LED frame under the joists, a warm fill through
+the glass, plank floor, plywood TV wall, joists, studded glass walls --
+visual only, the frame's place estimated); cameras: the whole room from
+the corner behind the robot, and the guests' side from behind the
+audience zone.
 Also: a showpiece is a trigger by its name (show_ui's buttons per show,
 e.g. party_bigwipe's low_wipe_rows / greet_wipe_cols), for a quick look.
 Next: the user's verdict; the canvas's real size; 3 (merge, rebuild,
