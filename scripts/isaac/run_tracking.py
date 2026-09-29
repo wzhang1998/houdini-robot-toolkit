@@ -9,7 +9,10 @@ the room reported, and a video from the audience's side.
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live
         live: the greet clips play on; drag the person's head (select it, W, drag; the body follows) and
         the tracking layer (tracking.py, as show_stream would run it) turns the arm to it in real time;
-        "Person there" off: the person lost. --headless --minutes 2: the ball walks by itself (a check).
+        "Person there" off: the person lost. --headless --minutes 2: the heads move by themselves (a check).
+    C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3
+        three people: tracking.Attention picks whom to look at (they take turns; a passer-by is not looked at);
+        the one looked at turns green
 
 Per scenario: geo/tracking/<name>.json in, geo/tracking/<name>_isaac.json out
 (tracking error of the simulated arm against the commands, contacts between
@@ -38,6 +41,7 @@ ap.add_argument("scenarios", nargs="*")
 ap.add_argument("--live", action="store_true", help="drag the target in a window; the tracking layer runs live")
 ap.add_argument("--minutes", type=float, default=0.0, help="--live: stop after this long (0: until closed)")
 ap.add_argument("--seed", type=int, default=1, help="--live: the greet clips' order")
+ap.add_argument("--people", type=int, default=1, help="--live: this many heads to drag (several: Attention picks one)")
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
@@ -84,16 +88,16 @@ def marker(stage, path, radius, rgb):
     return s, op
 
 
-def body(stage):
+def body(stage, path="/World/Person"):
     """A person: a column for the body, a sphere for the head (moved together)."""
-    root = UsdGeom.Xform.Define(stage, Sdf.Path("/World/Person"))
+    root = UsdGeom.Xform.Define(stage, Sdf.Path(path))
     op = root.AddTranslateOp()
-    col = UsdGeom.Cylinder.Define(stage, Sdf.Path("/World/Person/Body"))
+    col = UsdGeom.Cylinder.Define(stage, Sdf.Path(path + "/Body"))
     col.CreateRadiusAttr(0.17)
     col.CreateHeightAttr(1.4)
     col.CreateDisplayColorAttr([Gf.Vec3f(0.25, 0.3, 0.45)])
     col.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -0.9))     # below the head
-    head = UsdGeom.Sphere.Define(stage, Sdf.Path("/World/Person/Head"))
+    head = UsdGeom.Sphere.Define(stage, Sdf.Path(path + "/Head"))
     head.CreateRadiusAttr(0.11)
     head.CreateDisplayColorAttr([Gf.Vec3f(0.85, 0.7, 0.55)])
     return root, op
@@ -128,51 +132,73 @@ def show_or_hide(prim, on):
     (img.MakeVisible if on else img.MakeInvisible)()
 
 
-def walker(eyes, now):
-    """--live --headless: where the ball is at `now` and whether anybody is
-    there -- walking to and fro across the audience, nodding, gone 30-33 s."""
-    x = eyes[0] + 0.8 * math.sin(2.0 * math.pi * now / 12.0)
-    z = eyes[2] + 0.08 * math.sin(2.0 * math.pi * now / 3.0)
-    return (x, eyes[1], z), not 30.0 <= now % 60.0 < 33.0
+SKIN, LOOKED = (0.85, 0.7, 0.55), (0.35, 0.9, 0.45)
+
+
+def walker(k, n, home, along, now):
+    """--live --headless: person k of n at `now` -- (where the head is, there?).
+    Alone: walking to and fro across the audience, gone 30-33 s. In a crowd:
+    person 0 stands, person 1 stands and leaves 40-45 s, person 2 walks
+    quickly across and back (a passer-by), the rest stand."""
+    if n == 1:
+        x = home[0] + 0.8 * math.sin(2.0 * math.pi * now / 12.0)
+        z = home[2] + 0.08 * math.sin(2.0 * math.pi * now / 3.0)
+        return (x, home[1], z), not 30.0 <= now % 60.0 < 33.0
+    if k == 2:                                                   # a passer-by: 1.2 m/s across, every 15 s
+        ph = now % 15.0
+        u = -1.4 + 1.2 * ph if ph < 2.4 else None
+        if u is None:
+            return home, False
+        return (home[0] + along[0] * u, home[1] + along[1] * u, home[2]), True
+    z = home[2] + 0.02 * math.sin(2.0 * math.pi * now / (3.0 + k))
+    return (home[0], home[1], z), not (k == 1 and 40.0 <= now % 60.0 < 45.0)
 
 
 def live():
     """The tracking layer live: the greet clips back to back (track_eval's
-    base motion), a ball to drag as the person's head, the target fed at
-    ~30 Hz, TargetInput + Gaze each physics tick, in real time."""
+    base motion), --people heads to drag (each its own prim; a body follows
+    each), fed at ~30 Hz -- one person straight to TargetInput, several
+    through Attention (whom to look at; the one looked at turns green) --
+    TargetInput + Gaze each physics tick, in real time."""
     import time
     import collision as C
     import show as S
-    import tracking as TR
     import track_eval as TE
+    import track_sim as TS
+    import tracking as TR
     cfg = json.load(open(args.config))
     env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
     graph = S.Graph.load(S.compiled_path(os.path.abspath(args.config)))
     base, clips = TE.base_motion(graph, "greet", 4 * 3600.0, seed=args.seed)
-    ti = TR.TargetInput()
+    ti, att = TR.TargetInput(), TR.Attention()
     gz = TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=C.load_model("fr20"))
     eyes = S.audience_eyes(cfg)
+    _, along, _ = TS.zone_frame(cfg)
+    n = max(1, args.people)
+    homes = [tuple(eyes[i] + along[i] * (k - (n - 1) / 2.0) * 0.7 for i in range(2)) + (eyes[2] + 0.03 * k,)
+             for k in range(n)]
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
     room = load_room(stage, os.path.abspath(args.config), args.look)
     robot = world.scene.add(SingleArticulation(import_robot(), name="fr20"))
     attach_tool(stage)
-    # the person: the head is what is dragged (its own prim, so the gizmo moves it), the body follows it
-    ball, ball_op = marker(stage, "/World/LiveHead", 0.11, (0.85, 0.7, 0.55))
-    ball_op.Set(Gf.Vec3d(*eyes))
-    person = UsdGeom.Cylinder.Define(stage, Sdf.Path("/World/LiveBody"))
-    person.CreateRadiusAttr(0.17)
-    person.CreateHeightAttr(1.4)
-    person.CreateDisplayColorAttr([Gf.Vec3f(0.25, 0.3, 0.45)])
-    person_op = person.AddTranslateOp()
+    heads, bodies = [], []
+    for k in range(n):                     # a head to drag (its own prim, so the gizmo moves it), a body under it
+        h, h_op = marker(stage, "/World/LiveHead%d" % (k + 1), 0.11, SKIN)
+        h_op.Set(Gf.Vec3d(*homes[k]))
+        b = UsdGeom.Cylinder.Define(stage, Sdf.Path("/World/LiveBody%d" % (k + 1)))
+        b.CreateRadiusAttr(0.17)
+        b.CreateHeightAttr(1.4)
+        b.CreateDisplayColorAttr([Gf.Vec3f(0.25, 0.3, 0.45)])
+        heads.append((h, h_op))
+        bodies.append((b, b.AddTranslateOp()))
     target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
     gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
     world.reset()
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
-    q0 = base(0.0)
-    robot.set_joint_positions(np.radians(q0), joint_indices=idx)
+    robot.set_joint_positions(np.radians(base(0.0)), joint_indices=idx)
 
     contacts = []
     try:
@@ -180,9 +206,9 @@ def live():
         from omni.physx.bindings._physx import ContactEventType
 
         def on_contact(headers, data):
-            for h in headers:
-                if h.type == ContactEventType.CONTACT_FOUND:
-                    a, b = contact_paths(h)
+            for hd in headers:
+                if hd.type == ContactEventType.CONTACT_FOUND:
+                    a, b = contact_paths(hd)
                     if ("/Room" in a) != ("/Room" in b) and "/Live" not in a + b:
                         contacts.append((a, b))
         sub = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841
@@ -192,45 +218,70 @@ def live():
     eye, look = audience_camera(cfg)
     use_camera(stage, "/World/TrackCam", *(camera_spec(args.camera, cfg, room) if args.camera else (eye, look, 16.0)))
 
-    there, label = [True], None
+    there, label = [True] * n, None
     if not args.headless:
         import omni.ui as ui
-        win = ui.Window("Tracking", width=380, height=210)
+        win = ui.Window("Tracking", width=400, height=180 + 28 * n)
         with win.frame:
             with ui.VStack(spacing=6):
                 label = ui.Label("", height=110, word_wrap=True)
-                with ui.HStack(height=24):
-                    box = ui.CheckBox(width=24)
-                    box.model.set_value(True)
-                    box.model.add_value_changed_fn(lambda m: there.__setitem__(0, m.get_value_as_bool()))
-                    ui.Label("Person there (off: lost)")
-                ui.Button("Head back to the audience", clicked_fn=lambda: ball_op.Set(Gf.Vec3d(*eyes)))
-        print("[track] live: select the person's head, W, drag it; the 'Tracking' panel toggles the person")
+                for k in range(n):
+                    with ui.HStack(height=24):
+                        box = ui.CheckBox(width=24)
+                        box.model.set_value(True)
+                        box.model.add_value_changed_fn(lambda m, k=k: there.__setitem__(k, m.get_value_as_bool()))
+                        ui.Label("Person %d there (off: gone)" % (k + 1))
+
+                def home_all():
+                    for k in range(n):
+                        heads[k][1].Set(Gf.Vec3d(*homes[k]))
+                ui.Button("Heads back to the audience", clicked_fn=home_all)
+        print("[track] live: select a head, W, drag it; the 'Tracking' panel says who is there%s"
+              % ("; the one looked at turns green" if n > 1 else ""))
 
     wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
     worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
-    tracked_ticks = 0
+    tracked_ticks, looked, green, looked_at = 0, None, None, set()
     while app.is_running():
         now = ticks * PHYSICS_DT
-        if args.headless:
-            p, there[0] = walker(eyes, now)
-            ball_op.Set(Gf.Vec3d(*p))
-        else:
-            m = UsdGeom.Xformable(ball.GetPrim()).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-            p = tuple(m.ExtractTranslation())
-        if ticks % feed == 0 and there[0]:
-            ti.target(p[0], p[1], p[2], 1.0, now, 0, now=now)
+        pos = []
+        for k, (h, h_op) in enumerate(heads):
+            if args.headless:
+                p, there[k] = walker(k, n, homes[k], along, now)
+                h_op.Set(Gf.Vec3d(*p))
+            else:
+                p = tuple(UsdGeom.Xformable(h.GetPrim()).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                          .ExtractTranslation())
+            pos.append(p)
+        if ticks % feed == 0:
+            if n == 1:
+                if there[0]:
+                    ti.target(pos[0][0], pos[0][1], pos[0][2], 1.0, now, 0, now=now)
+            else:
+                att.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now)
+                ch = att.choose(now)
+                looked = ch[1] if ch else None
+                if ch is not None:
+                    ti.target(ch[0][0], ch[0][1], ch[0][2], 0.9, now, ch[1], now=now)
+                elif ti.seen is not None:
+                    ti.lost()
         tgt = ti.now(now)
-        qb = base(now)
-        q = gz.step(qb, tgt, now, [base(now + d) for d in TR.AHEAD_S])
+        q = gz.step(base(now), tgt, now, [base(now + d) for d in TR.AHEAD_S])
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
-        person_op.Set(Gf.Vec3d(p[0], p[1], p[2] - 0.9))              # the body under the head
-        show_or_hide(person.GetPrim(), there[0])
-        show_or_hide(ball.GetPrim(), there[0] or not args.headless)   # the head stays draggable
+        for k in range(n):
+            bodies[k][1].Set(Gf.Vec3d(pos[k][0], pos[k][1], pos[k][2] - 0.9))    # the body under the head
+            show_or_hide(bodies[k][0].GetPrim(), there[k])
+            show_or_hide(heads[k][0].GetPrim(), there[k] or not args.headless)  # a head stays draggable
+        if n > 1 and looked != green:
+            for k in range(n):
+                heads[k][0].GetDisplayColorAttr().Set([Gf.Vec3f(*(LOOKED if k + 1 == looked else SKIN))])
+            green = looked
         show_or_hide(target.GetPrim(), tgt is not None)
         if tgt is not None:
             target_op.Set(Gf.Vec3d(*tgt))
             tracked_ticks += 1
+            if looked is not None:
+                looked_at.add(looked)
         R, tcp, _ = S.tool_pose(q)
         ax = (R[0][2], R[1][2], R[2][2])
         gaze.GetPointsAttr().Set([Gf.Vec3f(*tcp), Gf.Vec3f(*[tcp[j] + 1.5 * ax[j] for j in range(3)])])
@@ -240,11 +291,11 @@ def live():
             worst = max(worst, max(abs(float(sim[j]) - q[j]) for j in range(6)))
         if label is not None and ticks % 15 == 0:
             off = gz.offsets
-            label.text = ("%s   offsets J1 %+.1f  J5 %+.1f deg\nunsafe %d   shrunk %d   governed %d   contacts %d\n"
-                          "tracking error %.2f deg   %s" % ("TRACKED" if tgt is not None else "no one (the clip alone)",
-                                                           off[0], off[1], gz.unsafe, gz.shrunk, gz.governed,
-                                                           len(contacts), worst,
-                                                           "%.0f s" % now))
+            who = ("person %d" % looked if looked else "no one") if n > 1 else ("TRACKED" if tgt is not None else "no one")
+            label.text = ("%s%s   offsets J1 %+.1f  J5 %+.1f deg\nunsafe %d   shrunk %d   held (slow zone) %d   "
+                          "contacts %d\ntracking error %.2f deg   %.0f s" % (
+                              "looking at " if n > 1 else "", who, off[0], off[1], gz.unsafe, gz.shrunk,
+                              getattr(gz, "held_slow", 0), len(contacts), worst, now))
         ticks += 1
         if not args.headless:
             ahead = now - (time.monotonic() - wall0)
@@ -252,10 +303,11 @@ def live():
                 time.sleep(ahead)
         if end is not None and now >= end:
             break
-    out = {"live_seconds": round(ticks * PHYSICS_DT, 1), "tracked_share": round(tracked_ticks / max(1, ticks), 2),
-           "unsafe_ticks": gz.unsafe, "shrunk_ticks": gz.shrunk, "governed_ticks": gz.governed,
-           "arm_room_contacts": len(contacts), "tracking_max_deg": round(worst, 3),
-           "wall_s": round(time.monotonic() - wall0, 1)}
+    out = {"people": n, "live_seconds": round(ticks * PHYSICS_DT, 1),
+           "tracked_share": round(tracked_ticks / max(1, ticks), 2), "looked_at": sorted(looked_at),
+           "turns": att.turns, "unsafe_ticks": gz.unsafe, "shrunk_ticks": gz.shrunk,
+           "held_slow_ticks": getattr(gz, "held_slow", 0), "arm_room_contacts": len(contacts),
+           "tracking_max_deg": round(worst, 3), "wall_s": round(time.monotonic() - wall0, 1)}
     print("[track] live %s" % json.dumps(out), flush=True)
 
 
@@ -272,6 +324,7 @@ def main():
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
     person, person_op = body(stage)
+    crowd = [body(stage, "/World/Crowd%d" % k) for k in range(6)]          # a crowd scenario's people
     target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
     gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
     import gestures as G
@@ -327,6 +380,16 @@ def main():
             q = [x + a * (y - x) for x, y in zip(d["q"][k], d["q"][k + 1])]
             robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
             p, g = d["truth"][k], d["target"][k]
+            if d.get("people"):                                  # everybody there; the ring marks the one looked at
+                here = d["people"][k]
+                for c, (root, op) in enumerate(crowd):
+                    show_or_hide(root.GetPrim(), c < len(here))
+                    if c < len(here):
+                        op.Set(Gf.Vec3d(*here[c][1:]))
+                p = None
+            else:
+                for root, _ in crowd:
+                    show_or_hide(root.GetPrim(), False)
             show_or_hide(person.GetPrim(), p is not None)
             if p is not None:
                 person_op.Set(Gf.Vec3d(*p))

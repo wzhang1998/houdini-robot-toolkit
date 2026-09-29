@@ -611,7 +611,13 @@ tool: no contact in 11, the simulated arm within 0.93 deg of the commands
 geo/tracking/. Live (2026-09-29, Ruckig in Isaac's Python): run_tracking --live, a
 ball to drag as the head, TargetInput + Gaze every physics tick in real time;
 headless check (the ball walking, gone 3 s): 72 s, 0 unsafe ticks, 0 contacts,
-tracking within 1.0 deg, faster than real time. Next: 4 (modes B / C).
+tracking within 1.0 deg, faster than real time.
+Crowds (2026-09-29): tracking.Attention picks whom to look at from /track/people
+(in view 1 s, not walking by, one at a time 5-12 s, turns, groups as one);
+track_sim's five crowd scenarios; all 16 scenarios pass offline (the crowd showed:
+speed over 0.6 s, look-ahead to 1.4 s, the offsets held still near a slow zone);
+Isaac: crowd replays and --live --people 3 (the one looked at green), 0 unsafe,
+0 contacts. Next: 4 (modes B / C); the OAK-D process sending /track/people.
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
