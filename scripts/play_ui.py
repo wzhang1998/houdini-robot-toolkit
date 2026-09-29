@@ -58,15 +58,94 @@ cycles = {cycles}
 """
 
 
-def render(cfg):
-    """cfg dict -> playback.toml text."""
+def _tables(text):
+    """TOML text -> [(table name, its lines)]: the comments just above the
+    header, the header, the body; the lines before the first table under
+    the name None."""
+    out = [(None, [])]
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if s.startswith("["):
+            prev = out[-1][1]
+            i = len(prev)
+            while i > 0 and (not prev[i - 1].strip() or prev[i - 1].lstrip().startswith("#")):
+                i -= 1
+            while i < len(prev) and not prev[i].strip():     # blank lines stay with the table before
+                i += 1
+            lead = prev[i:]
+            del prev[i:]
+            out.append((s[1:s.index("]")].strip() if "]" in s else s, lead + [line]))
+        else:
+            out[-1][1].append(line)
+    return out
+
+
+def _key(line):
+    """The key a `key = value` line sets, or None (blank, comment, header)."""
+    s = line.strip()
+    k = s.split("=", 1)[0].strip() if "=" in s and not s.startswith(("#", "[")) else ""
+    return k or None
+
+
+OWNED = {name: {_key(x) for x in lines} - {None} for name, lines in _tables(TEMPLATE) if name}
+
+
+def render(cfg, old=""):
+    """cfg dict -> playback.toml text. old: the file as it is -- the tables
+    and keys this window does not own are kept word for word (the robot PC's
+    [controller_playback_ppm], which show_stream.py paces by; robot.env)."""
     r, c, m, w = cfg["robot"], cfg["clip"], cfg["motion"], cfg["wiggle"]
-    return TEMPLATE.format(
+    new = TEMPLATE.format(
         target=r["target"], ip=r["ip"], profile=r.get("profile", "fr20"),
         csv=c["csv"].replace("\\", "/"), record=str(bool(c["record"])).lower(),
         report=str(bool(c["report"])).lower(),
         speed=m["speed"], rate_hz=m["rate_hz"], acc_limit=m["acc_limit"], move_vel=m["move_vel"],
         joint=w["joint"], amp_deg=w["amp_deg"], period_s=w["period_s"], cycles=w["cycles"])
+    if not old:
+        return new
+    extra, foreign = {}, []
+    for name, lines in _tables(old):
+        if name is None or name in OWNED:                   # top-level keys too
+            own = OWNED.get(name, set())
+            extra[name] = [x for x in lines if _key(x) is not None and _key(x) not in own]
+        else:
+            foreign.append(lines)
+    out = []
+    for name, lines in _tables(new):
+        if extra.get(name):
+            i = max([j + 1 for j, x in enumerate(lines) if x.strip()] or [0])    # after the block's last line
+            lines = lines[:i] + [x if x.endswith("\n") else x + "\n" for x in extra[name]] + lines[i:]
+        out.extend(lines)
+    for lines in foreign:
+        if out and out[-1].strip():
+            out.append("\n")
+        out.extend(lines)
+        if not out[-1].endswith("\n"):
+            out[-1] += "\n"
+    return "".join(out)
+
+
+def save_config(cfg, path):
+    """Write cfg to playback.toml at path, keeping what this window does not
+    own (render). Refuses, and leaves the file as it is, when a value it
+    does not own would not come back the same."""
+    import tomllib
+    old = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+    text = render(cfg, old)
+    if old:
+        before, after = tomllib.loads(old), tomllib.loads(text)
+        for name, table in before.items():
+            for k, v in (table.items() if isinstance(table, dict) else [(None, table)]):
+                if k in OWNED.get(name, ()):
+                    continue
+                now = after.get(name) if k is None else (after.get(name) or {}).get(k)
+                if now != v:
+                    raise ValueError("playback.toml: saving would change %s%s (%r -> %r); not saved"
+                                     % (name, "" if k is None else "." + k, v, now))
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
 
 
 def summary(text):
@@ -222,8 +301,7 @@ class App:
                            "period_s": g["period_s"], "cycles": g["cycles"]}}
 
     def save(self):
-        with open(play.CONFIG, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(render(self.cfg()))
+        save_config(self.cfg(), play.CONFIG)
 
     def _target_changed(self):
         hw = self.v["target"].get() == "hardware"
@@ -267,7 +345,11 @@ class App:
                     icon="warning"):
                 return
             argv.append("--yes")      # confirmed here; the player has no console to ask on
-        self.save()
+        try:
+            self.save()
+        except ValueError as e:
+            messagebox.showerror("Settings", str(e))
+            return
         self.buffer = ""
         self.log.insert("end", "\n> fairino_player.py %s\n" % " ".join(argv))
         self.log.see("end")
@@ -347,6 +429,32 @@ def self_test():
             and back["clip"]["record"] is True and back["clip"]["report"] is False
             and back["motion"] == cfg["motion"] and back["wiggle"] == cfg["wiggle"])
     check("settings round-trip through playback.toml", same, back if not same else "")
+    # the robot PC's file carries what this window does not own: the playback
+    # calibration show_stream.py paces by, a key play.py reads -- kept on save
+    tp = os.path.join(tempfile.mkdtemp(), "playback.toml")
+    ours = render(cfg).replace('profile = "fr20"\n', 'profile = "fr20"\nenv = "envs/other.usda"   # play.py\n')
+    kept = '# what show_stream.py paces by\n[controller_playback_ppm]    # measured 2026-09-28\n"192.168.58.2" = -950.0\n'
+    with open(tp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write('schema = 1\n[controller_clock_ppm]\n"192.168.58.2" = -126.0\n\n' + ours + "\n" + kept)
+    cfg2 = dict(cfg, motion=dict(cfg["motion"], speed=0.2))
+    save_config(cfg2, tp)
+    text = open(tp, encoding="utf-8").read()
+    back = tomllib.loads(text)
+    ok = (kept in text and back.get("controller_playback_ppm") == {"192.168.58.2": -950.0}
+          and back.get("controller_clock_ppm") == {"192.168.58.2": -126.0} and back.get("schema") == 1
+          and text.count("# Playback settings") == 1)
+    check("a save keeps the sections it does not own, word for word ([controller_playback_ppm])", ok,
+          "" if ok else text)
+    check("... and the keys it does not own in its own sections (robot.env), its own values saved",
+          back["robot"].get("env") == "envs/other.usda" and back["motion"]["speed"] == 0.2, back["robot"])
+    import show_stream
+    check("... so show_stream still reads the calibration after a save",
+          show_stream.toml_playback_ppm("192.168.58.2", tp) == -950.0)
+    save_config(cfg2, tp)
+    check("... and saving again changes nothing", open(tp, encoding="utf-8").read() == text)
+    save_config(cfg, os.path.join(os.path.dirname(tp), "new.toml"))
+    check("a first save (no file yet) writes the template",
+          open(os.path.join(os.path.dirname(tp), "new.toml"), encoding="utf-8").read() == render(cfg))
     rep = {"conditioning": {"source_duration_s": 9.7, "played_duration_s": 58.3, "time_scale": 6.0, "speed": 1.0},
            "playback": {"sends": 7288, "skipped": 0, "effective_send_hz": 125.0, "best_lag_ms": 40.0,
                         "tracking_after_lag_max_deg": 0.13, "controller_error_after": [0, 0, 0]}}
