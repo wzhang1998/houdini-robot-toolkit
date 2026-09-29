@@ -4,6 +4,7 @@
     hython scripts/build_review_scene.py --cook            # ... and cook it (every clip)
     hython scripts/build_review_scene.py --cook --ids d01_punch-punch v04_line
     hython scripts/build_review_scene.py --cook --sets stage --ok-only   # the quick-test set (stage_set.py)
+    hython scripts/build_review_scene.py --cook --view audience          # what a guest sees (or --view x,y,z,tx,ty,tz)
 
 The scene is scenes/FR20_cell.hiplc (the measured room, the FR20 driven by
 CELL_CTRL's Clip) turned into the review picture by
@@ -107,6 +108,9 @@ def build():
     view = None
     if "--view" in sys.argv and _values(sys.argv, "--view")[0] == "audience":
         view = R.audience_view(ROOT + "/shows/party.json")      # gestures: what a guest sees
+    elif "--view" in sys.argv:                                  # eye and target in the robot frame: x,y,z,tx,ty,tz
+        v = [float(x) for x in _values(sys.argv, "--view")[0].split(",")]
+        view = (v[:3], v[3:6])
     cam = R.setup_scene(view=view)
     hou.node("/obj/CELL_CTRL").parm("clip").set("`@clip`")      # backticks: expanded per work item in the render job
     sub = {"scripts": ROOT + "/scripts"}
