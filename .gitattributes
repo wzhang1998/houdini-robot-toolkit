@@ -18,3 +18,7 @@
 *.vfl  text eol=lf
 *.json text eol=lf
 *.md   text eol=lf
+
+# text the build hashes (show.input_digests): the same bytes on every checkout
+*.usda  text eol=lf
+*.urdf  text eol=lf

@@ -141,7 +141,8 @@ def run_window(config):
     def ready(what):
         c = choices.get(show_pick.get())
         if c is None or not c["ready"]:
-            return "This show is not built: uv run scripts/show.py build %s" % os.path.relpath(link.config, UI.ROOT)
+            return ("This show is not ready to play: %s\n\nuv run scripts/show.py build %s"
+                    % (show_pick.get() or os.path.basename(link.config), os.path.relpath(link.config, UI.ROOT)))
         if not ip.get().strip():
             return "Type the controller's IP."
         if target.get() == "hardware" and not all(v.get() for v in ticks):

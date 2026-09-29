@@ -771,7 +771,9 @@ def input_digests(cfg_path, root=ROOT):
         return h(json.dumps(_canonical(json.load(open(path, encoding="utf8"))), sort_keys=True).encode())
 
     def of_file(path):
-        return h(open(path, "rb").read()) if path and os.path.exists(path) else None
+        # line endings left out: git checks text out as CRLF or LF by the machine's settings, and the
+        # show PC's CRLF copy of the room read as "changed" -- the show refused to play (2026-09-29)
+        return h(open(path, "rb").read().replace(b"\r\n", b"\n")) if path and os.path.exists(path) else None
     cfg = json.load(open(cfg_path, encoding="utf8"))
     prof_path = os.path.join(root, "profiles", "fr20.json")
     prof = json.load(open(prof_path, encoding="utf8"))
@@ -1461,19 +1463,23 @@ def self_test():
     for d in ("profiles", "envs", "shows", "assets"):
         os.makedirs(os.path.join(root, d))
     open(os.path.join(root, "profiles", "fr20.json"), "w").write(json.dumps({"robot": {"n": 6}, "tool": None}))
-    open(os.path.join(root, "envs", "room.usda"), "w").write("#usda 1.0\n")
+    open(os.path.join(root, "envs", "room.usda"), "wb").write(b"#usda 1.0\n")          # LF, as in the repo
     cp = os.path.join(root, "shows", "s.json")
     json.dump({"env": "envs/room.usda", "hubs": {"a": {"q": [0] * 6}}, "_note": "x"}, open(cp, "w"))
     built = {"inputs": input_digests(cp, root)}
     fresh = stale_inputs(built, cp, root)
     json.dump({"env": "envs/room.usda", "hubs": {"a": {"q": [0] * 6}}, "_note": "a new note"}, open(cp, "w"), indent=4)
     noted = stale_inputs(built, cp, root)
+    open(os.path.join(root, "envs", "room.usda"), "wb").write(b"#usda 1.0\r\n")    # checked out with CRLF elsewhere
+    crlf = stale_inputs(built, cp, root)
     open(os.path.join(root, "envs", "room.usda"), "a").write("# moved a wall\n")
     moved = stale_inputs(built, cp, root)
     shutil.rmtree(root, ignore_errors=True)
     check("a compiled show knows its inputs: none changed, a note or the layout changed (not stale), the room "
-          "changed (stale), built before they were recorded (stale)",
-          fresh == [] and noted == [] and moved == ["env"] and stale_inputs({}, cp, root), (fresh, noted, moved))
+          "checked out with other line endings (not stale: the show PC, 2026-09-29), the room changed (stale), "
+          "built before they were recorded (stale)",
+          fresh == [] and noted == [] and crlf == [] and moved == ["env"] and stale_inputs({}, cp, root),
+          (fresh, noted, crlf, moved))
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
