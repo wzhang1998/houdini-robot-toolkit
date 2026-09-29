@@ -167,6 +167,7 @@ def main():
     cfg_path = os.path.abspath(args.config)
     cfg = json.load(open(cfg_path))
     graph = show.Graph.load(show.compiled_path(cfg_path))
+    show.require_fresh(graph, cfg_path)
     runner = show.runner_for(graph, seed=args.seed, log=lambda *a: print("[show]", *a))
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)

@@ -537,6 +537,7 @@ def build(cfg_path, log=print):
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
+                           "inputs": input_digests(cfg_path),
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     bad = g.check_joins()
@@ -711,6 +712,61 @@ def scan_ends(cfg, tool_z, strip_w=0.0254):
     end = [centre[i] + way * right[i] * half for i in range(3)]
     return start, end, {"exposed_m": opening, "cruise_m": cruise, "ramp_m": ramp, "speed_mps": v,
                         "direction": [way * x for x in right]}
+
+
+def _canonical(x):
+    """A JSON value without its notes (keys starting with _), keys sorted:
+    what a build depends on, not how the file is laid out or annotated."""
+    if isinstance(x, dict):
+        return {k: _canonical(v) for k, v in sorted(x.items()) if not str(k).startswith("_")}
+    if isinstance(x, list):
+        return [_canonical(v) for v in x]
+    return x
+
+
+def input_digests(cfg_path, root=ROOT):
+    """{input: sha256} of what a build reads: the show config and the robot
+    profile (as JSON, notes left out), the profile's tool URDF and the room
+    (bytes). Kept in the compiled show's info["inputs"]."""
+    import hashlib
+
+    def h(data):
+        return hashlib.sha256(data).hexdigest()[:16]
+
+    def of_json(path):
+        return h(json.dumps(_canonical(json.load(open(path, encoding="utf8"))), sort_keys=True).encode())
+
+    def of_file(path):
+        return h(open(path, "rb").read()) if path and os.path.exists(path) else None
+    cfg = json.load(open(cfg_path, encoding="utf8"))
+    prof_path = os.path.join(root, "profiles", "fr20.json")
+    prof = json.load(open(prof_path, encoding="utf8"))
+    tool = (prof.get("tool") or {}).get("urdf")
+    return {"config": of_json(cfg_path), "profile": of_json(prof_path),
+            "tool": of_file(os.path.join(root, tool) if tool else None),
+            "env": of_file(os.path.join(root, cfg["env"]))}
+
+
+def stale_inputs(info, cfg_path, root=ROOT):
+    """The inputs that changed since the compiled show (its info) was built,
+    by name; ["inputs not recorded"] for a show built before they were."""
+    was = (info or {}).get("inputs")
+    if not was:
+        return ["inputs not recorded"]
+    now = input_digests(cfg_path, root)
+    return [k for k in sorted(now) if now[k] != was.get(k)]
+
+
+def require_fresh(graph, cfg_path):
+    """SystemExit, saying what to do, when the compiled show is out of date
+    against its inputs -- a clip past the cable's J6 range streamed from a
+    stale file faults mid-show (the review, 2026-09-28)."""
+    changed = stale_inputs(graph.info, cfg_path)
+    if changed:
+        why = ("built before its inputs were recorded" if changed == ["inputs not recorded"]
+               else "%s changed since it was built" % ", ".join(changed))
+        raise SystemExit("%s is out of date (%s): uv run scripts/show.py build %s"
+                         % (compiled_path(cfg_path), why, os.path.relpath(cfg_path, ROOT)))
 
 
 def compiled_path(cfg_path):
@@ -1322,6 +1378,25 @@ def self_test():
           "led_gap_m from the paper",
           a[0] < -0.8 and b[0] > 0.8 and abs(a[1] - (0.99 - 0.06 - 0.07)) < 1e-9
           and abs(info["exposed_m"] - 1.435) < 1e-3, (a, b, info))
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    for d in ("profiles", "envs", "shows", "assets"):
+        os.makedirs(os.path.join(root, d))
+    open(os.path.join(root, "profiles", "fr20.json"), "w").write(json.dumps({"robot": {"n": 6}, "tool": None}))
+    open(os.path.join(root, "envs", "room.usda"), "w").write("#usda 1.0\n")
+    cp = os.path.join(root, "shows", "s.json")
+    json.dump({"env": "envs/room.usda", "hubs": {"a": {"q": [0] * 6}}, "_note": "x"}, open(cp, "w"))
+    built = {"inputs": input_digests(cp, root)}
+    fresh = stale_inputs(built, cp, root)
+    json.dump({"env": "envs/room.usda", "hubs": {"a": {"q": [0] * 6}}, "_note": "a new note"}, open(cp, "w"), indent=4)
+    noted = stale_inputs(built, cp, root)
+    open(os.path.join(root, "envs", "room.usda"), "a").write("# moved a wall\n")
+    moved = stale_inputs(built, cp, root)
+    shutil.rmtree(root, ignore_errors=True)
+    check("a compiled show knows its inputs: none changed, a note or the layout changed (not stale), the room "
+          "changed (stale), built before they were recorded (stale)",
+          fresh == [] and noted == [] and moved == ["env"] and stale_inputs({}, cp, root), (fresh, noted, moved))
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
@@ -1385,6 +1460,7 @@ def main(argv=None):
         print("variety: " + ("meets the targets" if not missed else "MISSES -- " + "; ".join(missed)))
         return 0 if not missed else 1
     if a.command == "dry-run":
+        require_fresh(g, cfg_path)
         rep = dry_run(g, a.minutes, a.trigger_every, log=lambda *x: None, triggers=a.triggers.split(","))
         print(json.dumps(rep, indent=1))
         return 0 if rep["worst_step_deg_per_tick"] <= rep["max_step_allowed"] else 1

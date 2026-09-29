@@ -782,6 +782,7 @@ def main(argv=None):
     cfg_path = os.path.abspath(a.config)
     cfg = json.load(open(cfg_path))
     graph = S.Graph.load(S.compiled_path(cfg_path))
+    S.require_fresh(graph, cfg_path)
     prof = RP.load("fr20")
     dt = 1.0 / RATE_HZ
     if not 0.0 < a.scan_speed <= 1.0:
