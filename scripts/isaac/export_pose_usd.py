@@ -135,7 +135,23 @@ def main():
         "joints_deg": [round(x, 3) for x in q], "tool": tool["name"] if tool else "none",
         "note": "exported by houdini-robot-toolkit scripts/isaac/export_pose_usd.py"})
 
-    stage.Flatten().Export(out)
+    # no instancing in the file: flattened, an instanced mesh becomes an "over" prototype at the root
+    # (/Flattened_Prototype_N), which USD does not draw but some viewers do -- the FR20's meshes are
+    # modelled in the zero pose, so they drew a second arm on the floor (2026-09-29)
+    for _ in range(10):                                       # instances nest (a material inside a mesh's)
+        found = [p for p in stage.Traverse() if p.IsInstanceable()]
+        if not found:
+            break
+        for p in found:
+            p.SetInstanceable(False)
+    flat = stage.Flatten()                                    # an Sdf.Layer
+    edit = Sdf.BatchNamespaceEdit()
+    for spec in list(flat.rootPrims):                         # only /World: not the app's cameras, render settings
+        if spec.name != "World":
+            edit.Add(spec.path, Sdf.Path.emptyPath)
+    if not flat.Apply(edit):
+        raise SystemExit("could not remove the extra root prims")
+    flat.Export(out)
     size = os.path.getsize(out) / 1e6
     print("[export] %s  (%s: %s)  %.1f MB, links posed %d, last link %.1e m from our FK"
           % (out, label, " ".join("%.1f" % x for x in q), size, len(posed), diff))
