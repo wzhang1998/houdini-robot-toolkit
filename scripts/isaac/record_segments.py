@@ -58,48 +58,6 @@ from isaac_stage import (PHYSICS_DT, attach_tool, cameras, import_robot, load_ro
 
 FPS_VIDEO = 30
 HOLD_S = 0.5                     # still between the segments, as the show's hubs
-VIOLET = (0.55, 0.2, 1.0)
-
-
-def curve(stage, path, rgb, width, closed=False):
-    c = UsdGeom.BasisCurves.Define(stage, Sdf.Path(path))
-    c.CreateTypeAttr("linear")
-    c.CreateWrapAttr("periodic" if closed else "nonperiodic")
-    c.CreateDisplayColorAttr([Gf.Vec3f(*rgb)])
-    c.CreateWidthsAttr([width])
-    c.SetWidthsInterpolation(UsdGeom.Tokens.constant)
-    return c
-
-
-def set_points(c, pts):
-    c.GetPointsAttr().Set([Gf.Vec3f(*p) for p in pts])
-    c.GetCurveVertexCountsAttr().Set([len(pts)])
-
-
-def area_corners(cfg, lift):
-    """The scan area's corners on the paper's face, lift m in front of it."""
-    middle, w, h = show.scan_area(cfg)
-    n = cfg["canvas"]["normal"]
-    left = (-n[1], n[0], 0.0)
-    off = cfg["canvas"].get("thickness", 0.02) / 2.0 + lift
-    base = [middle[i] - n[i] * off for i in range(3)]
-    return [[base[0] + left[0] * sx * w / 2, base[1] + left[1] * sx * w / 2, base[2] + sz * h / 2]
-            for sx, sz in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
-
-
-def exposed_quad(cfg, u):
-    """The paper exposed at u (0..1 of the scan): the area's part the strip has passed."""
-    tl, tr, br, bl = area_corners(cfg, 0.004)
-    u = min(max(u, 0.0), 1.0)
-    d = cfg["scan"].get("direction", "left_to_right")
-    lerp = lambda a, b: [a[i] + (b[i] - a[i]) * u for i in range(3)]  # noqa: E731
-    if d == "top_to_bottom":
-        return [tl, tr, lerp(tr, br), lerp(tl, bl)]
-    if d == "bottom_to_top":
-        return [lerp(bl, tl), lerp(br, tr), br, bl]
-    if d == "left_to_right":               # left as seen from the robot's side: tl is on its left
-        return [tl, lerp(tl, tr), lerp(bl, br), bl]
-    return [lerp(tr, tl), tr, br, lerp(br, bl)]
 
 
 def main():
@@ -134,29 +92,16 @@ def main():
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
     env = load_room(stage, cfg_path, args.look)
-    import collision as C
     prim_path = import_robot()
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
     scanning = cfg.get("scan") and "scan" in by_name
     if scanning:
-        outline = curve(stage, "/World/ScanArea", (0.35, 0.35, 0.4), 0.006, closed=True)
-        set_points(outline, area_corners(cfg, 0.003))
-        exposed = UsdGeom.Mesh.Define(stage, Sdf.Path("/World/Exposed"))
-        exposed.CreateFaceVertexCountsAttr([4])
-        exposed.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
-        exposed.CreateDoubleSidedAttr(True)
-        exposed.CreateDisplayColorAttr([Gf.Vec3f(*VIOLET)])
-        exposed.CreatePointsAttr([Gf.Vec3f(0, 0, -5)] * 4)          # out of sight until the scan starts
-        leds = curve(stage, "/World/LEDs", VIOLET, 0.03)
+        from scan_viz import ScanViz
+        viz = ScanViz(stage, cfg)
         scan_seg = by_name["scan"]
         on0, on1 = scan_seg.labels["led_on_s"]
         u_of = scan_seg.labels["u"]
-    import gestures as G
-    rig = G.Rig()
-    import robot_profile as RP
-    strip = C.strip_box(C.tool_def(RP.load("fr20")))
-    half = (strip["size"][1] if strip else 1.0) / 2.0
     world.reset()
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
@@ -215,14 +160,8 @@ def main():
                     u = u_of[min(len(u_of) - 1, int(s / scan_seg.duration * (len(u_of) - 1)))]
                 else:
                     u = 2.0
-                exposed.GetPointsAttr().Set([Gf.Vec3f(*p) for p in exposed_quad(cfg, u)] if u > 0 else
-                                            [Gf.Vec3f(0, 0, -5)] * 4)
-                on = seg.name == "scan" and on0 <= s <= on1
-                lit += on
-                R, tcp, _ = rig.tool(q)
-                ax = (R[0][1], R[1][1], R[2][1])                  # the strip along the flange's y
-                set_points(leds, [[tcp[j] + ax[j] * k * half for j in range(3)] for k in (-1, 1)] if on else
-                           [[0, 0, -5], [0, 0, -5.01]])
+                viz.update(u, seg.name == "scan" and on0 <= s <= on1, q)
+                lit += seg.name == "scan" and on0 <= s <= on1
             world.step(render=shoot or not args.headless)
             if shoot and still_i >= 0:                          # one converged picture, then the next camera
                 for _ in range(40):

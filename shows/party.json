@@ -229,7 +229,7 @@
    1.8
   ],
   "thickness": 0.02,
-  "_note": "The fab team's canvas, standing on the floor, much larger than the scan (2026-09-29): its size a PLACEHOLDER (2.4 x 1.8 m, floor to 1.8 m) until they send it; no frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall."
+  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall."
  },
  "scan": {
   "direction": "top_to_bottom",

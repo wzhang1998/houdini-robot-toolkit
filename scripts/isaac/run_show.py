@@ -6,6 +6,7 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
 
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5         --auto-trigger 60 --seed 1 --camera audience --no-guides --video           the 5 min demo, recorded
 
 The same Runner as the dry run and (next) the real arm: each physics step
 asks it for joints and sends them to the arm's position drives. Triggers:
@@ -42,9 +43,13 @@ ap.add_argument("--no-tool", action="store_true", help="the bare arm (the profil
 ap.add_argument("--seed", type=int, default=None)
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
 ap.add_argument("--snapshot", default="", help="render ~3 s, save the viewport to this PNG, stop")
+ap.add_argument("--video", action="store_true",
+                help="record <out>/isaac_show_<stamp>.mp4 (30 fps), the state, clip and scan in the corner "
+                     "(overlay.py); with --headless --minutes 5 --auto-trigger 60 --no-osc: the demo")
 ap.add_argument("--camera", default="room",
                 help="room (the whole room), audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame)")
 ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
+ap.add_argument("--no-guides", action="store_true", help="hide the safety guides (zones' outlines): the demo's look")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -58,10 +63,35 @@ from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 
+import overlay  # noqa: E402
 import show  # noqa: E402
 
 from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, import_robot, load_room,  # noqa: E402
                          render_settings, use_camera)
+
+FPS_VIDEO = 30
+
+
+def encode(frames, corner, shots, stamp):
+    """The frames as an mp4 with the corner's text burnt in (overlay.py);
+    its path, relative to the repo. The frames go."""
+    import shutil
+    import subprocess
+    for _ in range(60):
+        app.update()                                        # the last captures written
+    with open(os.path.join(frames, "overlay.ass"), "w", encoding="utf-8") as f:
+        f.write(overlay.ass(overlay.compress(corner, 0.5), 1600, 900, shots / float(FPS_VIDEO)))
+    mp4 = os.path.join(args.out, "isaac_show_%s.mp4" % stamp)
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS_VIDEO), "-i", "f_%05d.png",
+                        "-vf", "ass=overlay.ass", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "22",
+                        os.path.abspath(mp4)], cwd=frames, capture_output=True, text=True)
+    if r.returncode:
+        print("[show] ffmpeg: %s (frames kept in %s)" % (r.stderr[-400:], frames))
+        return None
+    shutil.rmtree(frames, ignore_errors=True)
+    print("[show] video %s" % mp4)
+    return os.path.relpath(mp4, ROOT).replace("\\", "/")
+
 
 def main():
     cfg_path = os.path.abspath(args.config)
@@ -72,7 +102,7 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    env = load_room(stage, cfg_path, args.look)                           # the show's room, lit as the lab
+    env = load_room(stage, cfg_path, args.look, guides=not args.no_guides)                           # the show's room, lit as the lab
     prim_path = import_robot()
     if not args.no_tool:
         attach_tool(stage)
@@ -149,10 +179,36 @@ def main():
     next_trig = args.auto_trigger * (0.5 + rng.random()) if args.auto_trigger else None
     t_trig, waits, worst, sq, n = None, [], [0.0] * 6, [0.0] * 6, 0
     end = args.minutes * 60.0 if args.minutes else None
+    frames, shots, corner = None, 0, []
+    viz, viz_u = None, -1.0
+    if cfg.get("scan"):                                        # the scan's area, the lit strip, the paper exposed
+        from scan_viz import ScanViz
+        viz = ScanViz(stage, cfg)
+    if args.video:
+        import shutil
+        from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
+        frames = os.path.join(args.out, "_frames_show_%s" % stamp)
+        shutil.rmtree(frames, ignore_errors=True)
+        os.makedirs(frames)
     while app.is_running():
         q = runner.step(PHYSICS_DT)
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=np.array(idx)))
-        world.step(render=(not args.headless) or bool(args.snapshot))
+        shoot = frames is not None and runner.clock * FPS_VIDEO >= shots
+        if viz is not None and (shoot or not args.headless):
+            s0 = runner.status()
+            if s0["state"] == "TO_SCAN":
+                viz_u = -1.0                                   # a new pass: the paper fresh (it fades between)
+            elif s0["state"] == "SCAN":
+                viz_u = max(viz_u, s0["scan_u"])
+            elif viz_u >= 0.0:
+                viz_u = 2.0                                    # after the pass: all of it, until the next
+            viz.update(viz_u, bool(s0["scan_led"]), q)
+        world.step(render=(not args.headless) or bool(args.snapshot) or shoot)
+        if shoot:
+            capture_viewport_to_file(get_active_viewport(), os.path.join(frames, "f_%05d.png" % shots))
+            st = runner.status()
+            corner.append((shots / float(FPS_VIDEO), overlay.label(st["state"], st["clip"], st["scan"])))
+            shots += 1
         sim = np.degrees(robot.get_joint_positions(joint_indices=np.array(idx)))
         if runner.clock > 1.0:                                     # settle first
             for j in range(6):
@@ -187,6 +243,7 @@ def main():
         if end is not None and runner.clock >= end:
             break
     log.close()
+    video = encode(frames, corner, shots, stamp) if frames is not None else None
     played = [c for _, c in runner.history]
     summary = {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "log": os.path.relpath(log_path, ROOT).replace("\\", "/"),
                "sim_seconds": round(runner.clock, 1), "clips_played": len(played), "scans": played.count("scan"),
@@ -196,7 +253,8 @@ def main():
                                      "mean": round(sum(waits) / len(waits), 2) if waits else None},
                "tracking_max_deg": [round(x, 3) for x in worst],
                "tracking_rms_deg": [round(math.sqrt(s / n), 4) if n else None for s in sq],
-               "arm_room_contacts": len(contacts), "first_contacts": contacts[:5]}
+               "arm_room_contacts": len(contacts), "first_contacts": contacts[:5],
+               "video": video}
     with open(os.path.join(args.out, "isaac_show_%s.json" % stamp), "w") as f:
         json.dump(summary, f, indent=1)
     print("[show] summary " + json.dumps(summary))

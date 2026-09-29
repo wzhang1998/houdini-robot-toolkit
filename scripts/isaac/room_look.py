@@ -7,7 +7,7 @@ untouched; the collision checks never see any of it.
     notes = room_look.apply(stage, env)      # after the room is referenced at /World/Room
 
 From the photo: a square LED frame hung under the joists is the room's
-light (cool white); the warehouse beyond the glass gives a warm fill; a
+light (cool white, a rectangle long along the audience's wall); the warehouse beyond the glass gives a warm fill; a
 dark plank floor; the TV wall carved pale plywood; the ceiling open joists
 and boards; the glass walls in wooden studs. ESTIMATED from the photo, not
 measured: the frame's height (its place: the room's middle, from the front
@@ -28,7 +28,8 @@ import room_geom as RG  # noqa: E402
 
 ROOT_PATH = "/World/Look"
 YAW_DEG = -11.28                     # the room's walls in the robot frame (envs/volvox_lab.usda)
-LED_FRAME = {"center": None, "side_m": 1.3, "below_ceiling_m": 0.15, "bar_m": 0.04}   # None: the room's middle
+# a rectangle, its long side along the audience's glass wall (the room's u; the user, 2026-09-29)
+LED_FRAME = {"center": None, "long_m": 1.8, "short_m": 1.1, "below_ceiling_m": 0.15, "bar_m": 0.04}  # None: the middle
                                                                                      # (the user's front photo)
 JOIST = {"spacing_m": 0.41, "width_m": 0.045, "depth_m": 0.24}
 BEAM = {"spacing_m": 1.6, "width_m": 0.14, "depth_m": 0.3}
@@ -149,11 +150,11 @@ def apply(stage, env, room="/World/Room", guides=True):
     mid = f["center"] or (sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp))
     cu = mid[0] * u[0] + mid[1] * u[1]
     cv = mid[0] * v[0] + mid[1] * v[1]
-    h = f["side_m"] / 2.0
-    bars = {"a": (cu - h, cv, 0.0), "b": (cu + h, cv, 0.0), "c": (cu, cv - h, 90.0), "d": (cu, cv + h, 90.0)}
+    hl, hs = f["long_m"] / 2.0, f["short_m"] / 2.0
+    bars = {"a": (cu - hl, cv, 0.0), "b": (cu + hl, cv, 0.0), "c": (cu, cv - hs, 90.0), "d": (cu, cv + hs, 90.0)}
     for key, (bu, bv, turn) in bars.items():
         c = at(bu, bv, zf)
-        size = (f["bar_m"], f["side_m"], f["bar_m"]) if turn == 0.0 else (f["side_m"], f["bar_m"], f["bar_m"])
+        size = (f["bar_m"], f["short_m"], f["bar_m"]) if turn == 0.0 else (f["long_m"], f["bar_m"], f["bar_m"])
         _box(stage, "%s/LEDFrame/bar_%s" % (ROOT_PATH, key), c, size, YAW_DEG, alu)
         lt = UsdLux.RectLight.Define(stage, Sdf.Path("%s/LEDFrame/light_%s" % (ROOT_PATH, key)))
         lt.CreateWidthAttr(size[0])
@@ -167,8 +168,8 @@ def apply(stage, env, room="/World/Room", guides=True):
     dome = UsdLux.DomeLight.Define(stage, Sdf.Path(ROOT_PATH + "/Warehouse"))
     dome.CreateIntensityAttr(260.0)
     dome.CreateColorAttr(Gf.Vec3f(*WARM))
-    return ["the LED frame at %s, %.1f m square, %.2f m under the ceiling: estimated from the photo"
-            % ([round(x, 2) for x in mid], f["side_m"], f["below_ceiling_m"]),
+    return ["the LED frame at %s, %s m, long side along the audience wall, %.2f m under the ceiling: estimated from the photo"
+            % ([round(x, 2) for x in mid], "%.1f x %.1f" % (f["long_m"], f["short_m"]), f["below_ceiling_m"]),
             "joists every %.2f m, beams every %.1f m: estimated" % (JOIST["spacing_m"], BEAM["spacing_m"]),
             "glass walls with studs: %s" % ", ".join(w[0] for w in glass)]
 
