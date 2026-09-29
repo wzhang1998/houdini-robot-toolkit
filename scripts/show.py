@@ -961,6 +961,61 @@ def facing(q, eyes, robot="fr20"):
     return max(0.0, sum(a * b / n for a, b in zip(d, to)))
 
 
+_STRIP = {}
+
+
+def strip_face(robot="fr20"):
+    """(offset along the tool's z to the LEDs' face, the strip's length) from
+    the profile's tool (collision.strip_box, in the flange's frame)."""
+    if robot not in _STRIP:
+        import collision as C
+        import robot_profile as RP
+        box = C.strip_box(C.tool_def(RP.load(robot)))
+        _STRIP[robot] = (box["xyz"][2] + box["size"][2] / 2.0, box["size"][1]) if box else (0.0, 0.0)
+    return _STRIP[robot]
+
+
+SCAN_GAP_M = 0.06                   # the scan's LEDs to the paper: paper_light's 1
+
+
+def paper_light(q, canvas, robot="fr20"):
+    """How much the strip lights the paper at pose q, as a fraction of the
+    scan's light (the LEDs square on at SCAN_GAP_M, the same level): the
+    brightest spot over the paper (a 9 x 7 grid and the spots nearest the
+    strip) from the strip's ends and middle -- emission cosine x incidence
+    cosine / distance squared. 0 with the LEDs turned from it."""
+    _, tcp, d = tool_pose(q, robot)
+    R = tool_pose(q, robot)[0]
+    face, length = strip_face(robot)
+    ax = (R[0][1], R[1][1], R[2][1])
+    n = canvas["normal"]
+    left = (-n[1], n[0], 0.0)
+    ln = math.sqrt(sum(x * x for x in left)) or 1.0
+    left = tuple(x / ln for x in left)
+    up = (n[1] * left[2] - n[2] * left[1], n[2] * left[0] - n[0] * left[2], n[0] * left[1] - n[1] * left[0])
+    c, (w, h) = canvas["center"], canvas["size"]
+    spots = [[c[i] + left[i] * (a / 8.0 - 0.5) * w + up[i] * (b / 6.0 - 0.5) * h for i in range(3)]
+             for a in range(9) for b in range(7)]
+    leds = [[tcp[i] + d[i] * face + ax[i] * s * length / 2.0 for i in range(3)] for s in (-1.0, 0.0, 1.0)]
+    for p in leds:                                           # the paper's spot nearest each LED point
+        rel = [p[i] - c[i] for i in range(3)]
+        u = max(-w / 2.0, min(w / 2.0, sum(rel[i] * left[i] for i in range(3))))
+        v = max(-h / 2.0, min(h / 2.0, sum(rel[i] * up[i] for i in range(3))))
+        spots.append([c[i] + left[i] * u + up[i] * v for i in range(3)])
+    best = 0.0
+    for p in leds:
+        for x in spots:
+            vec = [x[i] - p[i] for i in range(3)]
+            r2 = sum(t * t for t in vec)
+            if r2 < 1e-9:
+                continue
+            r = math.sqrt(r2)
+            emit = sum(d[i] * vec[i] for i in range(3)) / r
+            if emit > 0.0:
+                best = max(best, emit * abs(sum(n[i] * vec[i] for i in range(3))) / r / r2)
+    return best * SCAN_GAP_M ** 2
+
+
 def report(graph, cfg=None):
     """The library as numbers (motion_stats per idle clip) and whether it
     meets the variety the show asks for (cfg["library"]["variety"], or the
@@ -1278,9 +1333,10 @@ def runner_for(graph, seed=None, log=None, scan_speed=1.0):
 # OSC (TouchDesigner)
 # --------------------------------------------------------------------------
 
-def osc_messages(s, q, eyes=None):
+def osc_messages(s, q, eyes=None, canvas=None):
     """[(address, value)] of a status s (Runner.status) at pose q: what
-    TouchDesigner hears. /robot/facing: facing(q, eyes), -1 with no eyes."""
+    TouchDesigner hears. /robot/facing: facing(q, eyes), -1 with no eyes;
+    /robot/paper: paper_light(q, canvas), -1 with no canvas."""
     return [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
             ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
             ("/robot/scan/u", float(s["scan_u"])), ("/robot/scan/led", int(s["scan_led"])),
@@ -1293,7 +1349,8 @@ def osc_messages(s, q, eyes=None):
             ("/robot/family", s.get("family") or ""), ("/robot/action", s.get("action") or ""),
             ("/robot/clip_t", float(s.get("clip_t", 0.0))), ("/robot/clip_len", float(s.get("clip_len", 0.0))),
             ("/robot/beat", float(s.get("beat", 0.0))), ("/robot/bpm_now", float(s.get("bpm_now", 0.0))),
-            ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0)]
+            ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0),
+            ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)]
 
 
 class OscBridge:
@@ -1304,9 +1361,10 @@ class OscBridge:
         `also` -- a control window and TouchDesigner can both listen. lag_s:
         how far the arm is behind the commands (the scan's position is sent
         where the arm is, for the LEDs). cfg: the show, for where the
-        audience is (/robot/facing)."""
+        audience is (/robot/facing) and the paper (/robot/paper)."""
         self.lag_s = lag_s
         self.eyes = audience_eyes(cfg) if cfg else None
+        self.canvas = (cfg or {}).get("canvas")
         from pythonosc import dispatcher, osc_server, udp_client
         import threading
         self.runner = runner
@@ -1326,7 +1384,7 @@ class OscBridge:
         self.clients = [udp_client.SimpleUDPClient(h, p) for h, p in [(send_host, send_port)] + list(also)]
 
     def send(self, q):
-        msgs = osc_messages(self.runner.status(lag_s=self.lag_s), q, self.eyes)
+        msgs = osc_messages(self.runner.status(lag_s=self.lag_s), q, self.eyes, self.canvas)
         if hasattr(self.runner, "speed_now"):                  # the streaming backend
             msgs.append(("/robot/speed_now", float(self.runner.speed_now)))
             msgs.append(("/robot/skipped", int(self.runner.skipped)))
@@ -1667,7 +1725,8 @@ def self_test():
     check("facing: 1 with the LEDs pointed at the eyes, 0 turned away from them",
           abs(facing(q0, ahead) - 1.0) < 1e-6 and facing(q0, behind) == 0.0, (facing(q0, ahead), facing(q0, behind)))
     party = Graph.load(compiled_path(os.path.join(ROOT, "shows", "party.json")))
-    eyes = audience_eyes(json.load(open(os.path.join(ROOT, "shows", "party.json"))))
+    cfg_party = json.load(open(os.path.join(ROOT, "shows", "party.json")))
+    eyes = audience_eyes(cfg_party)
     mean = {h: sum(facing(x.q[len(x.q) // 2], eyes) for x in party.idle() if x.start == h)
             / max(1, sum(x.start == h for x in party.idle())) for h in party.idle_hubs()}
     check("party's greet clips face the audience more than its rest clips (the arm turned to the guests)",
@@ -1677,6 +1736,27 @@ def self_test():
           msgs["/robot/family"] == "wave" and msgs["/robot/clip_t"] == 0.75 and msgs["/robot/beat"] == st["beat"]
           and abs(msgs["/robot/facing"] - 1.0) < 1e-6 and "/robot/bpm_now" in msgs and "/robot/action" in msgs
           and "/robot/clip_len" in msgs, sorted(msgs))
+    cv_ = {"center": [0.0, 1.0, 1.0], "normal": [0.0, 1.0, 0.0], "size": [2.0, 2.0]}
+    R_, tcp_, d_ = tool_pose(q0)
+    face_, _ = strip_face()
+    mid = [tcp_[i] + d_[i] * face_ for i in range(3)]
+    square = {"center": [mid[i] + d_[i] * 0.06 for i in range(3)], "normal": list(d_), "size": [2.0, 2.0]}
+    away = dict(square, center=[mid[i] - d_[i] * 0.3 for i in range(3)])
+    check("paper light: 1 with the strip square on the paper at the scan's 6 cm, 0 turned away from it",
+          0.8 < paper_light(q0, square) <= 1.05 and paper_light(q0, away) == 0.0,
+          (round(paper_light(q0, square), 3), paper_light(q0, away)))
+    far = dict(square, center=[mid[i] + d_[i] * 0.6 for i in range(3)])
+    check("... and a hundredth of it ten times as far", 0.005 < paper_light(q0, far) < 0.015,
+          round(paper_light(q0, far), 4))
+    pl = {h: max(paper_light(x.q[k], cfg_party["canvas"]) for x in party.idle() if x.start == h
+                 for k in range(0, len(x.q), max(1, len(x.q) // 12))) for h in ("greet", "rest")}
+    check("party: greet never lights the paper (< 0.001 of the scan), rest does (it faces it)",
+          pl["greet"] < 0.001 < pl["rest"], {k: round(v, 5) for k, v in pl.items()})
+    msgs = dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, ahead, square))
+    check("OSC carries /robot/paper; -1 when the show has no canvas (the idle LEDs stay dark)",
+          abs(msgs["/robot/paper"] - paper_light(q0, square)) < 1e-3
+          and dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, ahead))["/robot/paper"]
+          == -1.0, msgs["/robot/paper"])
     check("... and -1 for facing when the room has no audience",
           dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, None))["/robot/facing"]
           == -1.0)
