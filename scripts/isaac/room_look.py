@@ -1,9 +1,10 @@
-"""The real room's look over the simulated one, for Isaac Sim recordings:
-lights and surfaces after the user's photo of the lab (2026-09-29). Only
+"""The real room's look over the simulated one, for every Isaac Sim view of
+the project (isaac_stage.load_room; the user, 2026-09-29): lights and
+surfaces after the user's photo of the lab. Only
 what the camera sees -- no colliders, the room's files (envs/, shows/)
 untouched; the collision checks never see any of it.
 
-    look = room_look.apply(stage, env)       # after the room is referenced at /World/Room
+    notes = room_look.apply(stage, env)      # after the room is referenced at /World/Room
 
 From the photo: a square LED frame hung under the joists is the room's
 light (cool white); the warehouse beyond the glass gives a warm fill; a
@@ -76,9 +77,10 @@ def _room_frame(fp):
     return u, v, (min(us), max(us), min(vs), max(vs))
 
 
-def apply(stage, env, room="/World/Room"):
-    """Lights, surfaces and the ceiling's wood as in the photo; the zones'
-    outlines hidden. Returns the notes (what was estimated)."""
+def apply(stage, env, room="/World/Room", guides=True):
+    """Lights, surfaces and the ceiling's wood as in the photo. guides: the
+    safety guides (the zones' and walls' outlines) stay drawn -- the user,
+    2026-09-29; False hides them. Returns the notes (what was estimated)."""
     fp = RG.footprint(env)
     z0, z1 = RG.heights(env)
     UsdGeom.Scope.Define(stage, Sdf.Path(ROOT_PATH))
@@ -87,7 +89,7 @@ def apply(stage, env, room="/World/Room"):
     board = _material(stage, "board", (0.8, 0.6, 0.4), 0.8)
     alu = _material(stage, "led", (1.0, 1.0, 1.0), 0.3, emissive=(1.0, 1.0, 1.0))
 
-    # the room's surfaces recoloured, its guides (zones, outlines) hidden
+    # the room's surfaces recoloured
     for name, (rgb, rough, opacity) in SURFACES.items():
         sh = UsdShade.Shader(stage.GetPrimAtPath("%s/Looks/%s/Surface" % (room, name)))
         if not sh:
@@ -95,7 +97,7 @@ def apply(stage, env, room="/World/Room"):
         sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*rgb))
         sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(rough)
         sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(opacity)
-    for p in stage.Traverse():
+    for p in ([] if guides else stage.Traverse()):
         s = p.GetPath().pathString
         if s.startswith(room + "/Zones") and p.GetParent().GetPath().pathString == room + "/Zones" \
                 or (s.startswith(room + "/Structure") and p.GetName() == "outline"):

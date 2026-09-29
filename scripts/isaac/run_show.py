@@ -1,6 +1,8 @@
 """The show (scripts/show.py's state machine and clip graph) in Isaac Sim:
 the FR20 from its URDF, the room from the show's layer (shows/<show>.usda: the
-room, envs/<room>.usda, with the show's paper and stage over it), physics on.
+room, envs/<room>.usda, with the show's paper and stage over it), lit and
+coloured as the lab (isaac_stage.load_room), physics on; the camera on the
+whole room (--camera audience / side / 'ex ey ez tx ty tz').
 
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
@@ -40,7 +42,9 @@ ap.add_argument("--no-tool", action="store_true", help="the bare arm (the profil
 ap.add_argument("--seed", type=int, default=None)
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac"))
 ap.add_argument("--snapshot", default="", help="render ~3 s, save the viewport to this PNG, stop")
-ap.add_argument("--camera", default="", help="'ex ey ez tx ty tz': the view (robot frame); default: inside the room")
+ap.add_argument("--camera", default="room",
+                help="room (the whole room), audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame)")
+ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -52,13 +56,12 @@ import omni.kit.commands  # noqa: E402
 import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
-from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
-from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdLux, UsdPhysics  # noqa: E402
 
 import show  # noqa: E402
 
-from isaac_stage import PHYSICS_DT, attach_tool, import_robot, show_camera  # noqa: E402
+from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, import_robot, load_room,  # noqa: E402
+                         render_settings, use_camera)
 
 def main():
     cfg_path = os.path.abspath(args.config)
@@ -69,15 +72,7 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    room_usd = os.path.splitext(cfg_path)[0] + ".usda"                   # the show's layer over the room
-    if not os.path.exists(room_usd):
-        raise SystemExit("no %s: write it first (python scripts/room_usd.py --show %s)" % (room_usd, args.config))
-    add_reference_to_stage(room_usd, "/World/Room")
-    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
-    key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))       # a soft key from above
-    key.CreateIntensityAttr(2500)
-    key.CreateAngleAttr(8.0)
-    UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
+    env = load_room(stage, cfg_path, args.look)                           # the show's room, lit as the lab
     prim_path = import_robot()
     if not args.no_tool:
         attach_tool(stage)
@@ -113,25 +108,9 @@ def main():
         except Exception as e:
             print("[show] OSC off: %s" % e)
 
-    # our own camera, inside the room, made the viewport's active one
-    import carb.settings
-    from isaacsim.core.utils.viewports import set_camera_view
-    from omni.kit.viewport.utility import get_active_viewport
-    st = carb.settings.get_settings()
-    st.set("/rtx/rendermode", "RaytracedLighting")             # real time, no path-traced grain
-    st.set("/rtx/hydra/faceCulling/enabled", True)             # honour the walls' "singleSided": culled from outside
-    cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/ShowCam"))
-    cam.CreateFocalLengthAttr(13.0)
-    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
-    import collision as CL
-    eye, target = show_camera(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg)
-    if args.camera:
-        v = [float(x) for x in args.camera.split()]
-        eye, target = v[:3], v[3:6]
-    set_camera_view(eye=eye, target=target, camera_prim_path="/World/ShowCam")
-    vp = get_active_viewport()
-    if vp is not None:
-        vp.camera_path = "/World/ShowCam"
+    # our own camera (default: the whole room), made the viewport's active one
+    render_settings()
+    use_camera(stage, "/World/ShowCam", *camera_spec(args.camera, cfg, env))
     label = None
     if not args.headless:
         import carb.input

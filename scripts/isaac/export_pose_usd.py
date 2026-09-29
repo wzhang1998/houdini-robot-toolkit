@@ -13,8 +13,9 @@ checks use): each link's transform written to its prim, so the file shows
 the pose with no simulation running. --pose is a hub of the compiled show
 (scan_start: the scan's first frame, the strip at the paper's left edge;
 scan_end, rest, greet, low, high). Everything is flattened into the one
-file (the room, the robot's meshes); a camera, /World/ShareCam, looks at
-the arm from inside the room.
+file (the room, the robot's meshes), lit and coloured as the lab
+(isaac_stage.load_room: its lights and the ceiling's wood in the file);
+cameras /World/Cam_room (the whole room), Cam_audience, Cam_side.
 """
 
 import argparse
@@ -32,6 +33,7 @@ ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--pose", default="scan_start", help="a hub of the compiled show")
 ap.add_argument("--joints", default="", help="six joint angles (deg) instead of --pose")
 ap.add_argument("--out", default="")
+ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -39,14 +41,13 @@ from isaacsim import SimulationApp  # noqa: E402
 app = SimulationApp({"headless": True})
 
 import omni.usd  # noqa: E402
-from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux  # noqa: E402
+from pxr import Gf, Sdf, Usd, UsdGeom  # noqa: E402
 
 import collision as CL  # noqa: E402
 import robot_profile as RP  # noqa: E402
 import show  # noqa: E402
 import urdf_rig as U  # noqa: E402
-from isaac_stage import attach_tool, import_robot, show_camera  # noqa: E402
+from isaac_stage import attach_tool, cameras, import_robot, load_room  # noqa: E402
 
 
 def matrix(R, p):
@@ -77,11 +78,7 @@ def main():
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     world = UsdGeom.Xform.Define(stage, "/World")
     stage.SetDefaultPrim(world.GetPrim())
-    add_reference_to_stage(os.path.splitext(cfg_path)[0] + ".usda", "/World/Room")
-    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
-    key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
-    key.CreateIntensityAttr(2500)
-    UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
+    env = load_room(stage, cfg_path, args.look)                         # lit as the lab, its lights in the file
     root = import_robot()
     attach_tool(stage)
 
@@ -124,12 +121,12 @@ def main():
     lw = UsdGeom.Xformable(last).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
     diff = max(abs(lw[3][i] - fk[-1]["link_p"][i]) for i in range(3))
 
-    cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/ShareCam"))
-    cam.CreateFocalLengthAttr(13.0)
-    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
-    eye, target = show_camera(CL.load_env(os.path.join(ROOT, cfg["env"])), cfg)
-    view = Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*target), Gf.Vec3d(0, 0, 1)).GetInverse()
-    UsdGeom.Xformable(cam).AddTransformOp().Set(view)
+    for name, (eye, target, focal) in cameras(cfg, env).items():          # /World/Cam_room, _audience, _side
+        cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/Cam_" + name))
+        cam.CreateFocalLengthAttr(focal)
+        cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
+        view = Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*target), Gf.Vec3d(0, 0, 1)).GetInverse()
+        UsdGeom.Xformable(cam).AddTransformOp().Set(view)
     world.GetPrim().SetCustomDataByKey("robot_show", {
         "config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "pose": label,
         "joints_deg": [round(x, 3) for x in q], "tool": tool["name"] if tool else "none",

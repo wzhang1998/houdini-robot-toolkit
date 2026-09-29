@@ -36,7 +36,9 @@ ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
 ap.add_argument("--headless", action="store_true")
 ap.add_argument("--video", action="store_true", help="an mp4 per scenario from the audience's side")
-ap.add_argument("--camera", default="", help="'ex ey ez tx ty tz' (robot frame); default: behind the audience")
+ap.add_argument("--camera", default="", help="room, audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame); "
+                                          "default: behind the audience zone, above the person")
+ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -47,11 +49,11 @@ import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
-from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
-from pxr import Gf, Sdf, UsdGeom, UsdLux  # noqa: E402
+from pxr import Gf, Sdf, UsdGeom  # noqa: E402
 
-from isaac_stage import PHYSICS_DT, attach_tool, import_robot  # noqa: E402
+from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, import_robot, load_room,  # noqa: E402
+                         render_settings, use_camera)
 
 FPS_VIDEO = 30
 
@@ -127,12 +129,7 @@ def main():
         raise SystemExit("which scenarios? (--all, or names; first: uv run scripts/track_eval.py --export %s)" % args.dir)
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    room_usd = os.path.splitext(os.path.abspath(args.config))[0] + ".usda"
-    add_reference_to_stage(room_usd, "/World/Room")
-    UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
-    key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
-    key.CreateIntensityAttr(2500)
-    UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
+    env = load_room(stage, os.path.abspath(args.config), args.look)      # the show's room, lit as the lab
     prim_path = import_robot()
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
@@ -161,23 +158,11 @@ def main():
     except Exception as e:
         print("[track] contact reports unavailable: %s" % e)
 
-    import carb.settings
-    from isaacsim.core.utils.viewports import set_camera_view
-    from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
-    st = carb.settings.get_settings()
-    st.set("/rtx/rendermode", "RaytracedLighting")
-    st.set("/rtx/hydra/faceCulling/enabled", True)             # the walls culled from outside: seen through
-    cam = UsdGeom.Camera.Define(stage, Sdf.Path("/World/TrackCam"))
-    cam.CreateFocalLengthAttr(16.0)
-    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
+    from omni.kit.viewport.utility import capture_viewport_to_file
+    render_settings()
     eye, look = audience_camera(cfg)
-    if args.camera:
-        v = [float(x) for x in args.camera.split()]
-        eye, look = v[:3], v[3:6]
-    set_camera_view(eye=eye, target=look, camera_prim_path="/World/TrackCam")
-    vp = get_active_viewport()
-    if vp is not None:
-        vp.camera_path = "/World/TrackCam"
+    view = camera_spec(args.camera, cfg, env) if args.camera else (eye, look, 16.0)
+    vp = use_camera(stage, "/World/TrackCam", *view)
 
     results = {}
     for name in names:
@@ -216,7 +201,7 @@ def main():
             shoot = args.video and i % int(round(1.0 / (FPS_VIDEO * PHYSICS_DT))) == 0
             world.step(render=(not args.headless) or shoot)
             if shoot:
-                capture_viewport_to_file(get_active_viewport(), os.path.join(frames, "f_%05d.png" % f))
+                capture_viewport_to_file(vp, os.path.join(frames, "f_%05d.png" % f))
                 f += 1
             sim = np.degrees(robot.get_joint_positions(joint_indices=idx))
             if t > 0.5:

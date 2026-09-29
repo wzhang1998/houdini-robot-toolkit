@@ -1,5 +1,7 @@
-"""The FR20 and its tool in an Isaac Sim stage, shared by run_show.py and
-run_tracking.py. Import after SimulationApp has started (it needs omni)."""
+"""The room, the FR20 and its tool in an Isaac Sim stage, the cameras and the
+render settings: shared by every Isaac script (run_show, run_tracking,
+record_segments, export_pose_usd), so they all show the one room, lit as
+the lab (load_room). Import after SimulationApp has started (it needs omni)."""
 
 import math
 import os
@@ -18,22 +20,94 @@ from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdLux, UsdPhysics  # noqa: E402,
 PHYSICS_DT = 1.0 / 120.0
 
 
-def show_camera(env, cfg):
-    """(eye, target): the room's corner farthest from the operator (keep-out
-    zones), 0.35 m in from the walls and just under the ceiling, looking at
-    the stage's centre -- a view of the whole working area from inside."""
+def load_room(stage, cfg_path, look="room", guides=True, log=print):
+    """The show's room at /World/Room (shows/<show>.usda: the room with the
+    show's paper and stage), lit and coloured as the lab (room_look.py) --
+    the one look of every Isaac view of the project (the user, 2026-09-29);
+    look "plain": the old flat grey room under a dome and a key. The room's
+    collision cell (collision.load_env) returned."""
+    import json
+    import collision as CL
+    room_usd = os.path.splitext(cfg_path)[0] + ".usda"
+    if not os.path.exists(room_usd):
+        raise SystemExit("no %s: write it first (python scripts/room_usd.py --show %s)"
+                         % (room_usd, os.path.relpath(cfg_path, ROOT)))
+    add_reference_to_stage(room_usd, "/World/Room")
+    env = CL.load_env(os.path.join(ROOT, json.load(open(cfg_path))["env"]))
+    if look == "room":
+        import room_look
+        for note in room_look.apply(stage, env, guides=guides):
+            log("[stage] look: %s" % note)
+    else:
+        UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
+        key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
+        key.CreateIntensityAttr(2500)
+        key.CreateAngleAttr(8.0)
+        UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
+    return env
+
+
+def render_settings():
+    """Real-time ray tracing; the walls' faces culled from outside (they are
+    single faces turned into the room: a camera outside sees through); the
+    glass's opacity below 1 drawn see-through."""
+    import carb.settings
+    st = carb.settings.get_settings()
+    st.set("/rtx/rendermode", "RaytracedLighting")
+    st.set("/rtx/hydra/faceCulling/enabled", True)
+    st.set("/rtx/raytracing/fractionalCutoutOpacity", True)
+
+
+def cameras(cfg, env):
+    """{name: (eye, target, focal mm)}: room -- the whole room from the corner
+    behind the robot (the audience's wall and the back wall: where the
+    user's photo was taken, 2026-09-29); audience -- the guests' side, from
+    1.5 m behind the audience zone through the glass; side -- along the
+    paper, the gap between the strip and it."""
     import room_geom as RG
+    import show
+    a = cfg["zones"]["audience"]
+    n = cfg["canvas"]["normal"]
+    middle = show.scan_area(cfg)[0] if cfg.get("scan") else list(cfg["canvas"]["center"])
+    right = (n[1], -n[0], 0.0)
     fp = RG.footprint(env)
-    z0, z1 = RG.heights(env)
     cx, cy = sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp)
-    people = [o["center"] for o in env["objects"] if o["role"] == "keep_out"] or [(cx, cy)]
-    corner = max(fp, key=lambda p: min(math.hypot(p[0] - q[0], p[1] - q[1]) for q in people))
-    d = math.hypot(cx - corner[0], cy - corner[1])
-    k = min(1.0, 0.9 / d)                                     # ~0.6 m off both walls (clear of a plant in the corner)
-    eye = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, z1 - 0.2]
-    st = cfg.get("stage") or next((o for o in env["objects"] if o["name"] == "stage"), None)
-    target = [st["center"][0] / 2, st["center"][1] / 2, 0.7] if st else [cx, cy, 0.8]   # between the base and the stage
-    return eye, target
+    corner = max(fp, key=lambda p: -n[0] * p[0] - n[1] * p[1] + right[0] * p[0] + right[1] * p[1])
+    k = 0.25 / math.hypot(cx - corner[0], cy - corner[1])
+    eye_room = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, 2.0]
+    eye_aud = [a["center"][0] - n[0] * 1.5, a["center"][1] - n[1] * 1.5, 1.65]
+    eye_side = [middle[0] + right[0] * 1.5 - n[0] * 1.4, middle[1] + right[1] * 1.5 - n[1] * 1.4, 1.8]
+    return {"room": (eye_room, [cx, cy, 0.7], 8.0),
+            "audience": (eye_aud, [(cx + middle[0]) / 2, (cy + middle[1]) / 2, 1.0], 13.0),
+            "side": (eye_side, [middle[0] - n[0] * 0.4, middle[1] - n[1] * 0.4, middle[2]], 14.0)}
+
+
+def camera_spec(spec, cfg, env):
+    """(eye, target, focal mm) of a --camera: a name of cameras(), or
+    'ex ey ez tx ty tz [focal]' in the robot frame."""
+    views = cameras(cfg, env)
+    if spec in views:
+        return views[spec]
+    v = [float(x) for x in spec.split()]
+    if len(v) not in (6, 7):
+        raise SystemExit("--camera %r: one of %s, or 'ex ey ez tx ty tz [focal]'" % (spec, ", ".join(views)))
+    return v[:3], v[3:6], v[6] if len(v) == 7 else 13.0
+
+
+def use_camera(stage, path, eye, target, focal):
+    """A camera at eye looking at target, made the viewport's (when there is one)."""
+    from isaacsim.core.utils.viewports import set_camera_view
+    from omni.kit.viewport.utility import get_active_viewport
+    cam = UsdGeom.Camera.Define(stage, Sdf.Path(path))
+    cam.CreateFocalLengthAttr(focal)
+    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
+    set_camera_view(eye=eye, target=target, camera_prim_path=path)
+    vp = get_active_viewport()
+    if vp is not None:
+        vp.camera_path = path
+    return vp
+
+
 URDF = os.path.join(ROOT, "assets", "fairino_description", "urdf", "fairino20_v6.urdf")
 PKG = os.path.join(ROOT, "assets", "fairino_description")
 STIFFNESS = 1.0e5      # Nm/rad: stiff position drives, so tracking shows the dynamics, not a soft spring

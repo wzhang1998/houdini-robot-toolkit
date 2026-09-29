@@ -19,7 +19,6 @@ JSON summary: tracking (commanded vs simulated), contacts with the room.
 
 import argparse
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -50,39 +49,16 @@ import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
-from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
-from pxr import Gf, Sdf, UsdGeom, UsdLux  # noqa: E402
+from pxr import Gf, Sdf, UsdGeom  # noqa: E402
 
 import show  # noqa: E402
-from isaac_stage import PHYSICS_DT, attach_tool, import_robot  # noqa: E402
+from isaac_stage import (PHYSICS_DT, attach_tool, cameras, import_robot, load_room,  # noqa: E402
+                         render_settings, use_camera)
 
 FPS_VIDEO = 30
 HOLD_S = 0.5                     # still between the segments, as the show's hubs
 VIOLET = (0.55, 0.2, 1.0)
-
-
-def cameras(cfg, env):
-    """{name: (eye, target, focal mm)}: the whole room from the corner behind
-    the robot (the audience's wall and the back wall: where the photo was
-    taken, 2026-09-29); what the guests see, from 1.5 m behind the audience
-    zone; the gap from the side."""
-    import room_geom as RG
-    a = cfg["zones"]["audience"]
-    middle, w, h = show.scan_area(cfg) if cfg.get("scan") else (cfg["canvas"]["center"], 1.0, 1.0)
-    n = cfg["canvas"]["normal"]
-    right = (n[1], -n[0], 0.0)
-    fp = RG.footprint(env)
-    cx, cy = sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp)
-    corner = max(fp, key=lambda p: -n[0] * p[0] - n[1] * p[1] + right[0] * p[0] + right[1] * p[1])
-    k = 0.25 / math.hypot(cx - corner[0], cy - corner[1])
-    eye_room = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, 2.0]
-    away = (-n[0], -n[1])                                       # from the paper towards the guests
-    eye_aud = [a["center"][0] + away[0] * 1.5, a["center"][1] + away[1] * 1.5, 1.65]
-    eye_side = [middle[0] + right[0] * 1.5 - n[0] * 1.4, middle[1] + right[1] * 1.5 - n[1] * 1.4, 1.8]
-    return {"room": (eye_room, [cx, cy, 0.7], 8.0),
-            "audience": (eye_aud, [(cx + middle[0]) / 2, (cy + middle[1]) / 2, 1.0], 13.0),
-            "side": (eye_side, [middle[0] - n[0] * 0.4, middle[1] - n[1] * 0.4, middle[2]], 14.0)}
 
 
 def curve(stage, path, rgb, width, closed=False):
@@ -141,9 +117,6 @@ def main():
         jump = max(abs(x - y) for x, y in zip(a.q[-1], b.q[0]))
         if jump > 0.01:
             raise SystemExit("%s ends %.2f deg from where %s starts" % (a.name, jump, b.name))
-    room_usd = os.path.splitext(cfg_path)[0] + ".usda"
-    if not os.path.exists(room_usd):
-        raise SystemExit("no %s: python scripts/room_usd.py --show %s" % (room_usd, args.config))
 
     # one timeline: (t0, segment) with a hold after each
     plan, t = [], 0.0
@@ -160,18 +133,8 @@ def main():
 
     world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
     stage = omni.usd.get_context().get_stage()
-    add_reference_to_stage(room_usd, "/World/Room")
+    env = load_room(stage, cfg_path, args.look)
     import collision as C
-    env = C.load_env(os.path.join(ROOT, cfg["env"]))
-    if args.look == "room":
-        import room_look
-        for note in room_look.apply(stage, env):
-            print("[record] look: %s" % note)
-    else:
-        UsdLux.DomeLight.Define(stage, Sdf.Path("/World/Dome")).CreateIntensityAttr(600)
-        key = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Key"))
-        key.CreateIntensityAttr(2500)
-        UsdGeom.Xformable(key).AddRotateXYZOp().Set(Gf.Vec3f(35.0, 0.0, 30.0))
     prim_path = import_robot()
     attach_tool(stage)
     robot = world.scene.add(SingleArticulation(prim_path, name="fr20"))
@@ -213,13 +176,8 @@ def main():
     except Exception as e:
         print("[record] contact reports unavailable: %s" % e)
 
-    import carb.settings
-    from isaacsim.core.utils.viewports import set_camera_view
-    from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
-    st = carb.settings.get_settings()
-    st.set("/rtx/rendermode", "RaytracedLighting")
-    st.set("/rtx/hydra/faceCulling/enabled", True)             # the walls culled from outside: seen through
-    st.set("/rtx/raytracing/fractionalCutoutOpacity", True)     # the glass's opacity below 1: see-through
+    from omni.kit.viewport.utility import capture_viewport_to_file
+    render_settings()
     cams = cameras(cfg, env)
     os.makedirs(args.out, exist_ok=True)
     summary = {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
@@ -228,13 +186,7 @@ def main():
     videos = []
     for cam_name in args.cameras.split(","):
         eye, look, focal = cams[cam_name]
-        path = "/World/Cam_" + cam_name
-        cam = UsdGeom.Camera.Define(stage, Sdf.Path(path))
-        cam.CreateFocalLengthAttr(focal)
-        cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
-        set_camera_view(eye=eye, target=look, camera_prim_path=path)
-        vp = get_active_viewport()
-        vp.camera_path = path
+        vp = use_camera(stage, "/World/Cam_" + cam_name, eye, look, focal)
         q0 = segs[0].q[0]
         robot.set_joint_positions(np.radians(q0), joint_indices=idx)
         robot.set_joint_velocities(np.zeros(6), joint_indices=idx)
