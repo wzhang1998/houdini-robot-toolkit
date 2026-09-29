@@ -5,22 +5,17 @@ coloured as the lab (isaac_stage.load_room), physics on; the camera on the
 whole room (--camera audience / side / 'ex ey ez tx ty tz').
 
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live
+        TouchDesigner live: TD hears the show (as from show_stream, on 9002) and its LEDs (Art-Net 6455) and
+        canvas preview (6457) come back, drawn on the strip and the paper, in real time. Only with
+        show_stream, scan_test and show_ui closed (the one OSC port, 9000; TD's STOP here holds the arm in
+        Isaac) and TD's Controller IP cleared. TD: pixel_scan > Output > Preview Art-Net IP 127.0.0.1.
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo
+        the 5 min demo, recorded headless: the audience's view, scans with the show's big wipes between
+        them, the paper as TD would show it (canvas_model.py), no OSC, no TD
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo --td-live --record
+        the demo with TD live, recorded (td_capture.py) to render later: replay_render.py
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
-        --auto-trigger 60 --seed 1 --camera audience --video       the 5 min demo, recorded
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --osc-out 127.0.0.1:9002 --artnet 6455 \
-        --canvas 6457
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 5 --auto-trigger 60 \
-        --seed 1 --osc-out 127.0.0.1:9002 --record
-        TD live, recorded (td_capture.py: the arm, the status, TD's LEDs and canvas) to render later with
-        replay_render.py -- TD in real time as in the show, the video at leisure
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
-        --auto-trigger 60 --seed 1 --camera audience --canvas-sim --video
-        the demo with the paper as TD would show it (canvas_model.py: pixel_scan and canvas_sim in numpy;
-        --canvas-image, default TD's banana), no TD needed
-        TouchDesigner live: TD hears the show (as from show_stream) and its LEDs come back over Art-Net, drawn
-        as the strip's 60 LEDs, and its canvas preview on the paper (--canvas), in real time. Only with show_stream, scan_test and show_ui closed (the one
-        OSC port, 9000; TD's STOP here holds the arm in Isaac) and TD's Controller IP cleared.
 
 The same Runner as the dry run and (next) the real arm: each physics step
 asks it for joints and sends them to the arm's position drives. Triggers:
@@ -75,6 +70,12 @@ ap.add_argument("--artnet", type=int, default=0, metavar="PORT",
 ap.add_argument("--led0", choices=("minus", "plus"), default="minus", help="the strip's end LED 0 is at (flange y)")
 ap.add_argument("--led-gain", type=float, default=1.0, help="brighten the drawn LEDs (a dim, capped pattern)")
 ap.add_argument("--realtime", action="store_true", help="the show's clock on the wall clock (TD live)")
+ap.add_argument("--td-live", action="store_true",
+                help="TouchDesigner live: --osc-out 127.0.0.1:9002 --artnet 6455 --canvas 6457 (real time)")
+ap.add_argument("--demo", action="store_true",
+                help="the 5 min demo: headless, --minutes 5, --auto-trigger 55 with the show's big wipes between "
+                     "the scans, --seed 1, --camera audience, --video; the paper simulated (--canvas-sim) unless "
+                     "--td-live, no OSC unless --td-live (then --record instead of --video)")
 ap.add_argument("--canvas", type=int, default=0, metavar="PORT",
                 help="TD's canvas preview on the paper (canvas_link on 127.0.0.1:PORT, e.g. 6457), in place of the "
                      "flat exposed area; implies --realtime")
@@ -85,6 +86,20 @@ ap.add_argument("--record", action="store_true",
                      "replay_render.py; listens on --artnet (6455) and --canvas (6457) unless given; real time")
 ap.add_argument("--canvas-image", default="", help="the image the --canvas-sim scan writes (default: TD's banana)")
 args = ap.parse_args()
+if args.td_live:
+    args.osc_out = args.osc_out or ["127.0.0.1:9002"]
+    args.artnet = args.artnet or 6455
+    args.canvas = args.canvas or 6457
+if args.demo:
+    args.headless = True
+    args.minutes = args.minutes or 5.0
+    args.auto_trigger = args.auto_trigger or 55.0
+    args.seed = 1 if args.seed is None else args.seed
+    args.camera = "audience" if args.camera == "room" else args.camera
+    if args.td_live:
+        args.record = True                       # TD runs in real time: recorded, rendered later
+    else:
+        args.no_osc, args.video, args.canvas_sim = True, True, True
 if args.record:
     args.artnet = args.artnet or 6455
     args.canvas = args.canvas or 6457
@@ -197,6 +212,9 @@ def main():
     rng = random.Random(args.seed)
     next_trig = args.auto_trigger * (0.5 + rng.random()) if args.auto_trigger else None
     auto_names, n_trig = [x.strip() for x in args.auto_triggers.split(",") if x.strip()] or ["scan"], 0
+    if args.demo and args.auto_triggers == "scan":
+        auto_names = show.demo_triggers(runner.showpieces)
+        print("[show] demo triggers: %s" % ", ".join(auto_names))
     t_trig, waits, worst, sq, n = None, [], [0.0] * 6, [0.0] * 6, 0
     end = args.minutes * 60.0 if args.minutes else None
     frames, shots, corner = None, 0, []

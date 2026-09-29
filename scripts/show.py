@@ -1323,6 +1323,17 @@ class Runner:
                 "clip_energy": round(float((self.seg.labels or {}).get("energy") or 0.0), 3)}
 
 
+def demo_triggers(showpieces, scans=3):
+    """A demo's triggers in turn: scans, the show's showpieces between them
+    (scan, piece 1, scan, piece 2, scan ...); only scans if it has none."""
+    out = []
+    for k in range(max(scans, len(showpieces) + 1)):
+        out.append("scan")
+        if k < len(showpieces):
+            out.append(showpieces[k])
+    return out
+
+
 def runner_for(graph, seed=None, log=None, scan_speed=1.0):
     sel = graph.info.get("select", {})
     return Runner(graph, Selector(graph.idle(), sel.get("no_repeat", 6), seed=seed, arc=sel.get("arc")),
@@ -1705,6 +1716,9 @@ def self_test():
     check("... and a TCP too high", out_of_range(rng_cfg, [[0] * 6], [(0, 0, 1.7)]) is not None)
     check("... and lets a motion inside it through", out_of_range(rng_cfg, [[10] * 6], [(0, 0, 1.0)]) is None)
     # what TouchDesigner's idle LEDs play from
+    check("a demo's triggers: scans with the showpieces between them; scans alone without any",
+          demo_triggers(["low_wipe_rows", "greet_wipe_cols"]) == ["scan", "low_wipe_rows", "scan", "greet_wipe_cols", "scan"]
+          and demo_triggers([]) == ["scan", "scan", "scan"], demo_triggers(["a", "b"]))
     beat, bpm = clip_beat({"bpm": 60, "params": {"slowed": 2.0}}, 1.0)
     check("the beat runs at the tempo a clip plays at (made at 60 bpm, slowed x2: 30 bpm, half a beat in 1 s)",
           abs(beat - 0.5) < 1e-9 and abs(bpm - 30.0) < 1e-9, (beat, bpm))
