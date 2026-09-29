@@ -47,6 +47,15 @@ def load_room(stage, cfg_path, look="room", guides=True, log=print):
     return env
 
 
+def contact_paths(h):
+    """The two actors of a PhysX contact report header as prim paths. Isaac
+    Sim 6 hands them over as encoded ints (PhysicsSchemaTools): str() of one
+    is a number, so a test like "/Room" in str(h.actor0) never matched and
+    every contact count read 0 until 2026-09-29."""
+    from pxr import PhysicsSchemaTools
+    return str(PhysicsSchemaTools.intToSdfPath(h.actor0)), str(PhysicsSchemaTools.intToSdfPath(h.actor1))
+
+
 def render_settings():
     """Real-time ray tracing; the walls' faces culled from outside (they are
     single faces turned into the room: a camera outside sees through); the
@@ -153,7 +162,9 @@ def import_robot():
             continue
         if root is None and prim.HasAPI(UsdPhysics.ArticulationRootAPI):
             root = prim.GetPath().pathString
-        if prim.HasAPI(UsdPhysics.CollisionAPI):
+        # contact reports are asked of a rigid body (the links); their colliders sit in instances,
+        # which Traverse does not enter -- on those alone no link ever reported (found 2026-09-29)
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI) or prim.HasAPI(UsdPhysics.CollisionAPI):
             PhysxSchema.PhysxContactReportAPI.Apply(prim).CreateThresholdAttr().Set(0.0)
     if root is None:
         raise SystemExit("no articulation root under /World/fr20 in %s" % usd)

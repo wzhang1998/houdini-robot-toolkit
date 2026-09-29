@@ -53,7 +53,7 @@ from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 from pxr import Gf, Sdf, UsdGeom  # noqa: E402
 
 import show  # noqa: E402
-from isaac_stage import (PHYSICS_DT, attach_tool, cameras, import_robot, load_room,  # noqa: E402
+from isaac_stage import (PHYSICS_DT, attach_tool, cameras, contact_paths, import_robot, load_room,  # noqa: E402
                          render_settings, use_camera)
 
 FPS_VIDEO = 30
@@ -114,7 +114,7 @@ def main():
         def on_contact(headers, data):
             for h in headers:
                 if h.type == ContactEventType.CONTACT_FOUND:
-                    a, b = str(h.actor0), str(h.actor1)
+                    a, b = contact_paths(h)
                     if ("/Room" in a) != ("/Room" in b):
                         contacts.append((round(clock[0], 3), a, b))
         sub = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841

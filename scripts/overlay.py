@@ -81,7 +81,8 @@ def self_test():
 
     check("a line: state and clip; the scan's percent only while it runs",
           label("IDLE", "rest_02_glide") == "IDLE   rest_02_glide"
-          and label("SCAN", "scan", 0.425) == "SCAN   scan  42%" and label("TO_SCAN", "to_scan") == "TO_SCAN" and label("SCAN", "scan", -1.0) == "SCAN",
+          and label("SCAN", "scan", 0.425) == "SCAN   scan  42%" and label("TO_SCAN", "to_scan") == "TO_SCAN"
+          and label("SCAN", "scan", -1.0) == "SCAN",
           (label("SCAN", "scan", 0.425), label("TO_SCAN", "to_scan")))
     rows = [(0.0, label("IDLE", "a")), (0.01, label("IDLE", "a")), (1.0, label("SCAN", "scan", 0.0)),
             (1.1, label("SCAN", "scan", 0.01)), (1.6, label("SCAN", "scan", 0.06)), (2.0, label("IDLE", "b"))]

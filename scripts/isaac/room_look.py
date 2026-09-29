@@ -168,7 +168,8 @@ def apply(stage, env, room="/World/Room", guides=True):
     dome = UsdLux.DomeLight.Define(stage, Sdf.Path(ROOT_PATH + "/Warehouse"))
     dome.CreateIntensityAttr(260.0)
     dome.CreateColorAttr(Gf.Vec3f(*WARM))
-    return ["the LED frame at %s, %s m, long side along the audience wall, %.2f m under the ceiling: estimated from the photo"
+    return ["the LED frame at %s, %s m, long side along the audience wall, %.2f m under the ceiling: "
+            "estimated from the photo"
             % ([round(x, 2) for x in mid], "%.1f x %.1f" % (f["long_m"], f["short_m"]), f["below_ceiling_m"]),
             "joists every %.2f m, beams every %.1f m: estimated" % (JOIST["spacing_m"], BEAM["spacing_m"]),
             "glass walls with studs: %s" % ", ".join(w[0] for w in glass)]

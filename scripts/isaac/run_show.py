@@ -6,7 +6,8 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
 
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                 window, panel, keys, OSC
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --minutes 3 --auto-trigger 30
-    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5         --auto-trigger 60 --seed 1 --camera audience --no-guides --video           the 5 min demo, recorded
+    C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --headless --no-osc --minutes 5 \
+        --auto-trigger 60 --seed 1 --camera audience --no-guides --video       the 5 min demo, recorded
 
 The same Runner as the dry run and (next) the real arm: each physics step
 asks it for joints and sends them to the arm's position drives. Triggers:
@@ -66,7 +67,7 @@ from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 import overlay  # noqa: E402
 import show  # noqa: E402
 
-from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, import_robot, load_room,  # noqa: E402
+from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, contact_paths, import_robot, load_room,  # noqa: E402
                          render_settings, use_camera)
 
 FPS_VIDEO = 30
@@ -122,7 +123,7 @@ def main():
         def on_contact(headers, data):
             for h in headers:
                 if h.type == ContactEventType.CONTACT_FOUND:
-                    a, b = str(h.actor0), str(h.actor1)
+                    a, b = contact_paths(h)
                     if ("/Room" in a) != ("/Room" in b):
                         contacts.append((round(float(runner.clock), 3), a, b))
         sub_contacts = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841
