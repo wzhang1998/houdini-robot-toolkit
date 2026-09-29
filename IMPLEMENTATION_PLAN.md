@@ -605,6 +605,11 @@ the tool (walk 34 -> 32 deg, still 13 -> 17 deg): a behaviour matter
 (look clips while tracked), not safety. Cost 1.1 ms a tick mean, 8.7 ms
 at most on a check tick: for show_stream's 125 Hz, the checks go to a
 worker thread (stage 5).
+3 done (2026-09-29): every scenario played in Isaac with physics and the
+tool: no contact in 11, the simulated arm within 0.93 deg of the commands
+(the greet clip's own fastest moment); videos from the audience's side in
+geo/tracking/. Next: a live mode (drag the target) once Isaac's Python
+has Ruckig; then 4 (modes B / C).
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
