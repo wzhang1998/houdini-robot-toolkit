@@ -101,6 +101,11 @@ DWELL_S = 1.0                      # on the spot this long (not walking) before 
 FOLLOW_M = (0.8, 0.5)              # once engaged, followed while within this of the spot (along, across): the
                                    # spot says "me"; then they may move -- and the edge does not flap
 LEAVE_S = 0.7                      # off the spot or unseen this long: goodbye
+LOST_CROWD_S = 1.5                 # ... unseen this long when others are near them (hidden behind someone)
+CROWD_NEAR_M = 1.0
+REID_M, REID_S = 0.3, 0.5          # the tracker gives the one followed a new id: a new id this near where they were,
+                                   # this soon after, is them
+JUMP_MPS = 3.0                     # the one followed "moving" faster than this: the tracker swapped two ids
 MAX_S = 30.0                       # at most this long for one person (the user)
 REST_S = 3.0                       # after a goodbye, nobody new for this long
 PERK_S, BYE_S = 0.6, 0.5           # the perk-up and the nod, held
@@ -171,15 +176,45 @@ class Engage:
         across = d[0] * self.axes[2][0] + d[1] * self.axes[2][1]
         return abs(along) <= FOLLOW_M[0] and abs(across) <= FOLLOW_M[1]
 
+    def _engaged(self):
+        return self.who if self.state in ("ENTER", "PERK", "TRACK") else None
+
+    def _hand_over(self, old, new):
+        """The one followed is `new` now (the tracker's ids changed): their state goes with them."""
+        a, b = self.people[old], self.people[new]
+        for k in ("in_since", "done"):
+            a[k], b[k] = b[k], a[k]
+        self.who = new
+        self.reids = getattr(self, "reids", 0) + 1
+
     def update(self, people, now, hands=()):
-        """people: [(pid, x, y, z, conf, t)]; hands: [(pid, x, y, z, conf, t)] (a hand each, raised or not)."""
+        """people: [(pid, x, y, z, conf, t)]; hands: [(pid, x, y, z, conf, t)] (a hand each, raised or not).
+        The tracker's ids are not trusted for the one followed: a jump faster than JUMP_MPS to where
+        another id is means the ids swapped; a new id near where they vanished is them."""
         import tracking as TR
+        frame = {pid: (x, y, z) for pid, x, y, z, conf, t in people if conf >= TR.MIN_CONF}
+        w = self._engaged()
+        was = self.people.get(w) if w is not None else None
+        if was is not None and w in frame:
+            dt = max(now - was["last"], 1.0 / 30.0)
+            if math.dist(frame[w][:2], was["pos"][:2]) / dt > JUMP_MPS:
+                other = [pid for pid, p in frame.items() if pid != w and math.dist(p[:2], was["pos"][:2]) <= REID_M]
+                if other and other[0] in self.people:
+                    self._hand_over(w, other[0])               # the ids swapped: follow the person, not the number
+                else:
+                    was["jumps"] = was.get("jumps", 0) + 1
+                    if was["jumps"] < TR.SWITCH_FRAMES:
+                        del frame[w]                           # a glitch: not taken, unless the next frames agree
+                    else:
+                        was["jumps"] = 0
+            else:
+                was["jumps"] = 0
         for pid, x, y, z, conf, t in people:
-            if conf < TR.MIN_CONF:
+            if pid not in frame:
                 continue
             pr = self.people.get(pid)
-            if pr is None or now - pr["last"] > LEAVE_S:
-                pr = self.people[pid] = {"hist": [], "in_since": None, "done": False}
+            if pr is None or (now - pr["last"] > LEAVE_S and pid != self._engaged()):
+                pr = self.people[pid] = {"hist": [], "in_since": None, "done": False, "first": now}
             pr.update(pos=(x, y, z), last=now)
             pr["hist"].append((t, (x, y, z)))
             while pr["hist"] and pr["hist"][0][0] < t - 2.0 * TR.SPEED_WINDOW_S:
@@ -190,10 +225,19 @@ class Engage:
                 pr["in_since"] = now
             elif not inside:
                 pr["in_since"], pr["done"] = None, False         # stepped off: may come again
+        w = self._engaged()
+        was = self.people.get(w) if w is not None else None
+        if was is not None and w not in frame and now - was["last"] <= REID_S:
+            new = [pid for pid, p in frame.items() if pid != w and now - self.people[pid].get("first", -1e9) <= REID_S
+                   and math.dist(p[:2], was["pos"][:2]) <= REID_M]
+            if new:
+                self._hand_over(w, new[0])                     # vanished, a new id where they were: them
         for pid, x, y, z, conf, t in hands:
             if conf >= TR.MIN_CONF:
                 self.hands[pid] = (x, y, z, now)
-        for pid in [k for k, pr in self.people.items() if now - pr["last"] > LEAVE_S]:
+        keep = self._engaged()
+        for pid in [k for k, pr in self.people.items()
+                    if now - pr["last"] > (LOST_CROWD_S if k == keep else LEAVE_S)]:
             del self.people[pid]
         self.fresh = True                                  # TRACK aims again (not every tick: the data's rate)
 
@@ -263,13 +307,17 @@ class Engage:
             if self.state == "OFF":
                 self.q = list(q_clip)
                 return self.q
-        head = self._head()
-        gone = head is None or (self.people[self.who]["in_since"] is None)
-        if self.state in ("PERK", "TRACK") and gone:
-            if now - self.t_gone >= LEAVE_S:
+        pr = self.people.get(self.who)
+        off = pr is not None and pr["in_since"] is None          # out of the follow zone
+        unseen = now - pr["last"] if pr is not None else float("inf")
+        crowd = pr is not None and any(o is not pr and now - o["last"] <= 0.3
+                                       and math.dist(o["pos"][:2], pr["pos"][:2]) <= CROWD_NEAR_M
+                                       for o in self.people.values())
+        if self.state in ("PERK", "TRACK"):
+            if not off:
+                self.t_gone = now
+            if (off and now - self.t_gone >= LEAVE_S) or unseen >= (LOST_CROWD_S if crowd else LEAVE_S):
                 self._goodbye(now)
-        else:
-            self.t_gone = now
         if self.state == "TRACK" and now - self.t_engaged >= MAX_S:
             self._goodbye(now)
         target = None
@@ -463,6 +511,26 @@ def self_test():
     def first(log, st):
         return next((t for t, s, *_ in log if s == st), None)
 
+    def run_many(people, dur):
+        """people(t) -> [(pid, du, dv, z)] (the tracker's ids). The run's log: (t, state, q, who)."""
+        en = Engage(cfg, hub, env0, model)
+        log = []
+        for i in range(int(dur / en.dt)):
+            now = i * en.dt
+            if i % 4 == 0:
+                en.update([(pid, spot[0] + du * axes[0][0] + dv * axes[2][0],
+                            spot[1] + du * axes[0][1] + dv * axes[2][1], z, 0.9, now)
+                           for pid, du, dv, z in people(now)], now)
+            q = en.step(hub, now)
+            log.append((now, en.state, list(q), en.who))
+        return en, log
+
+    def aim_along(q):
+        """Where along the spot's line the tool looks (m, at the spot's distance)."""
+        _, tp, d = S.tool_pose(q)
+        k = _dot((spot[0] - tp[0], spot[1] - tp[1], 0.0), axes[2]) / max(1e-6, _dot(d, axes[2]))
+        return _dot(tuple(tp[i] + k * d[i] - (spot[0], spot[1], 0.0)[i] for i in range(3)), axes[0])
+
     stay = lambda t: (0.0, 0.0, 1.62) if t >= 1.0 else (0.0, 2.0, 1.62)     # steps onto the spot at 1 s
     en, log = run(lambda t: stay(t) if t < 12.0 else (0.0, 2.0, 1.62), 20.0)
     t_enter, t_track = first(log, "ENTER"), first(log, "TRACK")
@@ -526,6 +594,25 @@ def self_test():
     check("the clip player: clips from the hub, back to back; cut short, the next starts at the hub",
           max(abs(a - b) for a, b in zip(qa, hub)) < 0.05 and max(abs(a - b) for a, b in zip(qb_, hub)) < 0.05
           and max(abs(a - b) for a, b in zip(pl.at(7.3), hub)) < 0.05 and moved)
+    # several people: the tracker's ids are not the people
+    renumber = lambda t: [(1 if t < 8.0 else 7, 0.0, 0.0, 1.62)]
+    en, log = run_many(renumber, 14.0)
+    check("the one followed gets a new id from the tracker (1 -> 7, same place): still followed, no goodbye",
+          first(log, "BYE") is None and log[-1][3] == 7 and log[-1][1] == "TRACK", (first(log, "BYE"), log[-1][3]))
+    swapped = lambda t: ([(1, 0.0, 0.0, 1.62), (2, 0.4, 0.1, 1.7)] if t < 8.0
+                         else [(2, 0.0, 0.0, 1.62), (1, 0.4, 0.1, 1.7)])
+    en, log = run_many(swapped, 14.0)
+    looks = [aim_along(q) for t, st, q, w in log if st == "TRACK" and t > 10.0]
+    check("two people's ids swapped at 8 s: the arm keeps looking at the same person (on the spot), not the other",
+          looks and max(abs(x) for x in looks) < 0.12 and log[-1][3] == 2, (round(max(abs(x) for x in looks), 3)
+                                                                           if looks else None, log[-1][3]))
+    hidden = lambda t: [p for p in [(1, 0.0, 0.0, 1.62), (2, 0.5, 0.3, 1.7)] if not (p[0] == 1 and 8.0 <= t < 9.2)]
+    en, log = run_many(hidden, 14.0)
+    check("hidden behind someone for 1.2 s: still followed (%.1f s allowed with people near)" % LOST_CROWD_S,
+          first(log, "BYE") is None and log[-1][3] == 1, first(log, "BYE"))
+    alone = lambda t: [] if 8.0 <= t < 9.2 else [(1, 0.0, 0.0, 1.62)]
+    en, log = run_many(alone, 14.0)
+    check("... unseen 1.2 s with nobody near: goodbye (%.1f s)" % LEAVE_S, first(log, "BYE") is not None)
     hover = lambda t: (0.28 + 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.5)), 0.0, 1.62)
     en, log = run(hover, 15.0)
     check("hovering at the spot's edge (0.28-0.40 m out): engaged once, no goodbye from the edge",
