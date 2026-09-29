@@ -618,6 +618,19 @@ track_sim's five crowd scenarios; all 16 scenarios pass offline (the crowd showe
 speed over 0.6 s, look-ahead to 1.4 s, the offsets held still near a slow zone);
 Isaac: crowd replays and --live --people 3 (the one looked at green), 0 unsafe,
 0 contacts. Next: 4 (modes B / C); the OAK-D process sending /track/people.
+4 (2026-09-29, the user: the spot straight in front of greet, 0.6 m across; the clip
+stops and the arm attends; C on simulated hands first; 30 s at most; the audience must
+see that the mode began): scripts/engage.py.
+  4a geometry: the spot, a box around the greet hub's tool point, 25 x 15 x 6 cm
+     (along -0.15..+0.10, up -0.12..+0.03, towards 0..0.06: what the room leaves the
+     upright 1 m strip), the aim within 30 deg of straight and -20..+25 deg of level;
+     432 poses reachable, 20 mm more than the margins, one branch. Done.
+  4b the state machine: enter (a checked, planned move from the clip; perk up, then
+     face them), track (B: along with the person, C: up with a raised hand), leave /
+     lost / 30 s: a nod, back to the hub, the clips go on; hysteresis at the spot's
+     edge, a cooldown; /robot/state TRACK for TD's own light.
+  4c track_sim spot scenarios and track_eval; 4d Isaac live (the spot drawn, heads
+     and a hand to drag); then show_stream's Runner.
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
