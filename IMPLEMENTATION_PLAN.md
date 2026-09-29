@@ -644,8 +644,13 @@ the corner behind the robot, and the guests' side from behind the
 audience zone.
 Also: a showpiece is a trigger by its name (show_ui's buttons per show,
 e.g. party_bigwipe's low_wipe_rows / greet_wipe_cols), for a quick look.
-Next: the user's verdict; the canvas's real size; 3 (merge, rebuild,
-TD rows).
+3 (2026-09-29, the user approved the preview): party.json took the
+candidate's canvas and scan (the candidate files removed); the library
+built again in 148 s: 82 of 85 segments identical, only to_scan, scan,
+from_scan new -- the floor-standing canvas cost no idle clip; dry run 10
+min, 12 scans, worst step 1.19 of 1.44 deg a tick. TD rows next.
+Open: the canvas's real size (fab team); party_bigwipe.json still has the
+old framed canvas (rebuild it when it is next wanted).
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard

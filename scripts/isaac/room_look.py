@@ -10,8 +10,8 @@ From the photo: a square LED frame hung under the joists is the room's
 light (cool white); the warehouse beyond the glass gives a warm fill; a
 dark plank floor; the TV wall carved pale plywood; the ceiling open joists
 and boards; the glass walls in wooden studs. ESTIMATED from the photo, not
-measured: the frame's place (+-0.5 m) and height, its size, the joists'
-spacing. Import after SimulationApp has started (it needs pxr).
+measured: the frame's height (its place: the room's middle, from the front
+photo), its size, the joists' spacing. Import after SimulationApp has started (it needs pxr).
 """
 
 import math
@@ -28,10 +28,11 @@ import room_geom as RG  # noqa: E402
 
 ROOT_PATH = "/World/Look"
 YAW_DEG = -11.28                     # the room's walls in the robot frame (envs/volvox_lab.usda)
-LED_FRAME = {"center": (-0.4, 0.5), "side_m": 1.3, "below_ceiling_m": 0.15, "bar_m": 0.04}
+LED_FRAME = {"center": None, "side_m": 1.3, "below_ceiling_m": 0.15, "bar_m": 0.04}   # None: the room's middle
+                                                                                     # (the user's front photo)
 JOIST = {"spacing_m": 0.41, "width_m": 0.045, "depth_m": 0.24}
 BEAM = {"spacing_m": 1.6, "width_m": 0.14, "depth_m": 0.3}
-STUD = {"spacing_m": 1.22, "width_m": 0.09}
+STUD = {"spacing_m": 1.22, "face_m": 0.04, "depth_m": 0.09}   # 2x4s seen edge on (the front photo)
 COOL = (0.88, 0.94, 1.0)             # the LED frame, ~6000 K
 WARM = (1.0, 0.8, 0.6)               # the warehouse's light through the glass
 # the room's own materials (room_usd.py's Looks), recoloured
@@ -137,16 +138,17 @@ def apply(stage, env, room="/World/Room", guides=True):
             t = i / float(n)
             p = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
             _box(stage, "%s/Studs/%s_%02d" % (ROOT_PATH, name, i), (p[0], p[1], (z0 + z1) / 2),
-                 (STUD["width_m"], STUD["width_m"], z1 - z0), yaw, wood)
+                 (STUD["face_m"], STUD["depth_m"], z1 - z0), yaw, wood)
         for j, z in enumerate((z0 + 0.05, z1 - 0.05)):
             _box(stage, "%s/Studs/%s_rail_%d" % (ROOT_PATH, name, j), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z),
-                 (L, STUD["width_m"], 0.09), yaw, wood)
+                 (L, STUD["depth_m"], STUD["face_m"]), yaw, wood)
 
     # the LED frame: four bars, each a rect light facing down and a glowing bar to see
     f = LED_FRAME
     zf = z1 - f["below_ceiling_m"]
-    cu = f["center"][0] * u[0] + f["center"][1] * u[1]
-    cv = f["center"][0] * v[0] + f["center"][1] * v[1]
+    mid = f["center"] or (sum(p[0] for p in fp) / len(fp), sum(p[1] for p in fp) / len(fp))
+    cu = mid[0] * u[0] + mid[1] * u[1]
+    cv = mid[0] * v[0] + mid[1] * v[1]
     h = f["side_m"] / 2.0
     bars = {"a": (cu - h, cv, 0.0), "b": (cu + h, cv, 0.0), "c": (cu, cv - h, 90.0), "d": (cu, cv + h, 90.0)}
     for key, (bu, bv, turn) in bars.items():
@@ -166,7 +168,7 @@ def apply(stage, env, room="/World/Room", guides=True):
     dome.CreateIntensityAttr(260.0)
     dome.CreateColorAttr(Gf.Vec3f(*WARM))
     return ["the LED frame at %s, %.1f m square, %.2f m under the ceiling: estimated from the photo"
-            % (f["center"], f["side_m"], f["below_ceiling_m"]),
+            % ([round(x, 2) for x in mid], f["side_m"], f["below_ceiling_m"]),
             "joists every %.2f m, beams every %.1f m: estimated" % (JOIST["spacing_m"], BEAM["spacing_m"]),
             "glass walls with studs: %s" % ", ".join(w[0] for w in glass)]
 
