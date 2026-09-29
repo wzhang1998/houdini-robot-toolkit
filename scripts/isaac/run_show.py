@@ -93,31 +93,10 @@ from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 import overlay  # noqa: E402
 import show  # noqa: E402
 
-from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, contact_paths, import_robot, load_room,  # noqa: E402
-                         render_settings, use_camera)
+from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, contact_paths, encode_video, import_robot,  # noqa: E402
+                         load_room, render_settings, use_camera)
 
 FPS_VIDEO = 30
-
-
-def encode(frames, corner, shots, stamp):
-    """The frames as an mp4 with the corner's text burnt in (overlay.py);
-    its path, relative to the repo. The frames go."""
-    import shutil
-    import subprocess
-    for _ in range(60):
-        app.update()                                        # the last captures written
-    with open(os.path.join(frames, "overlay.ass"), "w", encoding="utf-8") as f:
-        f.write(overlay.ass(overlay.compress(corner, 0.5), 1600, 900, shots / float(FPS_VIDEO)))
-    mp4 = os.path.join(args.out, "isaac_show_%s.mp4" % stamp)
-    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS_VIDEO), "-i", "f_%05d.png",
-                        "-vf", "ass=overlay.ass", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "22",
-                        os.path.abspath(mp4)], cwd=frames, capture_output=True, text=True)
-    if r.returncode:
-        print("[show] ffmpeg: %s (frames kept in %s)" % (r.stderr[-400:], frames))
-        return None
-    shutil.rmtree(frames, ignore_errors=True)
-    print("[show] video %s" % mp4)
-    return os.path.relpath(mp4, ROOT).replace("\\", "/")
 
 
 def main():
@@ -334,7 +313,8 @@ def main():
         if end is not None and runner.clock >= end:
             break
     log.close()
-    video = encode(frames, corner, shots, stamp) if frames is not None else None
+    video = (encode_video(app, frames, corner, shots, os.path.join(args.out, "isaac_show_%s.mp4" % stamp), FPS_VIDEO)
+             if frames is not None else None)
     played = [c for _, c in runner.history]
     summary = {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"), "log": os.path.relpath(log_path, ROOT).replace("\\", "/"),
                "sim_seconds": round(runner.clock, 1), "clips_played": len(played), "scans": played.count("scan"),

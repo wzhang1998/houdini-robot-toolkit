@@ -203,3 +203,25 @@ def attach_tool(stage, robot_root="/World/fr20", profile="fr20"):
         PhysxSchema.PhysxContactReportAPI.Apply(cube.GetPrim()).CreateThresholdAttr().Set(0.0)
     print("[show] tool %s on %s: %s" % (tool["name"], link.GetPath(), ", ".join(b["name"] for b in tool["boxes"])))
     return base.pathString
+
+
+def encode_video(app, frames, corner, shots, mp4, fps=30, size=(1600, 900), tag="show"):
+    """frames/f_%05d.png as mp4 with the corner's text burnt in (overlay.py:
+    corner [(t, text)]); its path relative to the repo, None if ffmpeg fails
+    (the frames are kept then; else removed)."""
+    import shutil
+    import subprocess
+    import overlay
+    for _ in range(60):
+        app.update()                                        # the last captures written
+    with open(os.path.join(frames, "overlay.ass"), "w", encoding="utf-8") as f:
+        f.write(overlay.ass(overlay.compress(corner, 0.5), size[0], size[1], shots / float(fps)))
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps), "-i", "f_%05d.png",
+                        "-vf", "ass=overlay.ass", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "22",
+                        os.path.abspath(mp4)], cwd=frames, capture_output=True, text=True)
+    if r.returncode:
+        print("[%s] ffmpeg: %s (frames kept in %s)" % (tag, r.stderr[-400:], frames))
+        return None
+    shutil.rmtree(frames, ignore_errors=True)
+    print("[%s] video %s" % (tag, mp4))
+    return os.path.relpath(mp4, ROOT).replace("\\", "/")
