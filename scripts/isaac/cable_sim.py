@@ -5,6 +5,8 @@ two connectors (the strip's, the laptop's on the red cart)?
     C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --video
     C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --clips 3 --segments greet_05_trace,high_17_salute
     C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --all --headless          every motion of the show
+    C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --stills rest
+                                                    the clips to take to the arm: the settled cable, numbered
 
 The cable is a chain of capsules (PhysX rigid bodies, SEG_M long, along
 their X) joined by D6 joints: stretch locked, bending on soft drives (the
@@ -54,6 +56,8 @@ ap.add_argument("--camera", default="1.25 -1.0 1.75 0.0 0.35 0.85 12",
 ap.add_argument("--video", action="store_true")
 ap.add_argument("--headless", action="store_true")
 ap.add_argument("--debug", action="store_true", help="print the connectors while the cable settles")
+ap.add_argument("--stills", default="", help="a hub: no motion -- the cable settled with the arm at that hub, "
+                                             "pictures of it with its clips numbered (geo/cable/clips*.png)")
 ap.add_argument("--out", default=os.path.join(ROOT, "geo", "cable"))
 args = ap.parse_args()
 
@@ -287,6 +291,110 @@ def playlist(graph, names, start_hub):
     return out
 
 
+# ---------------------------------------------------------------- the clips as pictures
+MARK_RGB = [(1.0, 0.85, 0.1), (0.1, 0.8, 1.0), (0.3, 1.0, 0.3), (1.0, 0.4, 0.9), (1.0, 0.5, 0.1), (0.6, 0.6, 1.0),
+            (1.0, 1.0, 1.0)]
+APERTURE_MM = 20.955                  # USD's default horizontal aperture
+STILL_W, STILL_H = 1280, 720
+JOINT_WORDS = {"J1": "Base (J1)", "J2": "Shoulder (J2)", "J3": "Elbow (J3)", "J4": "Wrist 1 (J4)",
+               "J5": "Wrist 2 (J5)", "J6": "Wrist 3 (J6)"}
+
+
+def project(p, eye, target, focal):
+    """Pixel (x, y) of world point p in a camera at eye looking at target (Z up)."""
+    f = [target[i] - eye[i] for i in range(3)]
+    n = math.sqrt(sum(x * x for x in f))
+    f = [x / n for x in f]
+    r = [f[1], -f[0], 0.0]                                    # forward x up
+    n = math.sqrt(sum(x * x for x in r))
+    r = [x / n for x in r]
+    u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]]
+    d = [p[i] - eye[i] for i in range(3)]
+    zc = sum(d[i] * f[i] for i in range(3))
+    k = focal / APERTURE_MM * STILL_W
+    return (STILL_W / 2 + sum(d[i] * r[i] for i in range(3)) / zc * k,
+            STILL_H / 2 - sum(d[i] * u[i] for i in range(3)) / zc * k)
+
+
+def clip_words(pid):
+    if pid == "cart":
+        return "Laptop on the red cart"
+    if pid.startswith("tool/"):
+        return "Strip plug (bracket side, out 4 cm)"
+    link, where = pid.split("/")
+    if "_axis" in where:
+        j, side = where.split("_axis")
+        return "%s joint cap, %s side" % (JOINT_WORDS[j], side)
+    return {"shoulder_link": "Shoulder housing, side", "upperarm_link": "Upper arm",
+            "forearm_link": "Forearm"}.get(link, link)
+
+
+def stills(stage, robot, idx, q, world, layout, pts):
+    """The settled cable and its clips from two sides, numbered, a legend below: geo/cable/clips.png."""
+    from omni.kit.viewport.utility import capture_viewport_to_file
+    from PIL import Image, ImageDraw, ImageFont
+    for i, p in enumerate(pts):
+        m = UsdGeom.Sphere.Define(stage, Sdf.Path("/World/ClipMarks/c%d" % i))
+        m.CreateRadiusAttr(0.022)
+        m.CreateDisplayColorAttr([Gf.Vec3f(*MARK_RGB[i % len(MARK_RGB)])])
+        m.AddTranslateOp().Set(Gf.Vec3d(*p))
+    # the whole arm in view: aimed between the base and the clips, from two corners, wide
+    xs = [p[0] for p in pts[:-1]] + [0.0]
+    ys = [p[1] for p in pts[:-1]] + [0.0]
+    zs = [p[2] for p in pts[:-1]] + [0.0]
+    mid = [(min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2]
+    views = [([1.25, -1.05, 1.95], mid, 8.5), ([-1.5, -0.85, 1.95], mid, 8.5)]
+    font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 22)
+    small = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 18)
+    shots = []
+    for v, (eye, target, focal) in enumerate(views):
+        vp = use_camera(stage, "/World/ClipCam_%d" % v, eye, target, focal)
+        for _ in range(int(1.0 / DT)):                       # the cable keeps hanging; the view's first frames
+            robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
+            world.step(render=True)
+        png = os.path.join(args.out, "clips_%d.png" % v)
+        capture_viewport_to_file(vp, png)
+        for _ in range(30):
+            app.update()
+        img = Image.open(png).convert("RGB")
+        d = ImageDraw.Draw(img)
+        for i, p in enumerate(pts):
+            x, y = project(p, eye, target, focal)
+            if 0 <= x < STILL_W and 0 <= y < STILL_H:
+                col = tuple(int(255 * c) for c in MARK_RGB[i % len(MARK_RGB)])
+                d.ellipse([x - 15, y - 15, x + 15, y + 15], outline=col, width=3)
+                d.rectangle([x + 15, y - 30, x + 42, y - 4], fill=(0, 0, 0))
+                d.text((x + 22, y - 31), str(i + 1), fill=col, font=font)
+        shots.append(img)
+    more = [float(x) for x in args.extra.split(",") if x.strip()] if args.extra else []
+    lens = [sp["cable_m"] + (more[i] if i < len(more) else 0.0) for i, sp in enumerate(layout["spans"])]
+    both = Image.new("RGB", (STILL_W * 2, STILL_H + 220), (20, 20, 22))
+    for i, img in enumerate(shots):
+        both.paste(img, (STILL_W * i, 0))
+    d = ImageDraw.Draw(both)
+    y = STILL_H + 12
+    d.text((20, y), "LED strip cable: clips and route (arm at the '%s' hub; two views; the cable as simulated)"
+           % args.stills, fill=(255, 255, 255), font=font)
+    y += 36
+    for i, p in enumerate(layout["points"]):
+        col = tuple(int(255 * c) for c in MARK_RGB[i % len(MARK_RGB)])
+        d.text((20 + (i % 3) * 850, y + (i // 3) * 28), "%d  %s" % (i + 1, clip_words(p["id"])), fill=col,
+               font=small)
+    y += 66
+    d.text((20, y), "Cable per span:   " + "     ".join(
+        "%d-%d  %.2f m%s" % (i + 1, i + 2, L, (" (incl. %.0f cm service loop)" % (100 * more[i]))
+                             if i < len(more) and more[i] else "") for i, L in enumerate(lens)),
+        fill=(230, 230, 230), font=small)
+    d.text((20, y + 28), "Total about %.1f m. The 1-2 loop lets J6 turn the strip without wrapping the cable tight "
+                         "round the wrist; the last loop takes J1's big swing (the big wipes)." % sum(lens),
+           fill=(230, 230, 230), font=small)
+    d.text((20, y + 56), "Sleeve the J6 gap (wrist 2 / wrist 3) and the J1 gap (base / shoulder): the cable rests "
+                         "across both. Tidy the spare loop on the base plate.", fill=(230, 230, 230), font=small)
+    out = os.path.join(args.out, "clips.png")
+    both.save(out)
+    print("[cable] clips %s" % out, flush=True)
+
+
 def main():
     cfg_path = os.path.abspath(args.config)
     cfg = json.load(open(cfg_path))
@@ -339,6 +447,8 @@ def main():
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
     q0 = seq[0][0].q[0]
+    if args.stills:                                          # the arm still at a hub
+        q0 = graphs[0].hubs[args.stills]
     robot.set_joint_positions(np.radians(q0), joint_indices=idx)
     for _ in range(10):
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q0), joint_indices=idx))
@@ -568,6 +678,9 @@ def main():
         print("[cable] clips at segments %s" % sorted(clip_at), flush=True)
     print("[cable] at rest: strip %.2f N, laptop %.2f N, tightest bend %.3f m"
           % (rest["strip"], rest["laptop"], bend_radius(poses)), flush=True)
+    if args.stills:
+        stills(stage, robot, idx, q0, world, layout, pts)
+        return
     per = {}
     order = []
     for seg, motion in seq:
