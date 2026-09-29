@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 LEDS = 60
-VIOLET = (0.62, 0.3, 1.0)
+LIT = (1.0, 1.0, 1.0)                # white, as the user sees the strip
 DARK = (0.06, 0.06, 0.07)
 DOT_M = 0.012
 LIFT_M = 0.004                       # the dots just in front of the strip's face
@@ -50,10 +50,10 @@ def led_positions(R, tcp, face, length, n=LEDS, led0="minus"):
 
 
 def colour(level, gain=1.0):
-    """A dot's colour at a level: dark grey off, violet lit (gain: see a dim
+    """A dot's colour at a level: dark grey off, white lit (gain: see a dim
     pattern -- the preview's, not the strip's)."""
     k = min(1.0, max(0.0, level * gain))
-    return tuple(DARK[i] + (VIOLET[i] - DARK[i]) * k for i in range(3))
+    return tuple(DARK[i] + (LIT[i] - DARK[i]) * k for i in range(3))
 
 
 def glow(stage, path, prim):
@@ -116,9 +116,9 @@ def self_test():
     face, length = strip_geometry()
     check("the strip's face and length come from the profile's tool (FR20: 1 m, ~7 cm out)",
           abs(length - 1.0) < 1e-6 and 0.05 < face < 0.1, (face, length))
-    check("dark off, violet at full, the gain brightens a dim level up to full",
-          near(colour(0.0), DARK) and near(colour(1.0), VIOLET) and near(colour(0.1, 10.0), VIOLET)
-          and colour(0.5)[2] < VIOLET[2] - 0.1)
+    check("dark off, white at full, the gain brightens a dim level up to full",
+          near(colour(0.0), DARK) and near(colour(1.0), LIT) and near(colour(0.1, 10.0), LIT)
+          and colour(0.5)[2] < LIT[2] - 0.1)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
