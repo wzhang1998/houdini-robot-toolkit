@@ -652,6 +652,23 @@ min, 12 scans, worst step 1.19 of 1.44 deg a tick. TD rows next.
 Open: the canvas's real size (fab team); party_bigwipe.json still has the
 old framed canvas (rebuild it when it is next wanted).
 
+## Stage 13: The LED strip's cable along the arm (2026-09-29, the user's go)
+**Goal**: Where to clip the strip's cable to the arm, how much cable each
+span needs, and which motions would strain, fling or pinch it; the cable
+runs from the strip to the laptop on the red cart (the user).
+**Success Criteria**: 1. a geometric survey (scripts/cable_route.py) over
+every motion of the built shows: per span between clips the chord's range
+(the slack loop that swings) and its longest (the cable it needs); the
+best layouts with 2-5 clips; the motions that set the extremes; a video of
+the chosen layout's spans in Isaac. 2. the cable as a chain of capsules in
+Isaac (PhysX) on the chosen clips, the worst motions and the library
+played: no pinch, no contact with the strip, the room or the canvas;
+videos.
+**Tests**: cable_route self-test: a clip on a joint's axis keeps its span
+constant while only that joint turns, one off it does not; the layout
+search takes the axis clips; a chord through a link is caught.
+**Status**: In Progress
+
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
 tools, per `docs/standard_tools_eval.md` (read-only research; Houdini's
