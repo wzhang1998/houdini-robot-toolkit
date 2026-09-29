@@ -43,6 +43,10 @@ MAX_OFFSET_DEG = (20.0, 10.0)
 SHARE = 0.3                    # of the joints' velocity, acceleration and jerk limits
 HOLD_S = 0.7
 SHRINK = (1.0, 0.75, 0.5, 0.25, 0.0)
+AIM_ROOM_M = 0.02              # the aimed pose keeps this much more than the room's margins ...
+AIM_SELF_M = 0.01              # ... and this much between the links
+AHEAD_S = (0.2, 0.4, 0.6)      # the clip's poses this far ahead are checked with the offsets too
+CHECK_EVERY = 4                # the aim and look-ahead checks every 4th tick (~31 Hz, the data's rate)
 
 
 class OneEuro:
@@ -168,9 +172,27 @@ def aim_offsets(rig, q, target, iterations=4):
 
 
 class Gaze:
-    """Mode A: the gaze offsets on top of a clip, tick by tick."""
+    """Mode A: the gaze offsets on top of a clip, tick by tick.
 
-    def __init__(self, dt=0.008, share=SHARE, max_offset=MAX_OFFSET_DEG, hold_s=HOLD_S, env=None, model=None, rig=None):
+    The offsets are aimed from the hub's own pose (anchor), not the clip's
+    of the moment: the whole performance turns towards the person and the
+    clip's gestures go on around that direction -- aimed from the moving
+    clip, the offsets chased its every look at full speed and made the gaze
+    worse (track_eval, 2026-09-29). Safety, each tick:
+    - the aimed offsets are shrunk until the clip's pose with them keeps
+      AIM_ROOM_M more than the room's margins and AIM_SELF_M between links
+      (the offsets lag behind the aim: that room is for the way there),
+      now and at the clip's poses AHEAD_S ahead (the clip is known: a
+      gesture heading for the strip is seen before it gets there);
+    - when the offsets as they are would not be clear at a pose ahead, the
+      aim goes to zero now: 0.6 s is room enough to take them back;
+    - the pose sent is checked; when it is not clear the aim goes to zero
+      at once (and the tick is counted: it should never happen);
+    - in a slow zone the offsets' speed limit comes down while the tool
+      point is near the zone's speed (and goes back up after)."""
+
+    def __init__(self, anchor=None, dt=0.008, share=SHARE, max_offset=MAX_OFFSET_DEG, hold_s=HOLD_S, env=None,
+                 model=None, rig=None):
         import collision as C
         import gestures as G
         import robot_profile as RP
@@ -180,6 +202,11 @@ class Gaze:
         self.rig = rig or G.Rig()
         self.model = model or C.load_model("fr20")
         self.env = env
+        self.aim_env = None if env is None else dict(env, objects=[
+            dict(o, margin_m=o.get("margin_m", env.get("margin_m", 0.05)) + AIM_ROOM_M) if o["role"] == "obstacle"
+            else o for o in env["objects"]])
+        self.slow = [o for o in (env or {}).get("objects", []) if o["role"] == "slow"]
+        self.anchor = anchor
         prof = RP.load("fr20")
         vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
         jerk = T.default_jerk(acc)
@@ -190,20 +217,25 @@ class Gaze:
         self.inp.current_position = [0.0] * n
         self.inp.current_velocity = [0.0] * n
         self.inp.current_acceleration = [0.0] * n
-        self.inp.max_velocity = [vel[j] * share for j in GAZE_JOINTS]
+        self.vmax = [vel[j] * share for j in GAZE_JOINTS]
+        self.inp.max_velocity = list(self.vmax)
         self.inp.max_acceleration = [acc[j] * share for j in GAZE_JOINTS]
         self.inp.max_jerk = [jerk[j] * share for j in GAZE_JOINTS]
         self.want = [0.0] * n          # the offsets aimed at
+        self.aim_for = None            # (target, offsets) of the last aim
         self.lost_at = None
+        self.prev_tcp = None
         self.unsafe = 0                # ticks whose commanded pose was not clear (should stay 0)
         self.shrunk = 0                # ticks whose aim was shrunk to stay clear
+        self.governed = 0              # ticks with the speed limit lowered in a slow zone
 
-    def _clear(self, q):
+    def _clear(self, q, env=None, self_room=0.0):
         if self.env is None:
             return True
         if not all(lo <= x <= hi for x, (lo, hi) in zip(q, self.lim)):
             return False
-        return self.C.check(self.model, self.env, [0.0], [q])["ok"]
+        rep = self.C.check(self.model, env or self.env, [0.0], [q])
+        return rep["ok"] and (rep["min_self_clearance_m"] is None or rep["min_self_clearance_m"] >= self_room)
 
     def _with(self, q, off):
         q = list(q)
@@ -211,29 +243,70 @@ class Gaze:
             q[j] += off[k]
         return q
 
-    def step(self, q_base, target, now):
-        """The pose to send this tick: the clip's q_base with the offsets."""
+    def _aim(self, q_base, target):
+        anchor = self.anchor or q_base
+        if self.aim_for is None or math.dist(self.aim_for[0], target) > 0.01:     # aimed again as the person moves
+            off = aim_offsets(self.rig, anchor, target)
+            self.aim_for = (tuple(target), [max(-m, min(m, x)) for x, m in zip(off, self.max_offset)])
+        return self.aim_for[1]
+
+    def _govern(self, q):
+        """The offsets' speed limit down while the tool point is fast in a slow zone."""
+        tcp = self.rig.tool(q)[1]
+        if self.prev_tcp is not None and self.slow:
+            v = math.dist(tcp, self.prev_tcp) / self.dt
+            near = [o for o in self.slow if self.C.sdf(o, tcp) < 0.1]
+            if near and v > 0.8 * min(o["tcp_speed_mps"] for o in near):
+                self.inp.max_velocity = [max(x * 0.5, 0.05 * m) for x, m in zip(self.inp.max_velocity, self.vmax)]
+                self.governed += 1
+            else:
+                self.inp.max_velocity = [min(x * 1.02, m) for x, m in zip(self.inp.max_velocity, self.vmax)]
+        self.prev_tcp = tcp
+
+    def step(self, q_base, target, now, ahead=()):
+        """The pose to send this tick: the clip's q_base with the offsets.
+        ahead: the clip's poses AHEAD_S ahead (what the runner knows)."""
+        self.ticks = getattr(self, "ticks", -1) + 1
+        heavy = self.env is not None and self.ticks % CHECK_EVERY == 0
+        poses = [q_base] + list(ahead)
         if target is not None:
             self.lost_at = None
-            want = [max(-m, min(m, x)) for x, m in zip(aim_offsets(self.rig, q_base, target), self.max_offset)]
-            for f in SHRINK:                               # the aim shrunk until its pose is clear
-                w = [x * f for x in want]
-                if f == 0.0 or self._clear(self._with(q_base, w)):
-                    self.shrunk += f < 1.0
-                    self.want = w
-                    break
+            want = self._aim(q_base, target)
+            if heavy or self.env is None:
+                for f in SHRINK:                           # the aim shrunk until its poses keep room
+                    w = [x * f for x in want]
+                    if f == 0.0 or all(self._clear(self._with(p, w), self.aim_env, AIM_SELF_M) for p in poses):
+                        self.shrunk += f < 1.0
+                        self.want = w
+                        break
         else:
+            self.aim_for = None
             if self.lost_at is None:
                 self.lost_at = now
             if now - self.lost_at >= self.hold_s:
                 self.want = [0.0] * len(GAZE_JOINTS)       # back to the clip
+        if heavy and ahead and any(abs(x) > 1e-6 for x in self.offsets):
+            if not all(self._clear(self._with(p, self.offsets), None, 0.0) for p in ahead):
+                self.want = [0.0] * len(GAZE_JOINTS)       # trouble ahead: take them back now
+                self.retreats = getattr(self, "retreats", 0) + 1
         self.inp.target_position = list(self.want)
         self.inp.target_velocity = [0.0] * len(GAZE_JOINTS)
-        self.otg.update(self.inp, self.out)
-        self.out.pass_to_input(self.inp)
-        q = self._with(q_base, self.out.new_position)
+        if all(abs(t - c) < 1e-6 and abs(v) < 1e-6 and abs(a) < 1e-6 for t, c, v, a in
+               zip(self.want, self.inp.current_position, self.inp.current_velocity, self.inp.current_acceleration)):
+            # there and still: snapped (Ruckig finds no step in a round-off, 2026-09-29)
+            self.inp.current_position = list(self.want)
+            self.inp.current_velocity = [0.0] * len(GAZE_JOINTS)
+            self.inp.current_acceleration = [0.0] * len(GAZE_JOINTS)
+            pos = list(self.want)
+        else:
+            self.otg.update(self.inp, self.out)
+            self.out.pass_to_input(self.inp)
+            pos = self.out.new_position
+        q = self._with(q_base, pos)
         if self.env is not None and not self._clear(q):
             self.unsafe += 1
+            self.want = [0.0] * len(GAZE_JOINTS)           # back towards the clip at once
+        self._govern(q)
         return q
 
     @property
@@ -284,7 +357,7 @@ def self_test():
     env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
     g = S.Graph.load(S.compiled_path(os.path.join(ROOT, "shows", "party.json")))
     hub = g.hubs["greet"]
-    gz = Gaze(env=env)
+    gz = Gaze(anchor=hub, env=env)
     person = (-0.9, -1.75, 1.6)
     tcp, d = _tool(gz.rig, hub)
     def angle(q, p):
@@ -305,7 +378,7 @@ def self_test():
     import robot_profile as RP
     prof = RP.load("fr20")
     vmax, amax = RP.velocity_limits(prof), RP.acceleration_limits(prof)
-    gz = Gaze(env=env)
+    gz = Gaze(anchor=hub, env=env)
     qs = [gz.step(hub, (-0.9, -1.75, 1.6) if k < 200 else (0.6, -1.9, 1.7), k * gz.dt) for k in range(600)]
     ratio = max(max(abs(b - a) / gz.dt / (SHARE * vmax[j]) for a, b in zip(col, col[1:])) for j, col in
                 ((j, [q[j] for q in qs]) for j in GAZE_JOINTS))
@@ -313,7 +386,7 @@ def self_test():
                for j, col in ((j, [q[j] for q in qs]) for j in GAZE_JOINTS))
     check("a jump of the target 1.5 m: each joint's turn within %.0f %% of its velocity and acceleration limits"
           % (100 * SHARE), ratio <= 1.01 and racc <= 1.02, "velocity %.2f, acceleration %.2f of the share" % (ratio, racc))
-    gz = Gaze(env=env)
+    gz = Gaze(anchor=hub, env=env)
     qs = [gz.step(hub, person if k < 300 else None, k * gz.dt) for k in range(900)]
     held = qs[300 + int(0.5 / gz.dt)]
     check("lost: the offsets held %.1f s, then back to the clip (zero), smoothly" % HOLD_S,

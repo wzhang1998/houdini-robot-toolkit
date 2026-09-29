@@ -594,7 +594,17 @@ limits; lost: hold 0.7 s, then back to the clip in ~1.5 s.
 and jerk within their share of the limits, no step at engage / lost / back,
 clear of the room by the margins; the gaze error small while tracked.
 **Tests**: track_sim / tracking / track_eval self-tests; the scenario report.
-**Status**: In Progress (1)
+**Status**: In Progress -- 1 and 2 done (2026-09-29): all 11 scenarios pass
+offline (no unsafe tick, clear 59 mm, offsets within the share, the arm
+within 0.83 of its limits, lost -> back to the clip). What it took: aim
+from the hub's pose, not the moving clip's (chasing the clip made the gaze
+worse); look ahead 0.6 s along the clip (greet_04_tilt closes the
+forearm-strip gap to 11 mm and the offsets were too late to leave it);
+a slow-zone governor. The gaze gain is modest while the gestures swing
+the tool (walk 34 -> 32 deg, still 13 -> 17 deg): a behaviour matter
+(look clips while tracked), not safety. Cost 1.1 ms a tick mean, 8.7 ms
+at most on a check tick: for show_stream's 125 Hz, the checks go to a
+worker thread (stage 5).
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
