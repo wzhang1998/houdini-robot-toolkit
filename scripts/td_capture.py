@@ -87,6 +87,19 @@ class Reader:
         """The frame at or just before t."""
         return self.frames[max(0, bisect.bisect_right(self.times, t) - 1)]
 
+    def q_at(self, t):
+        """The joints at t, straight between the recorded frames: the frames
+        fall on the physics ticks nearest each 1/30 s, not on it, so taking
+        the one before t repeats one and skips the next (a stutter)."""
+        i = bisect.bisect_right(self.times, t)
+        if i <= 0:
+            return list(self.frames[0]["q"])
+        if i >= len(self.frames):
+            return list(self.frames[-1]["q"])
+        a, b = self.frames[i - 1], self.frames[i]
+        f = (t - a["t"]) / (b["t"] - a["t"]) if b["t"] > a["t"] else 0.0
+        return [x + (y - x) * f for x, y in zip(a["q"], b["q"])]
+
     def canvas_index(self, t):
         """The index of the newest canvas image at or before t; None before the first."""
         i = bisect.bisect_right(self.canvas_t, t) - 1
@@ -135,6 +148,9 @@ def self_test():
     check("... by index too (the replay redraws only when it changes)",
           r.canvas_index(0.01) is None and r.canvas_index(0.3) == 0 and r.canvas_index(0.6) == 1
           and r.canvas(1) == (4, 3, bytes(36)))
+    q = r.q_at(0.5 / 30.0)
+    check("the joints between two frames: straight between them; the ends held",
+          abs(q[0] - 0.5) < 0.01 and abs(q[1] + 44.0) < 0.1 and r.q_at(-1.0)[0] == 0 and r.q_at(9.0)[5] == 6, q)
     with open(os.path.join(d, "canvas.bin"), "ab") as f:
         f.write(HEAD.pack(1.0, 4, 3, 999) + b"xx")                   # a run stopped mid-record
     check("a record cut short at the end is left out", len(Reader(d).canvas_t) == 2)

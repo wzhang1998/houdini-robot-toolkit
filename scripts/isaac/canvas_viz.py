@@ -41,6 +41,14 @@ def grid(corners, w, h):
     return pts, [4] * (w * h), idx
 
 
+def srgb_to_linear(v):
+    """TD's image is display (sRGB) values; USD colours are linear -- taken as
+    they are, the paper's violet renders washed out."""
+    import numpy as np
+    v = np.asarray(v, dtype=np.float32)
+    return np.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
 def colours(rgb):
     """RGB8 bytes as (r, g, b) floats 0..1 per pixel."""
     return [(rgb[k] / 255.0, rgb[k + 1] / 255.0, rgb[k + 2] / 255.0) for k in range(0, len(rgb), 3)]
@@ -70,7 +78,7 @@ class CanvasViz:
             UsdGeom.Imageable(self.mesh).MakeVisible()
         import numpy as np
         from pxr import Vt
-        px = np.frombuffer(rgb, dtype=np.uint8).reshape(-1, 3).astype(np.float32) / 255.0
+        px = srgb_to_linear(np.frombuffer(rgb, dtype=np.uint8).reshape(-1, 3).astype(np.float32) / 255.0)
         self.color.Set(Vt.Vec3fArray.FromNumpy(px))              # one array, not 8100 Python objects
 
     def hide(self):
@@ -95,6 +103,9 @@ def self_test():
     check("face 0 is the top left pixel, the last the bottom right",
           first[0] == [0.0, 0.0, 1.0] and first[2] == [1.0, 0.0, 0.5] and last[2] == [3.0, 0.0, 0.0], (first, last))
     check("pixels as colours 0..1", colours(bytes([255, 0, 51])) == [(1.0, 0.0, 0.2)])
+    lin = srgb_to_linear([0.0, 0.5, 1.0])
+    check("display values to linear: ends kept, a mid grey darker (0.5 -> 0.214)",
+          lin[0] == 0.0 and abs(lin[1] - 0.214) < 0.001 and abs(lin[2] - 1.0) < 1e-6, list(lin))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

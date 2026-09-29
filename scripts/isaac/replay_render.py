@@ -94,12 +94,13 @@ def main():
     for k in range(n):
         t = args.start + k / float(FPS)
         fr = cap.frame_at(t)
-        for s in range(steps):                                            # the arm driven as it was, 120 Hz
-            robot.apply_action(ArticulationAction(joint_positions=np.radians(fr["q"]), joint_indices=idx))
+        for s in range(steps):                                            # the arm driven as it was, 120 Hz,
+            q = cap.q_at(t - (steps - 1 - s) * PHYSICS_DT)                # between the frames: no stutter
+            robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
             world.step(render=s == steps - 1)
-        leds.update(fr["leds"], fr["q"])
+        leds.update(fr["leds"], q)
         if scan is not None:
-            scan.update(-1.0, False, fr["q"])
+            scan.update(-1.0, False, q)
         if canvas is not None:
             i = cap.canvas_index(t)
             if i is not None and i != shown:
