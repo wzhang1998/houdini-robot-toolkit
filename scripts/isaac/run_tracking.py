@@ -340,10 +340,15 @@ def live():
             bodies[k][1].Set(Gf.Vec3d(pos[k][0], pos[k][1], pos[k][2] - 0.9))    # the body under the head
             show_or_hide(bodies[k][0].GetPrim(), there[k])
             show_or_hide(heads[k][0].GetPrim(), there[k] or not args.headless)  # a head stays draggable
-        if n > 1 and looked != green:
+        engaged = en is not None and en.state != "OFF"
+        shown = en.who if engaged else looked               # green: whom the arm is on -- the engaged one, else the gaze's
+        if (n > 1 or engaged or green is not None) and shown != green:
             for k in range(n):
-                heads[k][0].GetDisplayColorAttr().Set([Gf.Vec3f(*(LOOKED if k + 1 == looked else SKIN))])
-            green = looked
+                heads[k][0].GetDisplayColorAttr().Set([Gf.Vec3f(*(LOOKED if k + 1 == shown else SKIN))])
+            green = shown
+        if engaged:
+            head_e = en.people.get(en.who, {}).get("pos")
+            tgt = head_e if head_e is not None else tgt
         show_or_hide(target.GetPrim(), tgt is not None)
         if tgt is not None:
             target_op.Set(Gf.Vec3d(*tgt))
@@ -365,8 +370,11 @@ def live():
                               "looking at " if n > 1 else "", who, off[0], off[1], gz.unsafe, gz.shrunk,
                               getattr(gz, "held_slow", 0), len(contacts), worst, now))
             if en is not None:
-                label.text = ("INTERACTIVE: %s%s   (%d so far)\n" % (
-                    en.state, (" " + en.mode) if en.state == "TRACK" else "", en.engagements)
+                waiting = [pid for pid, pr in en.people.items() if pid != en.who and pr["in_since"] is not None
+                           and en._on_spot(pr["pos"], en.r)]
+                label.text = ("INTERACTIVE: %s%s with person %s   (%d so far)%s\n" % (
+                    en.state, (" " + en.mode) if en.state == "TRACK" else "", en.who, en.engagements,
+                    ("   waiting on the ring: %s" % ", ".join(map(str, waiting))) if waiting else "")
                     if en.state != "OFF" else "clips (stand on the ring to start)\n") + label.text
         ticks += 1
         if not args.headless:
