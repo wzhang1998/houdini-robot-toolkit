@@ -16,6 +16,8 @@ Clips are timed and checked in Houdini; these moves are not, so:
                        own work area among them: it stops the arm outside)
 
 route(q_from, q_to, env) returns the straight move when it is clear, else
+cuRobo's path when its service runs (curobo_bridge; checked here leg by
+leg), else
 one or two waypoints: fold the elbow at the current J1 (the arm lowered, so
 a straight arm is not pointing up), turn J1, unfold. The candidates are
 searched in order of total joint travel; the first clear route wins.
@@ -134,6 +136,13 @@ def route(q_from, q_to, env, model=None, limits=None):
     if limits is None:                            # the FR20's motion limits (J6 in the tool cable's range)
         import robot_profile as RP
         limits = RP.motion_limits(RP.load("fr20"))
+    # cuRobo's path when its service runs, every leg checked here; else the grid
+    import curobo_bridge
+    path, how = curobo_bridge.route(q_from, q_to, menv, model, limits,
+                                    lambda a, b: segment_clear(model, menv, a, b), lambda q: _within(q, limits))
+    if path is not None:
+        return path, why + "; " + how
+    why += "; " + how
     # folded postures: J2 / J3 on a grid, the wrist already at the goal's.
     # The fold happens facing J1 = t: where the arm is, where it goes, or
     # any other direction (a straightening arm needs open room around it)
@@ -198,6 +207,7 @@ def self_test():
     check("the elbow-flip MoveJ that nearly hit the ceiling is blocked by the ceiling margin", hit is not None and hit[1][1] == "ceiling", hit)
     check("... (and, with the controller's zone, by the TCP leaving it first)", segment_clear(model, menv, b, home) is not None)
     path, why = route(b, home, env, model)
+    detour, why_detour = path, why
     check("... and a detour is found, or the move refused", path is None or path[-1] == home, why)
     if path:
         pts = [b] + path
@@ -205,6 +215,19 @@ def self_test():
         check("every leg of the detour is clear", all(segment_clear(model, menv, x, y) is None for x, y in zip(pts, pts[1:])))
     path, why = route(home, [-60.0, -90.0, 90.0, -90.0, -90.0, 0.0], env, model)
     check("turning J1 alone at HOME is a straight move", path is not None and len(path) == 1, why)
+    # cuRobo first when it runs (curobo_bridge): its path, checked by us, or the grid as before
+    import curobo_bridge as CB
+    saved = CB.plan, CB.available
+    CB.available = lambda: True
+    CB.plan = lambda a, g, world: (None, "cuRobo: no path")
+    path_off, why_off = route(b, home, env, model)
+    check("cuRobo with no path: the grid's detour, as before", (path_off, "cuRobo" in why_off) == (detour, True), why_off)
+    if detour:
+        CB.plan = lambda a, g, world: ([a] + detour, "cuRobo 0.01 s")    # a path we know is clear
+        got, why_cu = route(b, home, env, model)
+        check("cuRobo's clear path is taken, and the log says so", got is not None and got[-1] == home
+              and why_cu.startswith(why_detour.split(";")[0]) and "cuRobo 0.01 s: detour" in why_cu, why_cu)
+    CB.plan, CB.available = saved
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

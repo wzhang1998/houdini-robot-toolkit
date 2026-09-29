@@ -43,3 +43,4 @@ logs/
 
 # --- uv environment (pyproject.toml + uv.lock are the source) -----------
 .venv/
+.curobo/
