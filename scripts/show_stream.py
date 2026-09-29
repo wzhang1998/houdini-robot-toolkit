@@ -29,18 +29,30 @@ so the stream is the Runner's joints, tick by tick:
 --speed scales the show's clock: speed s runs every segment s times as fast
 (velocity x s, acceleration x s^2). Hardware defaults to 0.3.
 
+Lag correction (on for --hardware; --no-lag-correction turns it off,
+--lag-correction turns it on for SimMachine): the arm's lag behind the
+commands is measured from the feedback as the run goes, its target the lag
+of the first minute after a warm-up. When the lag is more than 10 ms off,
+at a rest -- the pose the same as the 25 points before it, never in the
+scan -- one rest point is left out (lag too long) or sent twice (too
+short), at most one every 5 s: the motion is the same, the rest one tick
+shorter or longer. No feedback, no correction. The report's lag_correction
+counts them.
+
 The report (--log DIR): sends, skips, lateness, the largest step per tick,
 tracking (actual vs commanded, after the best constant lag), the segments
 played, the events; the commanded and actual joints as CSV.
 """
 
 import argparse
+import collections
 import csv
 import gc
 import json
 import math
 import os
 import queue
+import statistics
 import sys
 import threading
 import time
@@ -65,6 +77,10 @@ LAG_WINDOW_S = 180.0               # the lag is also measured per window: a grow
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
 MIN_SPEED = 0.05                   # the speed is set before the stream starts; it is not changed while it runs
 HARDWARE_SPEED = 0.3
+REST_TICKS = 25                    # a rest point: the same pose as the 25 points sent before it (0.2 s)
+REST_EPS_DEG = 1e-6                # "the same pose": no joint differs by more
+LAG_MIN_MOTION = 200.0             # sum of |commanded velocity|^2 (deg/s)^2 over a block's samples, to measure on
+LAG_MAX_STEP_S = 0.1               # the lag loop moves at most this far per block
 
 
 class StreamFault(RuntimeError):
@@ -216,6 +232,130 @@ class Guard:
                 raise StreamFault("J%d at %.2f deg, outside its limits %g..%g" % (j + 1, x, lo, hi))
 
 
+def _same(a, b):
+    return max(abs(x - y) for x, y in zip(a, b)) < REST_EPS_DEG
+
+
+class LagCorrector:
+    """Holds the arm's lag behind the commands where it was early in the
+    run. Paced on one clock the lag still steps at a stall (a late tick's
+    skipped points: -8..+19 ms each on the FR20, 2026-09-28) and creeps by
+    what the calibration leaves (0..6 ppm): over a day it wanders.
+
+    Measured tick by tick, a delay-locked loop: the arm at PC time t is the
+    command at t - lag; each block the lag moves by the least-squares step
+    -sum(r.v) / sum(v.v) (r: actual minus that command, v: the command's
+    velocity), so rests (v = 0) and a steady offset do not count. The
+    target: the median of the first blocks after the warm-up; the lag now:
+    the median of the recent ones. When it is more than band_ms off, the
+    stream leaves out one rest point (too long: the controller's backlog
+    one point shorter) or sends it twice (too short), at most one every
+    gap_s. No feedback, no blocks: no target, no correction."""
+
+    def __init__(self, start, step, lag0_ms=100.0, warm_s=10.0, target_s=60.0, block_s=5.0, recent=6,
+                 band_ms=10.0, gap_s=5.0, keep=512):
+        self.start, self.step, self.keep = start, step, keep
+        self.lag = lag0_ms / 1000.0                   # the loop's lag, s
+        self.warm_s, self.block_s, self.band, self.gap = warm_s, block_s, band_ms, gap_s
+        self.n_target = max(1, int(round(target_s / block_s)))
+        self.first, self.recent = [], collections.deque(maxlen=recent)    # (block end, lag ms)
+        self.target = None
+        self.cmd, self.last_tick = [None] * keep, -1  # the commanded pose per tick, the last keep ticks
+        self.read = 0                                 # feedback rows read
+        self.srv = self.svv = 0.0
+        self.block_start = start
+        self.last_fix = -math.inf
+        self.drops = self.repeats = 0
+        self.fixes = []                               # (tick, -1 left out / +1 sent twice)
+
+    def command(self, tick, q):
+        """The pose commanded for tick (ticks not given hold the last pose)."""
+        held = self.cmd[self.last_tick % self.keep] if self.last_tick >= 0 else q
+        for k in range(max(self.last_tick + 1, tick - self.keep), tick):
+            self.cmd[k % self.keep] = held
+        self.cmd[tick % self.keep] = q
+        self.last_tick = tick
+
+    def feed(self, rows):
+        """The feedback rows (Link.rows) not read yet."""
+        a, keep, step = rows.a, self.keep, self.step
+        n = len(a) // 7
+        while self.read < n:
+            i = self.read * 7
+            self.read += 1
+            t = a[i]
+            if t >= self.block_start + self.block_s:
+                self._block(t)
+            k = (t - self.lag - self.start) / step
+            k0 = int(math.floor(k))
+            if k0 < 0 or k0 + 1 > self.last_tick or k0 <= self.last_tick - keep:
+                continue                              # its command is not (or no longer) here
+            c0, c1, f = self.cmd[k0 % keep], self.cmd[(k0 + 1) % keep], k - k0
+            for j in range(6):
+                v = (c1[j] - c0[j]) / step
+                r = a[i + 1 + j] - (c0[j] + f * (c1[j] - c0[j]))
+                self.srv += r * v
+                self.svv += v * v
+
+    def _block(self, t):
+        if self.svv >= LAG_MIN_MOTION:
+            d = max(-LAG_MAX_STEP_S, min(LAG_MAX_STEP_S, -self.srv / self.svv))
+            self.lag = max(0.0, min(1.0, self.lag + d))
+            est = (t, self.lag * 1000.0)
+            if self.block_start - self.start >= self.warm_s:
+                self.recent.append(est)
+                if self.target is None:
+                    self.first.append(est[1])
+                    if len(self.first) >= self.n_target:
+                        self.target = statistics.median(self.first)
+        self.srv = self.svv = 0.0
+        while self.block_start + self.block_s <= t:
+            self.block_start += self.block_s
+
+    def now_ms(self, now):
+        """The lag now (ms), or None: fewer than half the recent blocks are
+        recent (little motion, or no feedback)."""
+        fresh = [e for t, e in self.recent if now - t <= 2 * self.recent.maxlen * self.block_s]
+        return statistics.median(fresh) if fresh and len(fresh) * 2 >= self.recent.maxlen else None
+
+    def due(self, now):
+        """-1: leave a rest point out, +1: send one twice, 0: neither."""
+        if self.target is None or now - self.last_fix < self.gap:
+            return 0
+        cur = self.now_ms(now)
+        if cur is None:
+            return 0
+        return -1 if cur - self.target > self.band else (1 if self.target - cur > self.band else 0)
+
+    def applied(self, kind, now, tick):
+        """A correction was made: the lag is one point longer (+1) or
+        shorter (-1) from here on."""
+        shift = kind * self.step * 1000.0
+        self.recent = collections.deque(((t, e + shift) for t, e in self.recent), maxlen=self.recent.maxlen)
+        self.lag += shift / 1000.0
+        self.srv = self.svv = 0.0                     # the block so far straddles the change
+        self.last_fix = now
+        if kind < 0:
+            self.drops += 1
+        else:
+            self.repeats += 1
+        self.fixes.append((tick, kind))
+
+    def summary(self, now=None):
+        now = time.perf_counter() if now is None else now
+        cur = self.now_ms(now)
+        return {"target_ms": None if self.target is None else round(self.target, 1),
+                "lag_ms_now": None if cur is None else round(cur, 1),
+                "drops": self.drops, "repeats": self.repeats,
+                "corrected_ms": round((self.repeats - self.drops) * self.step * 1000.0, 3),
+                "ticks": self.fixes[-500:]}
+
+
+def _scanning(runner):
+    seg = getattr(runner, "seg", None)
+    return getattr(seg, "kind", None) == "scan"
+
+
 ASK = "[ask] "                       # a question to a window that started this process (show_ui)
 
 
@@ -252,10 +392,11 @@ def realtime_priority():
 
 
 def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print, analyse=True,
-           playback_ppm=None):
+           playback_ppm=None, lag_correction=None):
     """The stream loop. The arm must already be at the Runner's start pose.
-    Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
-    report, not raised."""
+    lag_correction: None / False off, True on, a dict: on with these
+    LagCorrector settings. Returns (report, [(tick, q) sent], the clock's
+    zero); a fault is in the report, not raised."""
     ticks_cmd = Rows()                              # (tick, q) sent
     sends_ms, late_ms, skipped = [], [], 0
     events = []
@@ -290,6 +431,10 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     next_t = start
+    corr = None
+    if lag_correction:
+        corr = LagCorrector(start, step, **(lag_correction if isinstance(lag_correction, dict) else {}))
+    still = 0                                          # points sent in a row with the same pose
     try:
         while True:
             P._wait_until(next_t)
@@ -329,14 +474,33 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
                 tick += a
                 q = runner.step(dt * speed * a) if pid > 0 else prev
                 guard.check(prev, q, a)
-                t0 = time.perf_counter()
-                ret = ctrl.servo_j(q, dt, pid)
-                sends_ms.append((time.perf_counter() - t0) * 1000.0)
-                code = ret[0] if isinstance(ret, (list, tuple)) else ret
-                if code != 0:
-                    raise StreamFault("ServoJ point %d returned %s" % (pid, ret))
+                same = _same(q, prev)
+                fix = 0
+                if corr is not None:
+                    corr.command(tick, q)
+                    # only a rest point on an on-time tick: the same pose as the REST_TICKS before it
+                    if owed == 1 and same and still >= REST_TICKS and not _scanning(runner):
+                        fix = corr.due(now)
+                    if fix:
+                        lag_now = corr.now_ms(now)
+                        corr.applied(fix, now, tick)
+                        events.append("%.2f lag %.0f ms, target %.0f: a rest point %s" % (
+                            runner.clock, lag_now, corr.target, "left out" if fix < 0 else "sent twice"))
+                if fix < 0:
+                    continue                          # left out: the tick passes, nothing sent
+                for _ in range(2 if fix > 0 else 1):
+                    t0 = time.perf_counter()
+                    ret = ctrl.servo_j(q, dt, pid)
+                    sends_ms.append((time.perf_counter() - t0) * 1000.0)
+                    code = ret[0] if isinstance(ret, (list, tuple)) else ret
+                    if code != 0:
+                        raise StreamFault("ServoJ point %d returned %s" % (pid, ret))
+                    pid += 1
                 ticks_cmd.add(tick, q)                # the point's place in the play time
-                prev, pid = q, pid + 1
+                still = still + 1 if same else 0
+                prev = q
+            if corr is not None:
+                corr.feed(link.rows)
             if osc is not None and pid % OSC_EVERY < n:
                 try:
                     osc.send(prev)
@@ -369,6 +533,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     rep["pacing"] = "playback rate" if clocked else "pc clock"
     rep["playback_ppm"] = playback_ppm
     rep["bursts"] = bursts
+    rep["lag_correction"] = corr.summary() if corr is not None else None
     h = sorted(link.queue_hist)
     if h:                                           # the motion queue, for the record (it does not show the backlog)
         rep["queue"] = {"min": h[0], "median": h[len(h) // 2], "p99": h[int(len(h) * 0.99)], "max": h[-1]}
@@ -553,7 +718,9 @@ def self_test():
     broken = S.Graph({"a": A}, [S.Segment("a_broken", "idle", [0.0, 0.3, 0.304, 1.0], [A, A, bad, A], "a", "a",
                                           {"action": "float"})], {"start_hub": "a"})
 
-    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph, playback_ppm=None):
+    last = {}
+
+    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph, playback_ppm=None, lag_correction=None):
         r = S.Runner(g_, S.Selector(g_.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
         cmds = Commands(r)
         if trigger:
@@ -561,8 +728,8 @@ def self_test():
         if stop_at:
             threading.Timer(stop_at, cmds.stop).start()
         g = Guard(vel, lim, dt, speed)
-        rep, _, _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None,
-                           playback_ppm=playback_ppm)
+        rep, last["ticks"], _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None,
+                                       playback_ppm=playback_ppm, lag_correction=lag_correction)
         return rep, r
 
     c = FakeCtrl()
@@ -669,6 +836,82 @@ def self_test():
           rep_s["skipped"] == 0 and rep_s["bursts"] > 0 and rep_s["worst_step_of_limit"] <= 1.0,
           (rep_s["skipped"], rep_s["bursts"], rep_s["worst_step_of_limit"]))
 
+    # the lag meter alone, on made-up feedback: an arm 60 ms, then 75, then 45 ms behind a moving command
+    lc = LagCorrector(0.0, dt, warm_s=1.0, target_s=2.0, block_s=1.0, recent=3, gap_s=0.5)
+    fb_rows = Rows()
+    k = 0
+    for lag_s, until in ((0.060, 6.0), (0.075, 10.0)):
+        while k * dt < until:
+            lc.command(k, [10.0 * math.sin(2.0 * k * dt)] * 6)
+            fb_rows.add(k * dt, [10.0 * math.sin(2.0 * (k * dt - lag_s))] * 6)
+            lc.feed(fb_rows)
+            k += 1
+    now = k * dt
+    check("the lag is measured as the run goes: its target the first blocks after the warm-up",
+          lc.target is not None and abs(lc.target - 60.0) < 1.0, lc.target)
+    check("... the lag now, the recent blocks", abs(lc.now_ms(now) - 75.0) < 1.0, lc.now_ms(now))
+    due_long = lc.due(now)
+    lc.applied(due_long, now, k)
+    check("... 15 ms too long: a rest point left out, the lag now one point shorter, and then no more",
+          due_long == -1 and abs(lc.now_ms(now) - (75.0 - dt * 1000.0)) < 1.0 and lc.due(now + 1.0) == 0,
+          (due_long, lc.now_ms(now)))
+    lc2 = LagCorrector(0.0, dt, warm_s=1.0, target_s=2.0, block_s=1.0, recent=3, gap_s=5.0)
+    fb_rows2 = Rows()
+    k = 0
+    for lag_s, until in ((0.060, 6.0), (0.045, 10.0)):
+        while k * dt < until:
+            lc2.command(k, [10.0 * math.sin(2.0 * k * dt)] * 6)
+            fb_rows2.add(k * dt, [10.0 * math.sin(2.0 * (k * dt - lag_s))] * 6)
+            lc2.feed(fb_rows2)
+            k += 1
+    d2 = lc2.due(k * dt)
+    lc2.applied(d2, k * dt, k)
+    check("... 15 ms too short: a rest point sent twice; at most one correction per gap",
+          d2 == 1 and lc2.due(k * dt + 1.0) == 0 and lc2.summary()["repeats"] == 1, (d2, lc2.summary()))
+
+    # a long run, scaled from a day to seconds: the controller plays 1000 ppm
+    # slower than the stream is paced (what a calibration leaves, a stall's
+    # step, exaggerated) -- the lag grows; held, only rest points are left out
+    quick = {"warm_s": 2.0, "target_s": 3.0, "block_s": 1.0, "recent": 3, "gap_s": 0.5}
+    loose, held = QueueCtrl(slow_ctrl=0.001), QueueCtrl(slow_ctrl=0.001)
+    global LAG_WINDOW_S
+    keep, LAG_WINDOW_S = LAG_WINDOW_S, 3.0
+    try:
+        rep_l, _ = run(loose, 30.0 / 60, playback_ppm=0.0)
+        ticks_l = {int(k): q for k, q in last["ticks"]}
+        rep_h, _ = run(held, 30.0 / 60, playback_ppm=0.0, lag_correction=quick)
+        ticks_h = {int(k): q for k, q in last["ticks"]}
+    finally:
+        LAG_WINDOW_S = keep
+    wl, wh, lcr = rep_l["lag_ms_by_window"], rep_h["lag_ms_by_window"], rep_h["lag_correction"]
+    check("a long run without the correction: the lag grows", rep_l["lag_correction"] is None
+          and len(wl) >= 9 and wl[-1] - wl[1] > 18, wl)
+    check("... with it: rest points left out, the lag held at its target +- 15 ms",
+          lcr["drops"] > 0 and lcr["target_ms"] is not None
+          and all(abs(x - lcr["target_ms"]) <= 15.0 for x in wh[1:-1]),     # the last: the run's tail
+          (wh, {k: v for k, v in lcr.items() if k != "ticks"}))
+    upto = int(29.0 / dt)                              # before the run's end was asked (the tail may differ)
+    common = [k for k in ticks_h if k < upto and k in ticks_l]
+    check("... the commanded poses are the same tick for tick; only rest points are missing",
+          len(common) > 0.9 * upto and all(max(abs(a - b) for a, b in zip(ticks_l[k], ticks_h[k])) < 1e-9
+                                           for k in common)
+          and all(k in ticks_h or max(abs(a - b) for a, b in zip(ticks_l[k], ticks_l[k - 1])) < REST_EPS_DEG
+                  for k in ticks_l if 0 < k < upto))
+    at_rest = [all(k - i in ticks_l and max(abs(a - b) for a, b in zip(ticks_l[k - i], ticks_l[k])) < REST_EPS_DEG
+                   for i in range(REST_TICKS + 1)) for k, _ in lcr["ticks"]]
+    check("... and every correction was at a rest, none mid-motion", at_rest and all(at_rest), lcr["ticks"][:5])
+    check("... each one an event in the report", sum("rest point" in e for e in rep_h["events"]) == len(lcr["ticks"])
+          and abs(lcr["corrected_ms"] - dt * 1000.0 * (lcr["repeats"] - lcr["drops"])) < 1e-6, lcr["corrected_ms"])
+
+    class BlindCtrl(QueueCtrl):
+        def joints(self):
+            time.sleep(0.03)                              # every read too slow to be kept: no feedback
+            return QueueCtrl.joints(self)
+    blind_fb = BlindCtrl(slow_ctrl=0.002)
+    rep_n, _ = run(blind_fb, 4.0 / 60, playback_ppm=0.0, lag_correction=quick)
+    check("no feedback: no lag measured, no correction", rep_n["lag_correction"]["target_ms"] is None
+          and rep_n["lag_correction"]["drops"] + rep_n["lag_correction"]["repeats"] == 0, rep_n["lag_correction"])
+
     import tempfile
     tp = os.path.join(tempfile.mkdtemp(), "playback.toml")
     open(tp, "w").write('[controller_clock_ppm]\n"10.0.0.1" = -950.0\n')
@@ -711,7 +954,6 @@ def self_test():
     for k, q in enumerate(dense):
         ticks.add(k, q)
     fb = [(k * step + 0.04, q) for k, q in enumerate(dense)][::2]
-    global LAG_WINDOW_S
     keep, LAG_WINDOW_S = LAG_WINDOW_S, 10.0
     try:
         paced = add_tracking({}, 0.0, step, ticks, fb)["lag_ms_by_window"]
@@ -771,6 +1013,9 @@ def main(argv=None):
                     help="how much slower (-) the controller plays ServoJ than cmdT says, ppm (a run's report "
                          "measures it: playback_ppm_suggested; default: playback.toml's [controller_playback_ppm] "
                          "for this IP; none: the PC's clock paces)")
+    ap.add_argument("--lag-correction", action=argparse.BooleanOptionalAction, default=None,
+                    help="hold the arm's lag at its early-run value by leaving out or repeating single rest points "
+                         "(default: on for --hardware, off for --sim)")
     ap.add_argument("--goto-start", action="store_true",
                     help="only move to the start hub (checked against the room, --move-vel %%), then end")
     ap.add_argument("--scan-test", action="store_true",
@@ -830,6 +1075,8 @@ def main(argv=None):
     if playback_ppm is None:
         print("no playback-rate calibration for %s: the PC's clock paces (the controller's lag may grow). After this "
               "run, put the report's playback_ppm_suggested in playback.toml [controller_playback_ppm] \"%s\"" % (ip, ip))
+    lag_fix = a.lag_correction if a.lag_correction is not None else a.hardware
+    print("lag correction: %s" % ("on (rest points left out / repeated to hold the lag)" if lag_fix else "off"))
     cmds = Commands(runner, speed)
     osc = None
     if a.osc:
@@ -842,7 +1089,7 @@ def main(argv=None):
     link = Link(ip)
     try:
         out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False,
-                                       playback_ppm=playback_ppm)
+                                       playback_ppm=playback_ppm, lag_correction=lag_fix)
     finally:
         if osc is not None:
             osc.close()
@@ -862,6 +1109,8 @@ def main(argv=None):
                                        "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
                                        "send_ms_p95", "max_late_ms", "controller_error", "pacing", "playback_ppm",
                                        "lag_ms_by_window", "playback_ppm_suggested")}
+    if out.get("lag_correction"):
+        summary["lag_correction"] = {k: v for k, v in out["lag_correction"].items() if k != "ticks"}
     print(json.dumps(summary, indent=1))
     if out.get("playback_ppm_suggested") is not None and abs(out["playback_ppm_suggested"] - (playback_ppm or 0.0)) > 50:
         print('the lag drifted: set playback.toml [controller_playback_ppm] "%s" = %.1f (was %s)'
