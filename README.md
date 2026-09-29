@@ -666,6 +666,7 @@ C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<sta
 C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless                      # the library review (v9)
 C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --graph geo/show/party_scan/compiled.json --segments to_scan,scan,from_scan --no-pages
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless                  # tracking scenarios (after track_eval --export)
+C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live                             # drag the person's head, the arm looks
 C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --video   # the LED strip's cable
 C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start              # a pose as USD, for other tools
 ```

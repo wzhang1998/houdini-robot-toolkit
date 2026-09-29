@@ -608,8 +608,10 @@ worker thread (stage 5).
 3 done (2026-09-29): every scenario played in Isaac with physics and the
 tool: no contact in 11, the simulated arm within 0.93 deg of the commands
 (the greet clip's own fastest moment); videos from the audience's side in
-geo/tracking/. Next: a live mode (drag the target) once Isaac's Python
-has Ruckig; then 4 (modes B / C).
+geo/tracking/. Live (2026-09-29, Ruckig in Isaac's Python): run_tracking --live, a
+ball to drag as the head, TargetInput + Gaze every physics tick in real time;
+headless check (the ball walking, gone 3 s): 72 s, 0 unsafe ticks, 0 contacts,
+tracking within 1.0 deg, faster than real time. Next: 4 (modes B / C).
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a

@@ -6,6 +6,10 @@ the room reported, and a video from the audience's side.
     uv run scripts/track_eval.py --export geo/tracking                  first: the motions
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py jump walk_across --headless --video
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless
+    C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live
+        live: the greet clips play on; drag the orange ball (the person's head: select it, W, drag) and
+        the tracking layer (tracking.py, as show_stream would run it) turns the arm to it in real time;
+        "Person there" off: the person lost. --headless --minutes 2: the ball walks by itself (a check).
 
 Per scenario: geo/tracking/<name>.json in, geo/tracking/<name>_isaac.json out
 (tracking error of the simulated arm against the commands, contacts between
@@ -31,6 +35,9 @@ sys.path.insert(0, SCRIPTS)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("scenarios", nargs="*")
+ap.add_argument("--live", action="store_true", help="drag the target in a window; the tracking layer runs live")
+ap.add_argument("--minutes", type=float, default=0.0, help="--live: stop after this long (0: until closed)")
+ap.add_argument("--seed", type=int, default=1, help="--live: the greet clips' order")
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
@@ -50,7 +57,7 @@ import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import SingleArticulation  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
-from pxr import Gf, Sdf, UsdGeom  # noqa: E402
+from pxr import Gf, Sdf, Usd, UsdGeom  # noqa: E402
 
 from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, contact_paths, import_robot, load_room,  # noqa: E402
                          render_settings, use_camera)
@@ -119,6 +126,131 @@ def line(stage, path, rgb):
 def show_or_hide(prim, on):
     img = UsdGeom.Imageable(prim)
     (img.MakeVisible if on else img.MakeInvisible)()
+
+
+def walker(eyes, now):
+    """--live --headless: where the ball is at `now` and whether anybody is
+    there -- walking to and fro across the audience, nodding, gone 30-33 s."""
+    x = eyes[0] + 0.8 * math.sin(2.0 * math.pi * now / 12.0)
+    z = eyes[2] + 0.08 * math.sin(2.0 * math.pi * now / 3.0)
+    return (x, eyes[1], z), not 30.0 <= now % 60.0 < 33.0
+
+
+def live():
+    """The tracking layer live: the greet clips back to back (track_eval's
+    base motion), a ball to drag as the person's head, the target fed at
+    ~30 Hz, TargetInput + Gaze each physics tick, in real time."""
+    import time
+    import collision as C
+    import show as S
+    import tracking as TR
+    import track_eval as TE
+    cfg = json.load(open(args.config))
+    env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
+    graph = S.Graph.load(S.compiled_path(os.path.abspath(args.config)))
+    base, clips = TE.base_motion(graph, "greet", 4 * 3600.0, seed=args.seed)
+    ti = TR.TargetInput()
+    gz = TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=C.load_model("fr20"))
+    eyes = S.audience_eyes(cfg)
+
+    world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=1.0 / 60.0)
+    stage = omni.usd.get_context().get_stage()
+    room = load_room(stage, os.path.abspath(args.config), args.look)
+    robot = world.scene.add(SingleArticulation(import_robot(), name="fr20"))
+    attach_tool(stage)
+    person, person_op = body(stage)
+    ball, ball_op = marker(stage, "/World/LiveTarget", 0.09, (1.0, 0.55, 0.1))
+    ball_op.Set(Gf.Vec3d(*eyes))
+    target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
+    gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
+    world.reset()
+    dof = list(robot.dof_names)
+    idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
+    q0 = base(0.0)
+    robot.set_joint_positions(np.radians(q0), joint_indices=idx)
+
+    contacts = []
+    try:
+        from omni.physx import get_physx_simulation_interface
+        from omni.physx.bindings._physx import ContactEventType
+
+        def on_contact(headers, data):
+            for h in headers:
+                if h.type == ContactEventType.CONTACT_FOUND:
+                    a, b = contact_paths(h)
+                    if ("/Room" in a) != ("/Room" in b) and "/Person" not in a + b and "/Live" not in a + b:
+                        contacts.append((a, b))
+        sub = get_physx_simulation_interface().subscribe_contact_report_events(on_contact)  # noqa: F841
+    except Exception as e:
+        print("[track] contact reports unavailable: %s" % e)
+    render_settings()
+    eye, look = audience_camera(cfg)
+    use_camera(stage, "/World/TrackCam", *(camera_spec(args.camera, cfg, room) if args.camera else (eye, look, 16.0)))
+
+    there, label = [True], None
+    if not args.headless:
+        import omni.ui as ui
+        win = ui.Window("Tracking", width=380, height=210)
+        with win.frame:
+            with ui.VStack(spacing=6):
+                label = ui.Label("", height=110, word_wrap=True)
+                with ui.HStack(height=24):
+                    box = ui.CheckBox(width=24)
+                    box.model.set_value(True)
+                    box.model.add_value_changed_fn(lambda m: there.__setitem__(0, m.get_value_as_bool()))
+                    ui.Label("Person there (off: lost)")
+                ui.Button("Ball back to the audience", clicked_fn=lambda: ball_op.Set(Gf.Vec3d(*eyes)))
+        print("[track] live: select the orange ball, W, drag it; the 'Tracking' panel toggles the person")
+
+    wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
+    worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
+    tracked_ticks = 0
+    while app.is_running():
+        now = ticks * PHYSICS_DT
+        if args.headless:
+            p, there[0] = walker(eyes, now)
+            ball_op.Set(Gf.Vec3d(*p))
+        else:
+            m = UsdGeom.Xformable(ball.GetPrim()).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            p = tuple(m.ExtractTranslation())
+        if ticks % feed == 0 and there[0]:
+            ti.target(p[0], p[1], p[2], 1.0, now, 0, now=now)
+        tgt = ti.now(now)
+        qb = base(now)
+        q = gz.step(qb, tgt, now, [base(now + d) for d in TR.AHEAD_S])
+        robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
+        person_op.Set(Gf.Vec3d(*p))
+        show_or_hide(person.GetPrim(), there[0])
+        show_or_hide(target.GetPrim(), tgt is not None)
+        if tgt is not None:
+            target_op.Set(Gf.Vec3d(*tgt))
+            tracked_ticks += 1
+        R, tcp, _ = S.tool_pose(q)
+        ax = (R[0][2], R[1][2], R[2][2])
+        gaze.GetPointsAttr().Set([Gf.Vec3f(*tcp), Gf.Vec3f(*[tcp[j] + 1.5 * ax[j] for j in range(3)])])
+        world.step(render=not args.headless and ticks % 2 == 0)
+        if now > 0.5:
+            sim = np.degrees(robot.get_joint_positions(joint_indices=idx))
+            worst = max(worst, max(abs(float(sim[j]) - q[j]) for j in range(6)))
+        if label is not None and ticks % 15 == 0:
+            off = gz.offsets
+            label.text = ("%s   offsets J1 %+.1f  J5 %+.1f deg\nunsafe %d   shrunk %d   governed %d   contacts %d\n"
+                          "tracking error %.2f deg   %s" % ("TRACKED" if tgt is not None else "no one (the clip alone)",
+                                                           off[0], off[1], gz.unsafe, gz.shrunk, gz.governed,
+                                                           len(contacts), worst,
+                                                           "%.0f s" % now))
+        ticks += 1
+        if not args.headless:
+            ahead = now - (time.monotonic() - wall0)
+            if ahead > 0.0:
+                time.sleep(ahead)
+        if end is not None and now >= end:
+            break
+    out = {"live_seconds": round(ticks * PHYSICS_DT, 1), "tracked_share": round(tracked_ticks / max(1, ticks), 2),
+           "unsafe_ticks": gz.unsafe, "shrunk_ticks": gz.shrunk, "governed_ticks": gz.governed,
+           "arm_room_contacts": len(contacts), "tracking_max_deg": round(worst, 3),
+           "wall_s": round(time.monotonic() - wall0, 1)}
+    print("[track] live %s" % json.dumps(out), flush=True)
 
 
 def main():
@@ -234,5 +366,8 @@ def main():
             world.step(render=True)
 
 
-main()
+if args.live:
+    live()
+else:
+    main()
 app.close()
