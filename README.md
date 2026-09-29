@@ -618,6 +618,85 @@ check, goto-start, wiggle, then the clip at `--speed 0.3` → `0.6` → `1.0`,
 with an operator at the E-stop. Segment-by-segment sending, as
 td-robot-twin's worker does, is later.
 
+## The show: build, try, run
+
+A show (`shows/<show>.json`: the room, its hubs, the library's recipe, the
+canvas, the scan) is built into `shows/<show>.compiled.json`: every motion
+made and checked (collisions, limits, the room's margins), then played by
+one state machine (`show.py`'s Runner) -- a dry run, Isaac Sim, SimMachine
+or the FR20. A player refuses a build older than its inputs.
+
+```
+uv run scripts/show.py build shows/party.json              # every motion, checked (~2.5 min)
+uv run scripts/show.py build shows/party.json --scan-only  # the scan alone, a preview: geo/show/party_scan/
+uv run scripts/show.py dry-run shows/party.json --minutes 10 --triggers scan,low_wipe_rows
+uv run scripts/show.py report shows/party.json             # the library as numbers, the variety targets
+uv run scripts/show_ui.py                                  # the show's window: target, triggers (scan, sequences, big wipes), stop
+uv run scripts/scan_test_ui.py                             # the scan step by step: line the strip up, try exposures
+uv run scripts/show_stream.py shows/party.json --sim --ip 192.168.116.128 --osc      # SimMachine
+uv run scripts/show_stream.py shows/party.json --hardware --osc --osc-out 127.0.0.1:9002
+```
+
+`show_stream --hardware` plays at speed 0.3 and asks first. Its clock is
+paced by the controller's playback rate (`playback.toml`
+`[controller_playback_ppm]`, or `--playback-ppm`; play_ui keeps the
+section when it saves), and it pulls its lag back while the arm rests at a
+hub (`--no-lag-correction` to turn that off); the report in `logs/stream/`
+has the lag by window and the corrections.
+
+OSC (TouchDesigner): the player listens on 9000 and sends its status to
+9001 (show_ui) and each `--osc-out` (TD: 9002) -- state, clip, hub, the
+scan's position, the joints, and what TD's idle LEDs play from (family,
+action, clip time and length, beat, facing the guests, how much the strip
+lights the paper). One player holds 9000 at a time: show_stream, scan_test
+and Isaac's run_show exclude each other.
+
+## Isaac Sim: the show, TouchDesigner, reviews
+
+Every Isaac view uses the lab's room (`isaac_stage.load_room`: the look of
+the lab's photos; the safety guides hidden, `--guides` draws them). Isaac
+brings its own Python: `C:/isaacsim6/python.bat`.
+
+```
+C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                      # a window: panel, keys, OSC
+C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live            # TD live: its LEDs and canvas drawn
+C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo       # the 5 min demo, the paper simulated
+C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo --td-live   # ... with TD, recorded
+C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera audience
+C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless                      # the library review (v9)
+C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --graph geo/show/party_scan/compiled.json --segments to_scan,scan,from_scan --no-pages
+C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless                  # tracking scenarios (after track_eval --export)
+C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --video   # the LED strip's cable
+C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start              # a pose as USD, for other tools
+```
+
+- **TD live** (`--td-live` = `--osc-out 127.0.0.1:9002 --artnet 6455
+  --canvas 6457`, real time): TD hears the show as from show_stream and
+  its idle / scan LEDs (Art-Net) and canvas preview come back, drawn on
+  the strip and the paper. In TD: pixel_scan > Output > Preview Art-Net IP
+  `127.0.0.1`. Close show_stream, scan_test and show_ui first, and clear
+  robot_link's Controller IP (STOP holds the arm in Isaac). Without TD:
+  `python scripts/artnet.py --send-test 6455` and `python
+  scripts/canvas_link.py --send-test 6457` stand in for it.
+- **Demos**: `--demo` is headless, 5 min, the audience's camera, the auto
+  trigger firing scans with the show's big wipes between them, recorded
+  to `geo/isaac/`. Alone it simulates the paper (`canvas_model.py`,
+  `--canvas-image`, TD's banana by default); with `--td-live` it records
+  what TD sent (`td_capture.py`) and `replay_render.py` renders it, any
+  camera, as often as wanted -- TD runs in real time as in the show, the
+  render takes as long as it takes.
+- **The library review** (`record_library.py`): every idle clip, the big
+  wipes and the scan in Isaac, the Houdini review's pages (4 x 2) and
+  overview (5 x 5) with its header per tile and the version and Isaac's
+  tracking at the foot (`geo/isaac/review/v9/`), a contact sheet, and the
+  clips one after the other with a card (`--no-sequence` to skip).
+  `--segments` / `--graph` / `--still`: a new scan's preview, or one
+  picture a camera.
+
+Ports: 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in, 6455
+Isaac's LEDs (Art-Net; not 6454, TD and a real node may hold it), 6457
+Isaac's canvas, 7000 TD's agent bridge.
+
 ## Conventions
 
 - All assets use the **`wenyi::`** namespace. `sop_vvox.robot_anim_by_csv.1.0.hdalc`
