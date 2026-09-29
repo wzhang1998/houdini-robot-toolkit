@@ -47,6 +47,7 @@ AIM_ROOM_M = 0.02              # the aimed pose keeps this much more than the ro
 AIM_SELF_M = 0.01              # ... and this much between the links
 AHEAD_S = (0.2, 0.4, 0.6, 1.0, 1.4)   # the clip's poses this far ahead are checked with the offsets too:
                                      # taking back a full J1 offset at SHARE takes ~1.2 s (a crowd's edge)
+SLOW_KEEP_M = 0.2              # J1's offset towards a slow zone stops where the anchor's tool point is this far from it
 SLOW_NEAR_M = 0.15             # the tool point this near a slow zone, now or AHEAD_S ahead: the offsets hold still
 CHECK_EVERY = 4                # the aim and look-ahead checks every 4th tick (~31 Hz, the data's rate)
 
@@ -212,6 +213,9 @@ class Gaze:
             dict(o, margin_m=o.get("margin_m", env.get("margin_m", 0.05)) + AIM_ROOM_M) if o["role"] == "obstacle"
             else o for o in env["objects"]])
         self.slow = [o for o in (env or {}).get("objects", []) if o["role"] == "slow"]
+        self.bounds = [(-m, m) for m in max_offset]
+        if self.slow and anchor is not None:
+            self.bounds[0] = self._j1_bounds(anchor, max_offset[0])
         self.anchor = anchor
         prof = RP.load("fr20")
         vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
@@ -253,8 +257,25 @@ class Gaze:
         anchor = self.anchor or q_base
         if self.aim_for is None or math.dist(self.aim_for[0], target) > 0.01:     # aimed again as the person moves
             off = aim_offsets(self.rig, anchor, target)
-            self.aim_for = (tuple(target), [max(-m, min(m, x)) for x, m in zip(off, self.max_offset)])
+            self.aim_for = (tuple(target), [max(lo, min(hi, x)) for x, (lo, hi) in zip(off, self.bounds)])
         return self.aim_for[1]
+
+    def _j1_bounds(self, anchor, m):
+        """J1's offset range: up to m either way, but towards a slow zone only as far as keeps the
+        anchor's tool point SLOW_KEEP_M from it -- a J1 offset turns the whole clip, and a fast
+        part of it turned into the zone cannot be slowed (the crowd, 2026-09-29)."""
+        out = []
+        for sign in (-1.0, 1.0):
+            k = 0.0
+            while k < m:
+                q = list(anchor)
+                q[GAZE_JOINTS[0]] += sign * (k + 1.0)
+                tcp = self.rig.tool(q)[1]
+                if any(self.C.sdf(o, tcp) < SLOW_KEEP_M for o in self.slow):
+                    break
+                k += 1.0
+            out.append(sign * k)
+        return tuple(out)
 
     def _near_slow(self, q):
         tcp = self.rig.tool(q)[1]
@@ -299,6 +320,9 @@ class Gaze:
             self.want = list(self.offsets)             # no turning in or on the way into a slow zone
             self.held_slow = getattr(self, "held_slow", 0) + 1
         if heavy and ahead and any(abs(x) > 1e-6 for x in self.offsets):
+            if self.slow and any(self._near_slow(self._with(p, self.offsets)) and not self._near_slow(p) for p in ahead):
+                self.want = [0.0] * len(GAZE_JOINTS)       # the offsets would turn a fast part of the clip into
+                self.retreats = getattr(self, "retreats", 0) + 1   # a slow zone: take them back first
             if not all(self._clear(self._with(p, self.offsets), None, 0.0) for p in ahead):
                 self.want = [0.0] * len(GAZE_JOINTS)       # trouble ahead: take them back now
                 self.retreats = getattr(self, "retreats", 0) + 1
@@ -327,6 +351,7 @@ class Gaze:
         return list(self.inp.current_position)
 
 
+NEAR_TIE_M = 0.3              # people this much further from the arm than the nearest are as near: they take turns
 ATTEND_MIN_S = 5.0            # a person is looked at this long at least before the arm turns to another ...
 ATTEND_MAX_S = 12.0           # ... and at most this long while somebody else waits (they take turns)
 DWELL_S = 1.0                 # in view this long before being looked at
@@ -356,16 +381,18 @@ def _walking_speed(hist, t):
 
 class Attention:
     """Whom to look at when several people are there (/track/people): only
-    those in view DWELL_S, not walking by, confident, inside the zone; one at
-    a time, at least ATTEND_MIN_S each; then someone who has not been looked
-    at yet, or after ATTEND_MAX_S anyone who has waited longest -- the
-    people take turns, the arm does not flit; people close together are one
-    group (their middle). Its target goes to TargetInput as the one person's
+    those in view DWELL_S, not walking by, confident, inside the zone; the
+    ones nearest the arm first (the user) -- those within NEAR_TIE_M of the
+    nearest -- one at a time, at least ATTEND_MIN_S each; among them someone
+    not looked at yet, or after ATTEND_MAX_S whoever waited longest (they
+    take turns); someone clearly nearer is turned to once the one looked at
+    has had ATTEND_MIN_S; the arm does not flit; people close together are
+    one group (their middle). Its target goes to TargetInput as the one person's
     would (TargetInput's gate and filter, Gaze's limits: a turn from one to
     the next is as smooth as any)."""
 
-    def __init__(self, inside=None, min_conf=MIN_CONF):
-        self.inside, self.min_conf = inside, min_conf
+    def __init__(self, inside=None, min_conf=MIN_CONF, origin=(0.0, 0.0)):
+        self.inside, self.min_conf, self.origin = inside, min_conf, origin
         self.tracks = {}              # pid -> {"pos", "t", "first", "last", "speed"}
         self.last_end = {}            # pid -> when the arm last turned away from them
         self.current, self.since = None, 0.0
@@ -411,12 +438,16 @@ class Attention:
                 self.last_end[self.current] = now
             self.current = None
         cur = self.tracks[self.current]["pos"] if self.current is not None else None
-        cands = [p for p in el if cur is None or math.dist(self.tracks[p]["pos"], cur) > GROUP_M]
+        dist = lambda p: math.dist(self.tracks[p]["pos"][:2], self.origin)                         # noqa: E731
+        front = [p for p in el if dist(p) <= min(dist(q) for q in el) + NEAR_TIE_M] if el else []
+        cands = [p for p in front if cur is None or math.dist(self.tracks[p]["pos"], cur) > GROUP_M]
         fresh = [p for p in cands if p not in self.last_end]
         best = lambda ps: max(ps, key=lambda p: (p not in self.last_end, self._waited(p, now), -p))  # noqa: E731
         stint = now - self.since
         if self.current is None and cands:
             self._turn_to(best(cands), now)
+        elif self.current is not None and self.current not in front and stint >= ATTEND_MIN_S and cands:
+            self._turn_to(min(cands, key=dist), now)              # someone clearly nearer the arm
         elif self.current is not None and stint >= ATTEND_MAX_S and cands:
             self._turn_to(best(cands), now)
         elif self.current is not None and stint >= ATTEND_MIN_S and fresh:
@@ -517,6 +548,15 @@ def self_test():
     check("the one looked at leaves before their turn is up: the next one within %.1f s" % (FORGET_S + 0.2),
           held and after and after[0] - 5.0 <= FORGET_S + 0.2, after[:1])
 
+    near_far = lambda t: [(1, 0.0, -2.6, 1.6, 0.9), (2, 0.3, -1.6, 1.6, 0.9)]
+    seq = feed(Attention(), near_far, 0.0, 40.0)
+    check("the one nearest the arm first: two people 1 m apart in distance, only the nearer is looked at",
+          {pid for _, pid, _ in seq if pid is not None} == {2})
+    arrive = lambda t: [(1, 0.0, -2.4, 1.6, 0.9)] + ([(2, 0.8, -1.5, 1.6, 0.9)] if t >= 3.0 else [])
+    seq = feed(Attention(), arrive, 0.0, 30.0)
+    runs = spans(seq)
+    check("someone nearer comes: after the one looked at had %.0f s, the arm turns to them, and stays" % ATTEND_MIN_S,
+          [p for p, _ in runs if p is not None] == [1, 2] and abs(runs[0][1] - ATTEND_MIN_S) < 0.2, runs)
     group = lambda t: [(1, 0.0, -1.8, 1.6, 0.9), (2, 0.3, -1.8, 1.62, 0.9), (3, 0.15, -1.9, 1.55, 0.9)]
     seq = feed(Attention(), group, 0.0, 20.0)
     pts = [p for _, pid, p in seq if p is not None]

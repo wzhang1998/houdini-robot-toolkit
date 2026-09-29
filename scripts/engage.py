@@ -246,7 +246,8 @@ class Engage:
         ok = [(pr["in_since"], pid) for pid, pr in self.people.items()
               if pr["in_since"] is not None and now - pr["in_since"] >= DWELL_S and not pr["done"]
               and pr.get("speed") is not None and pr["speed"] <= TR.PASSER_MPS]
-        return min(ok)[1] if ok else None
+        near = lambda pid: math.dist(self.people[pid]["pos"][:2], (0.0, 0.0))                  # noqa: E731
+        return min(ok, key=lambda x: (near(x[1]), x[0]))[1] if ok else None             # the nearest the arm
 
     # --- the motion -------------------------------------------------------------
     def _clear(self, q):
@@ -606,6 +607,10 @@ def self_test():
     check("two people's ids swapped at 8 s: the arm keeps looking at the same person (on the spot), not the other",
           looks and max(abs(x) for x in looks) < 0.12 and log[-1][3] == 2, (round(max(abs(x) for x in looks), 3)
                                                                            if looks else None, log[-1][3]))
+    both = lambda t: [(1, 0.0, 0.2, 1.62), (2, 0.1, -0.2, 1.7)]
+    en, log = run_many(both, 4.0)
+    check("two step onto the spot together: the one nearer the arm is followed",
+          first(log, "ENTER") is not None and log[-1][3] == 2, log[-1][3])
     hidden = lambda t: [p for p in [(1, 0.0, 0.0, 1.62), (2, 0.5, 0.3, 1.7)] if not (p[0] == 1 and 8.0 <= t < 9.2)]
     en, log = run_many(hidden, 14.0)
     check("hidden behind someone for 1.2 s: still followed (%.1f s allowed with people near)" % LOST_CROWD_S,

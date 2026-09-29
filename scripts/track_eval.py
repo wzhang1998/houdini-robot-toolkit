@@ -183,10 +183,18 @@ def measure(r, rig, env, model):
         if inner and min(inner) < TR.ATTEND_MIN_S - 0.2:
             ok = False
             why.append("looked at someone only %.1f s" % min(inner))
-        want = {"two_standing": [1, 2], "crowd": [1, 2, 3, 4, 5]}.get(r["name"])
-        if want and looked != want:
+        if r["name"] == "two_standing" and looked != [1, 2]:
             ok = False
-            why.append("looked at %s, not everyone" % looked)
+            why.append("looked at %s, not both (as near as each other)" % looked)
+        if r["name"] == "crowd":                           # the nearest the arm first: the nearest yes, the furthest never
+            everyone = r["truth"](r["dur"] - 1.0)
+            dist = {pid: math.dist(p[:2], (0.0, 0.0)) for pid, p in everyone.items()}
+            nearest, furthest = min(dist, key=dist.get), max(dist, key=dist.get)
+            late = {p for t, p in zip(ts, r["who"]) if p is not None and t > 0.5 + 0.7 * 5 + TR.ATTEND_MIN_S}
+            out["attention"]["nearest"], out["attention"]["furthest"] = nearest, furthest
+            if nearest not in looked or furthest in late:
+                ok = False
+                why.append("not the nearest first (nearest %s, furthest %s, looked at %s)" % (nearest, furthest, looked))
         if r["name"] == "passer_by" and 2 in looked:
             ok = False
             why.append("looked at the passer-by")
@@ -253,7 +261,8 @@ def main(argv):
             a = m["attention"]
             print("%14s looked at %s, %d turns, shortest %s s, runs %s%s" % (
                 "", a["looked_at"], a["turns"], a["shortest_s"], a["runs"],
-                "".join(", %s %s" % (k, a[k]) for k in ("next_s", "off_middle_m") if k in a)), flush=True)
+                "".join(", %s %s" % (k, a[k]) for k in ("next_s", "off_middle_m", "nearest", "furthest") if k in a)),
+                flush=True)
     if "--json" in argv:
         json.dump(rows, open(argv[argv.index("--json") + 1], "w"), indent=1)
     bad = [k for k, m in rows.items() if not m["pass"]]
