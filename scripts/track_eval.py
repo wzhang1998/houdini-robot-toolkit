@@ -5,6 +5,7 @@ pass / fail per scenario.
     uv run scripts/track_eval.py                 every scenario, the table
     uv run scripts/track_eval.py jump outlier    some
     uv run scripts/track_eval.py --json out.json
+    uv run scripts/track_eval.py --export geo/tracking      each scenario's motion for Isaac (isaac/run_tracking.py)
 
 Per scenario (track_sim.py): the greet hub's clips back to back (the show's
 own, from the compiled graph), the scenario's messages delivered at their
@@ -146,6 +147,17 @@ def measure(r, rig, env, model):
     return out
 
 
+def export(r, m, out_dir):
+    """The scenario's motion for Isaac: every tick's commanded joints, the
+    person's real head (or null), the tracked target (or null), the result."""
+    os.makedirs(out_dir, exist_ok=True)
+    rnd = lambda p: None if p is None else [round(x, 4) for x in p]
+    with open(os.path.join(out_dir, "%s.json" % r["name"]), "w") as f:
+        json.dump({"name": r["name"], "dt": DT, "hub": "greet", "clips": r["clips"], "result": m,
+                   "q": [[round(x, 4) for x in q] for q in r["q"]], "base": [[round(x, 4) for x in q] for q in r["base"]],
+                   "truth": [rnd(r["truth"](t)) for t in r["t"]], "target": [rnd(p) for p in r["target"]]}, f)
+
+
 def main(argv):
     names = [a for a in argv if not a.startswith("--") and a in TS.SCENARIOS] or list(TS.SCENARIOS)
     cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
@@ -162,6 +174,8 @@ def main(argv):
         r = run(name, graph, env, model)
         m = measure(r, rig, env, model)
         rows[name] = m
+        if "--export" in argv:
+            export(r, m, argv[argv.index("--export") + 1])
         print("%-14s %-5s %4.2f / %4.2f, %5.3f deg   %4.2f / %4.2f        %-8s %5s / %-5s    %-8s %d/%d/%d  %s"
               % (name, "PASS" if m["pass"] else "FAIL", m["offset_vel"], m["offset_acc"], m["offset_step_deg"],
                  m["arm_vel"], m["arm_acc"], "%.3f" % m["clearance_m"] if m["clear"] else "NO",
