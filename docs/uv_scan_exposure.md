@@ -142,9 +142,10 @@ cut shorter than the opening (53 LEDs ~0.885 m) passing between the rails
   opening (at the built speed; divide by f).
 - With a ~60 s half-life the first column fades while the last is written: a
   29 s scan leaves the first edge at ~70 % of the last, a 72 s one at ~45 %.
-  Compensate in the LED brightness (a column written at time t lit
-  2^((t - t_end)/t_half) of full, or the reverse gradient kept as a look), or
-  accept it as part of the piece. Warm rooms fade faster (roughly 2-3x per
+  Compensate in the LED brightness (a column written t after the first lit
+  2^(-t/t_half) of full: the later columns dimmer, so all have faded to the
+  same by the end of the pass; TD-ROBOT-UVSCAN pixel_scan's Fade
+  Compensation), or accept it as part of the piece. Warm rooms fade faster (roughly 2-3x per
   +10 C): keep the canvas cool.
 - A second pass while the image is still coloured adds dose (darker, not
   over-exposed) -- the user's choice is one pass, left to right, so the scan
