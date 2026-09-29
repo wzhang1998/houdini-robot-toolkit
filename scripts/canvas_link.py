@@ -8,6 +8,7 @@ small image a packet:
     img = rx.poll()            # (w, h, rgb bytes) of the newest packet; None before any
 
     python scripts/canvas_link.py --self-test
+    python scripts/canvas_link.py --send-test 6457     stand in for TD: a test image (which way is up and left)
 
 Standard library only.
 """
@@ -16,6 +17,8 @@ import socket
 import struct
 import sys
 import time
+
+from udp_latest import LatestReceiver
 
 MAGIC = b"CNV1"
 PREVIEW_PORT = 6457
@@ -40,34 +43,27 @@ def parse(packet):
     return w, h, rgb
 
 
-class Receiver:
-    """Canvas packets on a UDP port, never blocking."""
+class Receiver(LatestReceiver):
+    """Canvas packets on a UDP port, never blocking: poll() gives the newest
+    (w, h, rgb); age() -- TD stopped sending?"""
 
     def __init__(self, port=PREVIEW_PORT, host="127.0.0.1"):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
-        self.sock.bind((host, port))
-        self.sock.setblocking(False)
-        self.latest, self.t_last, self.packets = None, None, 0
+        super().__init__(port, parse, host, bufsize=MAX_BYTES + 16)
 
-    def poll(self):
-        """The newest image (every waiting packet read); None until one arrives."""
-        while True:
-            try:
-                packet = self.sock.recv(MAX_BYTES + 16)
-            except (BlockingIOError, ConnectionResetError):
-                break
-            got = parse(packet)
-            if got:
-                self.latest, self.t_last = got, time.monotonic()
-                self.packets += 1
-        return self.latest
 
-    def age(self):
-        return None if self.t_last is None else time.monotonic() - self.t_last
-
-    def close(self):
-        self.sock.close()
+def test_image(w=90, h=90):
+    """What --send-test sends: the top half red on the left, green on the
+    right; the bottom paper white to violet, left to right (which way is up
+    and left as seen from the robot)."""
+    px = bytearray()
+    for r in range(h):
+        for c in range(w):
+            if r < h // 2:
+                px += bytes([230, 40, 40]) if c < w // 2 else bytes([40, 200, 60])
+            else:
+                k = c / float(max(1, w - 1))
+                px += bytes([int(245 - 90 * k), int(240 - 170 * k), int(235 - 10 * k)])
+    return bytes(px)
 
 
 def self_test():
@@ -104,6 +100,9 @@ def self_test():
           got[:2] if got else None)
     tx.close()
     rx.close()
+    img = test_image(4, 2)
+    check("the test image: top left red, top right green, bottom paper to violet",
+          img[:3] == bytes([230, 40, 40]) and img[9:12] == bytes([40, 200, 60]) and img[12] > img[21], img[12:24])
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
@@ -111,4 +110,17 @@ def self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    if "--send-test" in sys.argv:
+        k = sys.argv.index("--send-test")
+        port = int(sys.argv[k + 1]) if len(sys.argv) > k + 1 and sys.argv[k + 1].isdigit() else PREVIEW_PORT
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        packet = pack(90, 90, test_image())
+        print("sending the test image to 127.0.0.1:%d, 15 a second (Ctrl+C to stop)" % port)
+        try:
+            while True:
+                tx.sendto(packet, ("127.0.0.1", port))
+                time.sleep(1 / 15.0)
+        except KeyboardInterrupt:
+            pass
+        sys.exit(0)
     print(__doc__)

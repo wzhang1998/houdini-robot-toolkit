@@ -9,6 +9,7 @@ aimed at it:
 
     python scripts/artnet.py --self-test
     python scripts/artnet.py --listen 6455      print what arrives (a check of TD's output)
+    python scripts/artnet.py --send-test 6455   stand in for TD: a comet along the strip (Isaac without TD)
 
 Standard library only.
 """
@@ -17,6 +18,8 @@ import socket
 import struct
 import sys
 import time
+
+from udp_latest import LatestReceiver
 
 ID = b"Art-Net\x00"
 OP_DMX = 0x5000
@@ -53,36 +56,24 @@ def levels(data, n=LEDS, start=0, per_led=3):
     return out
 
 
-class Receiver:
-    """ArtDmx for one universe on a UDP port, never blocking."""
+class Receiver(LatestReceiver):
+    """ArtDmx for one universe on a UDP port, never blocking: poll() gives the
+    newest packet's n levels; age() -- TD stopped sending?"""
 
     def __init__(self, port=PREVIEW_PORT, universe=0, host="127.0.0.1", n=LEDS):
         self.universe, self.n = universe, n
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind((host, port))
-        self.sock.setblocking(False)
-        self.latest, self.t_last, self.packets = None, None, 0
+        super().__init__(port, self._levels, host, bufsize=1024)
 
-    def poll(self):
-        """The levels of the newest packet for our universe (every waiting
-        packet read); None until one arrives."""
-        while True:
-            try:
-                packet = self.sock.recv(1024)
-            except (BlockingIOError, ConnectionResetError):
-                break
-            got = parse(packet)
-            if got and got[0] == self.universe:
-                self.latest, self.t_last = levels(got[1], self.n), time.monotonic()
-                self.packets += 1
-        return self.latest
+    def _levels(self, packet):
+        got = parse(packet)
+        return levels(got[1], self.n) if got and got[0] == self.universe else None
 
-    def age(self):
-        """Seconds since the last packet (None: none yet) -- TD stopped sending?"""
-        return None if self.t_last is None else time.monotonic() - self.t_last
 
-    def close(self):
-        self.sock.close()
+def test_pattern(t, n=LEDS):
+    """What --send-test sends at time t: a comet with a tail running along the
+    strip, 20 LEDs a second, and LED 0's end always a little lit (which end is 0)."""
+    head = (t * 20.0) % n
+    return [max(max(0.0, 1.0 - abs(i - head) / 8.0) if i <= head else 0.0, 0.15 if i < 5 else 0.0) for i in range(n)]
 
 
 def self_test():
@@ -119,6 +110,9 @@ def self_test():
           got is not None and len(got) == 60 and got[0] == 1.0 and got[1] == 0.0 and rx.packets == 2,
           (got[:3] if got else None, rx.packets))
     check("... and knows how old it is", rx.age() is not None and rx.age() < 1.0)
+    tp = test_pattern(1.0)
+    check("the test pattern: a comet 20 LEDs in after 1 s, LED 0's end marked", tp[20] == 1.0 and tp[0] == 0.15
+          and tp[30] == 0.0, (tp[0], tp[20], tp[30]))
     tx.close()
     rx.close()
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
@@ -129,6 +123,21 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if "--self-test" in argv:
         return self_test()
+    if "--send-test" in argv:
+        k = argv.index("--send-test")
+        port = int(argv[k + 1]) if len(argv) > k + 1 and argv[k + 1].isdigit() else PREVIEW_PORT
+        seconds = float(argv[argv.index("--seconds") + 1]) if "--seconds" in argv else 1e9
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        print("sending the test pattern to 127.0.0.1:%d, 40 a second (Ctrl+C to stop)" % port)
+        t0 = time.monotonic()
+        try:
+            while time.monotonic() - t0 < seconds:
+                lv = test_pattern(time.monotonic() - t0)
+                tx.sendto(artdmx(0, bytes(int(255 * x) for x in lv for _ in range(3))), ("127.0.0.1", port))
+                time.sleep(1 / 40.0)
+        except KeyboardInterrupt:
+            pass
+        return 0
     if "--listen" in argv:
         port = int(argv[argv.index("--listen") + 1]) if len(argv) > argv.index("--listen") + 1 else PREVIEW_PORT
         rx = Receiver(port)
