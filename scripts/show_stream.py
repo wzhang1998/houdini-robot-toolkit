@@ -97,9 +97,10 @@ class Commands:
     def stop(self):
         self.stop_requested.set()
 
-    def status(self):
-        """The Runner's status, time left in wall seconds (at this speed)."""
-        s = self.runner.status()
+    def status(self, lag_s=0.0):
+        """The Runner's status, time left in wall seconds (at this speed); the
+        scan's position where the arm is, lag_s of wall time behind."""
+        s = self.runner.status(lag_s=lag_s, rate=self.speed_now)
         s["time_left"] = round(s["time_left"] / max(self.speed_now, 1e-6), 2)
         return s
 
@@ -757,6 +758,9 @@ def main(argv=None):
                     help="also send the status here (a control window and TouchDesigner both listening); repeatable")
     ap.add_argument("--minutes", type=float, default=5.0)
     ap.add_argument("--osc", action="store_true", help="TouchDesigner in and out (the config's osc ports)")
+    ap.add_argument("--osc-lag-ms", type=float, default=None,
+                    help="how far the arm is behind the commands, for the scan's position sent to TouchDesigner "
+                         "(/robot/scan/u, /led, /speed): default 120 hardware, 40 SimMachine (the reports' lag)")
     ap.add_argument("--move-vel", type=float, default=None, help="MoveJ %% to the start hub (default 20 sim, 10 hardware)")
     ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"), help="the room, for the start move")
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
@@ -822,7 +826,8 @@ def main(argv=None):
     osc = None
     if a.osc:
         o = cfg["osc"]
-        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also)
+        lag_ms = a.osc_lag_ms if a.osc_lag_ms is not None else (120.0 if a.hardware else 40.0)
+        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also, lag_s=lag_ms / 1000.0)
         print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
     guard = Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, speed)     # J6: the tool cable's range
     link = Link(ip)

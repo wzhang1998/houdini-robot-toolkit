@@ -64,9 +64,16 @@ IDLE --(pause)--> PAUSED at home;  any --(fault)--> FAULT, holds until reset
 - **TouchDesigner link (OSC).**
   - In: `/robot/trigger`, `/pause`, `/resume`, `/reset`, `/mood`, `/energy`.
   - Out: `/robot/state`, `/clip`, `/hub`, `/progress`, `/joints`, and
-    `/robot/scan` (0..1 while scanning). `/robot/scan` is the LED strip's
-    column clock: TD lights the column for the arm's position, so the
-    image does not depend on the arm's timing.
+    `/robot/scan` (0..1 of the scan's time while scanning, else -1).
+  - For the LED strip, where it is over the paper (the arm's position,
+    `--osc-lag-ms` behind the commands: 120 on the real arm, 40 on
+    SimMachine):
+    - `/robot/scan/u`: across the frame's opening, 0 at its left edge, 1 at
+      its right, below 0 / above 1 on the ramps, -1 outside the scan -- the
+      image's column;
+    - `/robot/scan/led`: 1 while the strip is over the opening (light it
+      only then);
+    - `/robot/scan/speed`: m/s now (the dose goes as 1 / speed).
   - Also out, for a panel:
     - `/robot/sequence`;
     - `/robot/next`: what plays after this clip, in words;

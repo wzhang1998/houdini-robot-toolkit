@@ -42,7 +42,8 @@ energy the arm changes hub (level) more often.
 OSC in:  /robot/trigger [name] (default scan)   /robot/pause   /robot/resume   /robot/reset
          /robot/mood <action>   /robot/energy <0..1> (below 0: back to the arc)
 OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
-         /robot/scan f (0..1 while scanning: the LED strip's column clock)  /robot/joints f*6
+         /robot/scan f (0..1 of the scan's time)  /robot/joints f*6
+         /robot/scan/u f (across the opening, 0..1: the LEDs' column)  /robot/scan/led i  /robot/scan/speed f
 
 Backends (who moves): the dry-run clock here; Isaac Sim
 (scripts/isaac/run_show.py); SimMachine / the real FR20 next (a ServoJ
@@ -50,6 +51,7 @@ stream over the same step()).
 """
 
 import argparse
+import bisect
 import json
 import math
 import os
@@ -654,6 +656,7 @@ def scan_line(cfg, env, prof, dt=0.016):
         raise SystemExit("scan: %s" % C.describe(rep))
     labels = {"speed_mps": v, "exposed_m": round(info["exposed_m"], 4), "direction": s.get("direction", "left_to_right"),
               "led_gap_m": s["led_gap_m"], "led_on_s": [round(t_on + lead / v, 4), round(t_off - lead / v, 4)],
+              "u": [round(u, 5) for u in scan_positions(ss, info, lead, strip_w)],
               "travel": [round(x, 6) for x in d],
               "clearance_m": rep["min_env_clearance_m"]}
     return ts, [list(q) for q in qs], labels
@@ -682,6 +685,14 @@ def scan_profile(cruise_m, v, a, dt):
         ts.append(t)
         ss.append(s)
     return ts, ss, (ta, ta + tc)
+
+
+def scan_positions(ss, info, lead, strip_w):
+    """Each scan sample's place across the frame's opening (u): 0 with the
+    strip's centre on its left edge, 1 on its right, below 0 / above 1 on the
+    ramps -- the LEDs light while 0 <= u <= 1, the image's column is u."""
+    start = info["ramp_m"] + lead + strip_w / 2.0
+    return [(s - start) / info["exposed_m"] for s in ss]
 
 
 def canvas_opening(c):
@@ -1104,11 +1115,36 @@ class Runner:
             return "pause at %s, when this clip ends" % self.seg.end
         return "an idle clip at %s, picked when this clip ends" % self.seg.end
 
-    def status(self):
+    def scan_state(self, lag_s=0.0, rate=1.0):
+        """(u, led, m/s) of the strip across the scan's opening (its labels'
+        u, scan_positions), where the arm is lag_s of wall time behind the
+        commands; rate: segment seconds a wall second (the stream's speed).
+        (-1, 0, 0) outside the scan."""
+        us = (self.seg.labels or {}).get("u") if self.seg.kind == "scan" else None
+        if not us:
+            return -1.0, 0, 0.0
+        seg_rate = rate * self.scan_speed
+        t = max(0.0, self.seg_t - lag_s * seg_rate)
+        ts = self.seg.t
+
+        def u_at(x):
+            x = min(max(x, ts[0]), ts[-1])
+            i = min(max(bisect.bisect_right(ts, x) - 1, 0), len(ts) - 2)
+            f = (x - ts[i]) / (ts[i + 1] - ts[i]) if ts[i + 1] > ts[i] else 0.0
+            return us[i] + f * (us[i + 1] - us[i])
+        u = u_at(t)
+        h = 0.02
+        dudt = (u_at(t + h) - u_at(t - h)) / (min(t + h, ts[-1]) - max(t - h, ts[0]) or h)
+        mps = dudt * float((self.seg.labels or {}).get("exposed_m", 0.0)) * seg_rate
+        return round(u, 4), 1 if 0.0 <= u <= 1.0 else 0, round(abs(mps), 4)
+
+    def status(self, lag_s=0.0, rate=1.0):
         prog = self.seg_t / self.seg.duration if self.seg.duration > 0 else 1.0
+        u, led, mps = self.scan_state(lag_s, rate)
         return {"state": self.state, "clip": self.seg.name, "hub": self.hub, "sequence": self.sequence,
                 "progress": round(min(1.0, prog), 4),
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
+                "scan_u": u, "scan_led": led, "scan_mps": mps,
                 "time_left": round(max(0.0, self.seg.duration - self.seg_t), 2),
                 "next": self.next_up(), "queue": [self._label(x) for x in self.queue[:6]],
                 "pending": list(self.pending), "fault": self.fault_reason,
@@ -1129,9 +1165,12 @@ def runner_for(graph, seed=None, log=None, scan_speed=1.0):
 class OscBridge:
     """/robot/* in and out; python-osc (the usual TouchDesigner link)."""
 
-    def __init__(self, runner, listen_port, send_host, send_port, also=()):
+    def __init__(self, runner, listen_port, send_host, send_port, also=(), lag_s=0.0):
         """Status goes to send_host:send_port and to each (host, port) in
-        `also` -- a control window and TouchDesigner can both listen."""
+        `also` -- a control window and TouchDesigner can both listen. lag_s:
+        how far the arm is behind the commands (the scan's position is sent
+        where the arm is, for the LEDs)."""
+        self.lag_s = lag_s
         from pythonosc import dispatcher, osc_server, udp_client
         import threading
         self.runner = runner
@@ -1151,9 +1190,11 @@ class OscBridge:
         self.clients = [udp_client.SimpleUDPClient(h, p) for h, p in [(send_host, send_port)] + list(also)]
 
     def send(self, q):
-        s = self.runner.status()
+        s = self.runner.status(lag_s=self.lag_s)
         msgs = [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
                 ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
+                ("/robot/scan/u", float(s["scan_u"])), ("/robot/scan/led", int(s["scan_led"])),
+                ("/robot/scan/speed", float(s["scan_mps"])),
                 ("/robot/joints", [float(x) for x in q]),
                 ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
                 ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
@@ -1276,6 +1317,20 @@ def self_test():
             seen.append(r.seg.name)
     check("scan from another hub: move there first, then to_scan, scan, from_scan",
           seen[1:5] == ["move_b_a", "to_scan", "scan", "from_scan"], seen[:6])
+    # where the strip is over the paper, for the LEDs (TouchDesigner)
+    us = scan_positions([0.0, 0.1, 0.5, 1.5, 1.6], {"exposed_m": 1.0, "ramp_m": 0.08}, 0.02, 0.0)
+    check("the scan's position across the opening: 0 at its left edge, 1 at its right, beyond on the ramps",
+          [round(u, 3) for u in us] == [-0.1, 0.0, 0.4, 1.4, 1.5], us)
+    sseg = Segment("scan", "scan", [0.0, 2.0], [S0, S1], "scan_start", "scan_end",
+                   {"u": [-0.5, 1.5], "exposed_m": 1.0})
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, scan_speed=0.5)
+    r.seg, r.seg_t = sseg, 1.0
+    now, late = r.status(), r.status(lag_s=1.0, rate=1.0)
+    check("status gives the scan's position, LEDs on over the opening, its speed now (at the run's scan speed), "
+          "and where the arm is a lag behind the commands",
+          now["scan_u"] == 0.5 and now["scan_led"] == 1 and abs(now["scan_mps"] - 0.5) < 1e-6
+          and late["scan_u"] == 0.0 and r.status(lag_s=5.0)["scan_led"] == 0,
+          (now["scan_u"], now["scan_led"], now["scan_mps"], late["scan_u"]))
     # the scan's speed at run time (tuning an exposure): only the scan slows
     r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, scan_speed=0.5)
     r.step(0.5)
