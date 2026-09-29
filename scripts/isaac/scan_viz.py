@@ -1,6 +1,6 @@
 """The scan drawn over an Isaac Sim stage: the scan's area outlined on the
 paper, the strip violet while its LEDs are on, the paper exposed so far
-shaded violet -- shared by record_segments.py and run_show.py. Only what
+shaded violet -- shared by record_library.py and run_show.py. Only what
 the camera sees. Import after SimulationApp has started (it needs pxr).
 
     viz = ScanViz(stage, cfg)

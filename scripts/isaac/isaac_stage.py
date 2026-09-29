@@ -1,6 +1,6 @@
 """The room, the FR20 and its tool in an Isaac Sim stage, the cameras and the
 render settings: shared by every Isaac script (run_show, run_tracking,
-record_segments, export_pose_usd), so they all show the one room, lit as
+record_library, replay_render, export_pose_usd), so they all show the one room, lit as
 the lab (load_room). Import after SimulationApp has started (it needs omni)."""
 
 import math

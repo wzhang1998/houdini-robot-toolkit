@@ -9,10 +9,20 @@ clearance, the simulation's tracking and contacts) -- the Houdini review
     C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --clips greet_00_look,scan --cameras room
     python scripts/isaac/record_library.py --self-test
 
+A new scan before the library is built again (show.py build --scan-only
+writes geo/show/<show>_scan/compiled.json): any segments of any compiled
+show, in order, the cameras side by side (<show>_segments.mp4), or one
+picture a camera (--still, to tune the look):
+
+    uv run scripts/show.py build shows/party.json --scan-only
+    C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --graph geo/show/party_scan/compiled.json \
+        --segments to_scan,scan,from_scan --no-pages
+    C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --segments scan --still 2.0
+
 Each clip: a cut to its first pose, HOLD_IN_S still (the card to read), the
 clip, HOLD_OUT_S still. One pass per camera (--cameras, isaac_stage.cameras:
-room, audience, side); the room as record_segments draws it (load_room, the
-lab's look, the guides hidden unless --guides). Out (--out,
+room, audience, side); the room as every Isaac view (load_room, the lab's
+look, the guides hidden unless --guides). Out (--out,
 geo/isaac/review/): <show>_library_<camera>.mp4, <show>_library_<camera>_sheet.jpg
 (a frame 40 % into each clip, labelled), <show>_library.json (chapters: where
 each clip starts in the video, its card, tracking and contacts per camera).
@@ -62,6 +72,16 @@ def playlist(graph, extra=None, extra_names=(), scan=True, only=None):
         if not out:
             raise SystemExit("none of %s in the library" % ", ".join(sorted(only)))
     return out
+
+
+def pick_segments(graph, names):
+    """[(segment, "main")] of the named segments of a compiled show, in the
+    order given (any kind: moves, to_scan, the scan ...)."""
+    by = {s.name: s for s in graph.segments}
+    missing = [n for n in names if n not in by]
+    if missing:
+        raise SystemExit("not in the show: %s (there: %s)" % (", ".join(missing), ", ".join(sorted(by))))
+    return [(by[n], "main") for n in names]
 
 
 def spans(durations, dt, fps=FPS_VIDEO, hold_in=HOLD_IN_S, hold_out=HOLD_OUT_S):
@@ -188,6 +208,15 @@ def self_test():
           tile_span(100, 90, 2.0) == (118, 61) and tile_span(0, 20, 5.0) == (18, 2), (tile_span(100, 90, 2.0),))
     check("a tile's foot: version, camera, Isaac's tracking and contacts",
           sim_line("v9", "room", {"track_deg": 0.167, "contacts": 0}) == "v9  isaac room   track 0.17 deg   contacts 0")
+    picked = [x.name for x, _ in pick_segments(g, ["to_scan", "scan", "from_scan"])]
+    check("any segments of a show, in the order given (a scan's preview)", picked == ["to_scan", "scan", "from_scan"],
+          picked)
+    try:
+        pick_segments(g, ["scan", "no_such"])
+        refused = False
+    except SystemExit as e:
+        refused = "no_such" in str(e)
+    check("... one it does not have is refused, by name", refused)
     dirs = {"main": os.path.join(ROOT, "geo", "show", "party"), "extra": os.path.join(ROOT, "geo", "show", "party_bigwipe")}
     miss = [s.name for s, src in pl if not os.path.exists(preview_path(s.name, src, dirs))]
     check("every clip of the library has its preview (the review's header comes from it)", not miss, miss[:5])
@@ -212,6 +241,12 @@ ap.add_argument("--out", default=os.path.join(ROOT, "geo", "isaac", "review"))
 ap.add_argument("--headless", action="store_true")
 ap.add_argument("--no-sequence", action="store_true", help="only the review pages, not the clips one after another")
 ap.add_argument("--version", default=VERSION, help="the library's version, on every tile and the output folder")
+ap.add_argument("--graph", default="", help="take the segments from this compiled show (e.g. a --scan-only build's "
+                                             "geo/show/<show>_scan/compiled.json) instead of the show's own")
+ap.add_argument("--segments", default="", help="these segments (comma separated, any kind, in order) instead of the "
+                                                "library; the cameras side by side in <show>_segments.mp4")
+ap.add_argument("--still", type=float, default=-1.0, help="only a PNG a camera, this far (s) into the first clip")
+ap.add_argument("--no-pages", action="store_true", help="no review pages (a quick look)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -249,12 +284,14 @@ def main():
     cfg_path = os.path.abspath(args.config)
     cfg = json.load(open(cfg_path))
     name = os.path.splitext(os.path.basename(cfg_path))[0]
-    graph = show.Graph.load(show.compiled_path(cfg_path))
+    gpath = os.path.abspath(args.graph) if args.graph else show.compiled_path(cfg_path)
+    graph = show.Graph.load(gpath)
     extra = show.Graph.load(show.compiled_path(os.path.abspath(args.extra))) if args.extra else None
     names = [n for n in args.extra_clips.split(",") if n] if extra is not None else []
     only = set(n for n in args.clips.split(",") if n) or None
-    plist = playlist(graph, extra, names, not args.no_scan, only)
-    show_dirs = {"main": os.path.join(ROOT, "geo", "show", name),
+    plist = (pick_segments(graph, [n for n in args.segments.split(",") if n]) if args.segments
+             else playlist(graph, extra, names, not args.no_scan, only))
+    show_dirs = {"main": os.path.dirname(gpath) if args.graph else os.path.join(ROOT, "geo", "show", name),
                  "extra": os.path.join(ROOT, "geo", "show", os.path.splitext(os.path.basename(args.extra))[0])
                  if args.extra else None}
     segs = [s for s, _ in plist]
@@ -306,13 +343,15 @@ def main():
                           overlay.clip_card(s.name, s.kind, s.start, s.duration, s.labels, k + 1, total), "sim": {}}
                          for k, ((s, src), x) in enumerate(zip(plist, sp))],
                "passes": {}}
+    tag = "segments" if args.segments else "library"         # a scan's preview does not overwrite the library
+    videos = []
     for cam_name in args.cameras.split(","):
         eye, look, focal = cams[cam_name]
         vp = use_camera(stage, "/World/Cam_" + cam_name, eye, look, focal)
         frames = os.path.join(args.out, "_frames_%s_%s" % (name, cam_name))
         shutil.rmtree(frames, ignore_errors=True)
         os.makedirs(frames)
-        shot, corner, cards, sims = 0, [], [], []
+        shot, corner, cards, sims, still = 0, [], [], [], None
         for k, (seg, x) in enumerate(zip(segs, sp)):
             q0 = seg.q[0]
             current[0] = None
@@ -345,6 +384,17 @@ def main():
                     shot += 1
                 sim = np.degrees(robot.get_joint_positions(joint_indices=idx))
                 worst = max(worst, max(abs(float(sim[j]) - q[j]) for j in range(6)))
+                if args.still >= 0 and i * PHYSICS_DT >= HOLD_IN_S + args.still:    # one converged picture
+                    for _ in range(40):
+                        world.step(render=True)
+                    still = os.path.join(args.out, "%s_%s_still.png" % (name, cam_name))
+                    capture_viewport_to_file(vp, still)
+                    for _ in range(20):
+                        app.update()
+                    break
+            if still:
+                print("[library] still %s" % still, flush=True)
+                break
             sims.append({"track_deg": round(worst, 3), "contacts": len(contacts),
                          "first_contacts": [c[1:] for c in contacts[:3]]})
             card = overlay.clip_card(seg.name, seg.kind, seg.start, seg.duration, seg.labels, k + 1, total, sims[-1])
@@ -353,6 +403,9 @@ def main():
             print("[library] %s %d/%d %s: tracking %.2f deg, contacts %d"
                   % (cam_name, k + 1, total, seg.name, worst, len(contacts)), flush=True)
         current[0] = None
+        if still:
+            shutil.rmtree(frames, ignore_errors=True)
+            continue
         for _ in range(60):
             app.update()                                            # the last captures written
         posters_dir = os.path.join(args.out, "_posters_%s_%s" % (name, cam_name))
@@ -364,19 +417,22 @@ def main():
             shutil.copy(os.path.join(frames, "f_%05d.png" % x["poster"]), p)
             posters.append(p)
         sheet = contact_sheet(posters, [sheet_label(c) for c in cards],
-                              os.path.join(args.out, "%s_library_%s_sheet.jpg" % (name, cam_name)))
+                              os.path.join(args.out, "%s_%s_%s_sheet.jpg" % (name, tag, cam_name)))
         if sheet:
             shutil.rmtree(posters_dir, ignore_errors=True)
         vdir = os.path.join(args.out, args.version)
         os.makedirs(vdir, exist_ok=True)
-        grid = review_pages(frames, sp, plist, sims, cam_name, vdir, show_dirs, args.version)
-        print("[library] %s pages: %s" % (cam_name, ", ".join(grid)), flush=True)
+        grid = [] if args.no_pages else review_pages(frames, sp, plist, sims, cam_name, vdir, show_dirs, args.version)
+        if grid:
+            print("[library] %s pages: %s" % (cam_name, ", ".join(grid)), flush=True)
         video = None
         if args.no_sequence:
             shutil.rmtree(frames, ignore_errors=True)
         else:
-            mp4 = os.path.join(args.out, "%s_library_%s.mp4" % (name, cam_name))
+            mp4 = os.path.join(args.out, "%s_%s_%s.mp4" % (name, tag, cam_name))
             video = encode_video(app, frames, corner, shot, mp4, FPS_VIDEO, (1280, 720), "library")
+            if video:
+                videos.append(mp4)
         for c, sim in zip(summary["clips"], sims):
             c["sim"][cam_name] = sim
         summary["passes"][cam_name] = {"video": video, "pages": grid, "sheet": sheet, "frames": shot,
@@ -384,7 +440,14 @@ def main():
                                        "clips_with_contacts": [c["name"] for c, s in zip(summary["clips"], sims)
                                                                if s["contacts"]]}
         print("[library] %s: %s, sheet %s" % (cam_name, video, sheet), flush=True)
-    out_json = os.path.join(args.out, "%s_library.json" % name)
+    if args.segments and len(videos) > 1:                    # the cameras side by side
+        both = os.path.join(args.out, "%s_segments.mp4" % name)
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error"] + sum((["-i", v] for v in videos), []) +
+                           ["-filter_complex", "hstack=inputs=%d" % len(videos), "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-crf", "22", both], capture_output=True, text=True)
+        summary["side_by_side"] = os.path.relpath(both, ROOT).replace("\\", "/") if not r.returncode else r.stderr[-300:]
+        print("[library] side by side: %s" % summary["side_by_side"], flush=True)
+    out_json = os.path.join(args.out, "%s_%s.json" % (name, tag))
     json.dump(summary, open(out_json, "w"), indent=1)
     print("[library] %s" % os.path.relpath(out_json, ROOT), flush=True)
 
