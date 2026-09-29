@@ -1,10 +1,13 @@
 """How fast the controller's clock runs against this PC's -- read only, the arm does not move.
 
-    uv run scripts/controller_clock.py --ip 192.168.58.2 [--seconds 120] [--write]
+    uv run scripts/controller_clock.py --ip 192.168.58.2 [--seconds 120]
 
---write keeps the result in playback.toml under [controller_clock_ppm], by
-the controller's IP; show_stream.py paces its points by it (GetSystemClock
-cannot be read while streaming: it takes ~300 ms in servo mode).
+A diagnostic: the clock is only part of how fast the controller plays
+ServoJ. show_stream.py paces by the playback rate (playback.toml
+[controller_playback_ppm] by IP), which a stream run's report measures
+(playback_ppm_suggested) -- the real FR20: clock -126 ppm, playback -950.
+(An earlier --write put this clock's number where the playback rate
+belongs; gone.)
 
 Reads the controller's own clock (GetSystemClock, ms, Fairino SDK) twice a
 second, each read stamped at the middle of its round trip on this PC's
@@ -12,10 +15,7 @@ clock, and fits a line: the slope minus one is the drift in ppm (a negative
 drift: the controller's clock is slower). SimMachine: ~ +14 ppm, and that
 is also how much slower it plays ServoJ. The real FR20 (2026-09-28): its
 clock -126 ppm, but it plays ServoJ ~950 ppm slower than cmdT says, so the
-clock is only part of it. What show_stream needs is the playback rate:
-a run's report measures it (clock_ppm_suggested, from its own lag) --
-put that in playback.toml. This tool gives a first value, or checks the
-clock alone.
+clock is only part of it.
 
     python scripts/controller_clock.py --self-test
 """
@@ -68,31 +68,6 @@ def measure(ip, seconds, every=0.5, log=print):
     return ppm
 
 
-def write_toml(ip, ppm, path=None):
-    """playback.toml [controller_clock_ppm] "<ip>" = ppm (the section made
-    if missing, the IP's line replaced)."""
-    import os
-    path = path or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "playback.toml")
-    lines = open(path, encoding="utf8").read().splitlines() if os.path.exists(path) else []
-    key = '"%s" = %.1f' % (ip, ppm)
-    if "[controller_clock_ppm]" not in [l.split("#")[0].strip() for l in lines]:
-        lines += ["", "[controller_clock_ppm]          # scripts/controller_clock.py --write: the controller's clock vs "
-                      "this PC's, by IP", key]
-    else:
-        i = [l.split("#")[0].strip() for l in lines].index("[controller_clock_ppm]") + 1
-        j = i
-        while j < len(lines) and not lines[j].strip().startswith("["):
-            if lines[j].strip().startswith('"%s"' % ip):
-                lines[j] = key
-                break
-            j += 1
-        else:
-            lines.insert(i, key)
-    with open(path, "w", encoding="utf8", newline="\n") as f:
-        f.write("\n".join(lines) + "\n")
-    return path
-
-
 def self_test():
     fails = []
     pairs = [(t, 5.0 + t * (1.0 - 950e-6)) for t in [i * 0.5 for i in range(120)]]
@@ -100,18 +75,6 @@ def self_test():
     if abs(ppm + 950.0) > 1e-3:
         fails.append("fit %.3f" % ppm)
     print("ok    a controller 950 ppm slow is measured as -950 ppm" if not fails else "FAIL  %s" % fails)
-    import os
-    import tempfile
-    import tomllib
-    p = os.path.join(tempfile.mkdtemp(), "playback.toml")
-    open(p, "w").write('[robot]\ntarget = "sim"\n')
-    write_toml("10.0.0.9", -950.25, p)
-    write_toml("10.0.0.8", 14.0, p)
-    write_toml("10.0.0.9", -948.0, p)
-    got = tomllib.load(open(p, "rb")).get("controller_clock_ppm", {})
-    ok = got == {"10.0.0.9": -948.0, "10.0.0.8": 14.0}
-    print(("ok  " if ok else "FAIL") + "  --write keeps one value per controller in playback.toml  -- %s" % got)
-    fails += [] if ok else ["toml"]
     return 1 if fails else 0
 
 
@@ -121,8 +84,5 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ip", required=True)
     ap.add_argument("--seconds", type=float, default=120.0)
-    ap.add_argument("--write", action="store_true", help="keep it in playback.toml for this IP")
     a = ap.parse_args()
-    ppm = measure(a.ip, a.seconds)
-    if a.write:
-        print("written to", write_toml(a.ip, ppm))
+    measure(a.ip, a.seconds)

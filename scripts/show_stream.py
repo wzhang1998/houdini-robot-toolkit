@@ -56,7 +56,7 @@ STEP_MARGIN = 1.1                  # a tick may step 10 % past the velocity limi
 ERROR_POLL_S = 0.1
 SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
-MAX_PPM = 3000.0                   # a controller clock calibration further off than this is refused
+MAX_PPM = 3000.0                   # a playback rate further off than this is refused
 MAX_BURST = 4                      # points sent back to back after a late tick; more are skipped
 QUEUE_POLL_S = 1.0                 # the controller's motion queue, read once a second for the report (a diagnostic)
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
@@ -250,7 +250,7 @@ def realtime_priority():
 
 
 def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, log=print, analyse=True,
-           clock_ppm=None):
+           playback_ppm=None):
     """The stream loop. The arm must already be at the Runner's start pose.
     Returns (report, [(tick, q) sent], the clock's zero); a fault is in the
     report, not raised."""
@@ -266,26 +266,25 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     gc.collect()
     gc.freeze()                                     # what exists now (the graph, the show) is never walked again
     events.append("priority: " + realtime_priority())
-    # Who paces the show: the controller's clock. ServoJ points are played
-    # one per cmdT on the controller's own clock, and the real FR20's clock
-    # runs ~950 ppm slower than this PC's (2026-09-28): points sent on the
-    # PC's clock piled up in a buffer behind its motion queue (whose length,
-    # GetMotionQueueLength, stayed put while the lag grew ~1 ms per s). So
-    # with the controller's clock rate known (clock_ppm: measured by
-    # controller_clock.py outside servo mode -- GetSystemClock takes ~300 ms
-    # in it -- and kept per controller in playback.toml), each point's
-    # deadline is the last one's plus dt at that rate, the way a disciplined
-    # clock (NTP, PTP) is steered by its measured rate. A late tick sends the
-    # points it owes back to back -- the controller buffers them (the FR20
-    # took such pairs without error) -- up to MAX_BURST; more are skipped.
-    # Without a calibration the PC's clock paces, a late tick is skipped.
-    clocked = clock_ppm is not None
-    if clocked and abs(clock_ppm) > MAX_PPM:
-        raise ValueError("clock_ppm %.0f: beyond %.0f, not believed -- measure again" % (clock_ppm, MAX_PPM))
-    events.append("pacing: " + ("the controller's clock, %+.0f ppm against this PC's (calibrated)" % clock_ppm
-                                if clocked else "this PC's clock (no clock calibration for this controller)"))
+    # Who paces the show: the controller's playback rate. The real FR20 plays
+    # ServoJ ~950 ppm slower than cmdT says on this PC's clock (2026-09-28;
+    # its own clock is only -126 ppm of that): points sent on the PC's clock
+    # piled up in a buffer behind its motion queue (whose length stayed put
+    # while the lag grew ~1 ms per s). So with the playback rate known
+    # (playback_ppm: a run's report measures it, kept per controller in
+    # playback.toml), each point's deadline is the last one's plus dt at that
+    # rate, the way a disciplined clock (NTP, PTP) is steered by its measured
+    # rate. A late tick sends the points it owes back to back -- the
+    # controller buffers them (the FR20 took such pairs without error) -- up
+    # to MAX_BURST; more are skipped. Without a rate the PC's clock paces, a
+    # late tick is skipped.
+    clocked = playback_ppm is not None
+    if clocked and abs(playback_ppm) > MAX_PPM:
+        raise ValueError("playback_ppm %.0f: beyond %.0f, not believed -- measure again" % (playback_ppm, MAX_PPM))
+    events.append("pacing: " + ("the controller's playback rate, %+.0f ppm against this PC's clock" % playback_ppm
+                                if clocked else "this PC's clock (no playback rate for this controller)"))
     bursts, pid, tick = 0, 0, -1
-    step = point_step(dt, clock_ppm)                # this PC's seconds per point
+    step = point_step(dt, playback_ppm)                # this PC's seconds per point
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     next_t = start
@@ -365,8 +364,8 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
         log("STOPPED: %s" % fault)
     rep = report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard, fault, events, speed, analyse,
                  step=step)
-    rep["pacing"] = "controller clock" if clocked else "pc clock"
-    rep["clock_ppm"] = clock_ppm
+    rep["pacing"] = "playback rate" if clocked else "pc clock"
+    rep["playback_ppm"] = playback_ppm
     rep["bursts"] = bursts
     h = sorted(link.queue_hist)
     if h:                                           # the motion queue, for the record (it does not show the backlog)
@@ -442,10 +441,10 @@ def report(start, dt, ticks_cmd, sends_ms, late_ms, skipped, link, runner, guard
     return rep
 
 
-def point_step(dt, clock_ppm):
-    """This PC's seconds per point: dt on the controller's clock (clock_ppm
+def point_step(dt, playback_ppm):
+    """This PC's seconds per point: dt on the controller's clock (playback_ppm
     against this PC's; None: the PC's clock paces)."""
-    return dt / (1.0 + (clock_ppm or 0.0) * 1e-6)
+    return dt / (1.0 + (playback_ppm or 0.0) * 1e-6)
 
 
 def add_tracking(rep, start, step, ticks_cmd, fb):
@@ -552,7 +551,7 @@ def self_test():
     broken = S.Graph({"a": A}, [S.Segment("a_broken", "idle", [0.0, 0.3, 0.304, 1.0], [A, A, bad, A], "a", "a",
                                           {"action": "float"})], {"start_hub": "a"})
 
-    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph, clock_ppm=None):
+    def run(ctrl, minutes, speed=1.0, trigger=None, stop_at=None, g_=graph, playback_ppm=None):
         r = S.Runner(g_, S.Selector(g_.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
         cmds = Commands(r)
         if trigger:
@@ -561,7 +560,7 @@ def self_test():
             threading.Timer(stop_at, cmds.stop).start()
         g = Guard(vel, lim, dt, speed)
         rep, _, _ = stream(ctrl, FakeLink(ctrl), r, cmds, g, dt, speed, minutes, log=lambda *a: None,
-                           clock_ppm=clock_ppm)
+                           playback_ppm=playback_ppm)
         return rep, r
 
     c = FakeCtrl()
@@ -650,26 +649,34 @@ def self_test():
                 return list(self.q)
 
     global MAX_PPM
-    max_ppm, MAX_PPM = MAX_PPM, 50000.0               # an exaggerated 3 % slow controller clock, believed here
+    max_ppm, MAX_PPM = MAX_PPM, 50000.0               # an exaggerated 3 % slow playback, believed here
     try:
         blind, told = QueueCtrl(), QueueCtrl()
         rep_b, _ = run(blind, 10.0 / 60)
-        rep_t, _ = run(told, 10.0 / 60, clock_ppm=(1.0 / 1.03 - 1.0) * 1e6)
+        rep_t, _ = run(told, 10.0 / 60, playback_ppm=(1.0 / 1.03 - 1.0) * 1e6)
         slow = QueueCtrl(slow_ctrl=0.0, slow_every=40)
-        rep_s, _ = run(slow, 2.0 / 60, clock_ppm=0.0)
+        rep_s, _ = run(slow, 2.0 / 60, playback_ppm=0.0)
     finally:
         MAX_PPM = max_ppm
-    check("without a clock calibration the PC's clock paces, and a slow controller's buffer piles up (the FR20's lag)",
+    check("without a playback rate the PC's clock paces, and a slow controller's buffer piles up (the FR20's lag)",
           rep_b["pacing"] == "pc clock" and blind.peak > 25, blind.peak)
-    check("... with its clock rate: points paced by the controller's clock, its buffer stays small",
-          rep_t["pacing"] == "controller clock" and told.peak <= 12
-          and rep_t["ended"] == "at a hub", (rep_t["clock_ppm"], told.peak))
+    check("... with its playback rate: points paced at it, its buffer stays small",
+          rep_t["pacing"] == "playback rate" and told.peak <= 12
+          and rep_t["ended"] == "at a hub", (rep_t["playback_ppm"], told.peak))
     check("... and a slow send is sent late, back to back: nothing skipped, no jump",
           rep_s["skipped"] == 0 and rep_s["bursts"] > 0 and rep_s["worst_step_of_limit"] <= 1.0,
           (rep_s["skipped"], rep_s["bursts"], rep_s["worst_step_of_limit"]))
 
-    sug = suggest_clock_ppm({"lag_ms_by_window": [104, 280, 460], "lag_window_s": 180.0, "clock_ppm": None})
-    check("a lag growing ~1 ms per s asks for a clock calibration of ~ -990 ppm", abs(sug + 988.9) < 1.0, sug)
+    import tempfile
+    tp = os.path.join(tempfile.mkdtemp(), "playback.toml")
+    open(tp, "w").write('[controller_clock_ppm]\n"10.0.0.1" = -950.0\n')
+    old = toml_playback_ppm("10.0.0.1", tp)
+    open(tp, "w").write('[controller_clock_ppm]\n"10.0.0.1" = -126.0\n[controller_playback_ppm]\n"10.0.0.1" = -950.0\n')
+    both = toml_playback_ppm("10.0.0.1", tp)
+    check("the playback rate from playback.toml: [controller_playback_ppm], the old [controller_clock_ppm] "
+          "still read (the robot PC's file)", old == -950.0 and both == -950.0, (old, both))
+    sug = suggest_playback_ppm({"lag_ms_by_window": [104, 280, 460], "lag_window_s": 180.0, "playback_ppm": None})
+    check("a lag growing ~1 ms per s asks for a playback rate of ~ -990 ppm", abs(sug + 988.9) < 1.0, sug)
 
     import io
 
@@ -695,7 +702,7 @@ def self_test():
     fb = [(k * dt + (0.04 if k * dt < 20 else 0.064), q) for k, q in enumerate(dense)][::2]
     lags = lag_by_window(0.0, dense, dt, fb, window_s=10.0)
     check("the lag is measured per window (a growing one shows)", lags == [40, 40, 64, 64], lags)
-    # paced by a (exaggerated) slow controller clock: point k leaves this PC at
+    # paced at an (exaggerated) slow playback rate: point k leaves this PC at
     # k * step, not k * dt; an arm 40 ms behind every point has a steady lag
     step = point_step(dt, -3000.0)
     ticks = Rows()
@@ -755,9 +762,10 @@ def main(argv=None):
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
-    ap.add_argument("--clock-ppm", type=float, default=None,
-                    help="the controller's clock against this PC's (controller_clock.py measures it; default: "
-                         "playback.toml's [controller_clock_ppm] for this IP; none: the PC's clock paces)")
+    ap.add_argument("--playback-ppm", "--clock-ppm", dest="playback_ppm", type=float, default=None,
+                    help="how much slower (-) the controller plays ServoJ than cmdT says, ppm (a run's report "
+                         "measures it: playback_ppm_suggested; default: playback.toml's [controller_playback_ppm] "
+                         "for this IP; none: the PC's clock paces)")
     ap.add_argument("--goto-start", action="store_true",
                     help="only move to the start hub (checked against the room, --move-vel %%), then end")
     a = ap.parse_args(argv)
@@ -805,10 +813,10 @@ def main(argv=None):
     print(plan)
     if not ask(plan):
         return 1
-    clock_ppm = a.clock_ppm if a.clock_ppm is not None else toml_clock_ppm(ip)
-    if clock_ppm is None:
+    playback_ppm = a.playback_ppm if a.playback_ppm is not None else toml_playback_ppm(ip)
+    if playback_ppm is None:
         print("no playback-rate calibration for %s: the PC's clock paces (the controller's lag may grow). After this "
-              "run, put the report's clock_ppm_suggested in playback.toml [controller_clock_ppm] \"%s\"" % (ip, ip))
+              "run, put the report's playback_ppm_suggested in playback.toml [controller_playback_ppm] \"%s\"" % (ip, ip))
     cmds = Commands(runner, speed)
     osc = None
     if a.osc:
@@ -819,47 +827,52 @@ def main(argv=None):
     link = Link(ip)
     try:
         out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False,
-                                       clock_ppm=clock_ppm)
+                                       playback_ppm=playback_ppm)
     finally:
         if osc is not None:
             osc.close()
     out.update(rep)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     # the data first: a report that is interrupted while it analyses still leaves the run behind
-    step = point_step(dt, clock_ppm)
+    step = point_step(dt, playback_ppm)
     base = write_log(a.log, stamp, out, ticks_cmd, step, link.samples, start)
     print("log written: %s (the joints; tracking follows)" % (base + ".json"))
     sys.stdout.flush()
     add_tracking(out, start, step, ticks_cmd, link.samples)
-    out["clock_ppm_suggested"] = suggest_clock_ppm(out)
+    out["playback_ppm_suggested"] = suggest_playback_ppm(out)
     with open(base + ".json", "w", newline="\n") as f:
         json.dump(out, f, indent=1)
     summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
                                        "speed",
                                        "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
-                                       "send_ms_p95", "max_late_ms", "controller_error", "pacing", "clock_ppm",
-                                       "lag_ms_by_window", "clock_ppm_suggested")}
+                                       "send_ms_p95", "max_late_ms", "controller_error", "pacing", "playback_ppm",
+                                       "lag_ms_by_window", "playback_ppm_suggested")}
     print(json.dumps(summary, indent=1))
-    if out.get("clock_ppm_suggested") is not None and abs(out["clock_ppm_suggested"] - (clock_ppm or 0.0)) > 50:
-        print('the lag drifted: set playback.toml [controller_clock_ppm] "%s" = %.1f (was %s)'
-              % (ip, out["clock_ppm_suggested"], clock_ppm))
+    if out.get("playback_ppm_suggested") is not None and abs(out["playback_ppm_suggested"] - (playback_ppm or 0.0)) > 50:
+        print('the lag drifted: set playback.toml [controller_playback_ppm] "%s" = %.1f (was %s)'
+              % (ip, out["playback_ppm_suggested"], playback_ppm))
     print("log:", base + ".json")
     return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
 
 
-def toml_clock_ppm(ip, path=None):
-    """playback.toml's [controller_clock_ppm] value for this controller's IP, or None."""
+def toml_playback_ppm(ip, path=None):
+    """playback.toml's [controller_playback_ppm] value for this controller's
+    IP, or None -- or, when that section does not name it, the old
+    [controller_clock_ppm] (the same number under its first name)."""
     import tomllib
     path = path or os.path.join(ROOT, "playback.toml")
     if not os.path.exists(path):
         return None
     with open(path, "rb") as f:
-        v = tomllib.load(f).get("controller_clock_ppm", {}).get(ip)
+        t = tomllib.load(f)
+    v = t.get("controller_playback_ppm", {}).get(ip)
+    if v is None:
+        v = t.get("controller_clock_ppm", {}).get(ip)
     return float(v) if v is not None else None
 
 
-def suggest_clock_ppm(rep):
-    """The clock calibration the run's own lag asks for: the lag per window
+def suggest_playback_ppm(rep):
+    """The playback rate the run's own lag asks for: the lag per window
     should stay put; a lag growing by g ms per s means the controller plays
     g * 1000 ppm slower than the points were paced. None with < 2 windows."""
     w = rep.get("lag_ms_by_window") or []
@@ -869,7 +882,7 @@ def suggest_clock_ppm(rep):
     mx = (n - 1) / 2.0
     slope = sum((i - mx) * (x - sum(w) / n) for i, x in enumerate(w)) / sum((i - mx) ** 2 for i in range(n))
     grow = slope / rep.get("lag_window_s", LAG_WINDOW_S)     # ms of lag per s
-    return round((rep.get("clock_ppm") or 0.0) - grow * 1000.0, 1)
+    return round((rep.get("playback_ppm") or 0.0) - grow * 1000.0, 1)
 
 
 def _toml_ip():

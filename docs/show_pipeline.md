@@ -99,11 +99,11 @@ tick by tick. There is no CSV per run and no stop between clips.
   ppm); points sent on the PC's clock pile up behind its motion queue (the
   lag grew ~1 ms per s, while GetMotionQueueLength stayed put). So each
   point's deadline is the last one's plus dt at the calibrated rate
-  (playback.toml `[controller_clock_ppm]` by IP, or `--clock-ppm`), as a
+  (playback.toml `[controller_playback_ppm]` by IP, or `--playback-ppm`), as a
   disciplined clock is steered by its measured rate; a late tick sends
   the points it owes back to back (up to 4), more are skipped. The report
   measures the lag per window on the PC times the points were sent at, and
-  says what rate to set when it drifts (`clock_ppm_suggested`). The motion
+  says what rate to set when it drifts (`playback_ppm_suggested`). The motion
   queue is read once a second, for the report only.
 - **Checks on every tick.** Before a pose is sent, its joint step must be
   within the velocity limits times the speed, and every joint within its
