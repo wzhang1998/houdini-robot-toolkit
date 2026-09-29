@@ -558,8 +558,12 @@ passes safe_move; the wipes built, clear, under the slow zones' limit.
 moves with and without cuRobo (4 detours 114-116 vs 160-193 deg); the
 rows wipe from low (1.45 x 0.66 m, 0.24 m/s) and columns from greet
 (1.65 x 0.60 m); build shows/party_bigwipe.json, dry run, SimMachine.
-**Status**: In Progress -- planner and showpieces done; the bigwipe build,
-its review reel and SimMachine next.
+**Status**: Complete (2026-09-29): party_bigwipe built (87 segments), dry run
+30 min, each wipe on SimMachine (0 skipped, 0.12 deg), review reel. Build
+speed (profiled): 33 min -> 141 s, party.json rebuilt identical to v8.
+What is left of the build's time is the gestures' IK and FK in pure
+Python (87 %): numpy for them, or the hubs in parallel (each its own
+seed, so a new library), when it matters.
 
 ## Follow-ups: standard tools evaluation (2026-09-25)
 **Goal**: Replace or validate hand-rolled parts with industry-standard
