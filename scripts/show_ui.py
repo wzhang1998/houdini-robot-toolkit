@@ -316,7 +316,7 @@ def run_window(config):
     field("Move speed %", ttk.Spinbox(top, from_=MOVE_VEL[0], to=MOVE_VEL[1], increment=1, textvariable=move_vel,
                                       width=5), 2, 4)
     field("Scan speed", ttk.Spinbox(top, from_=SCAN_SPEED[0], to=SCAN_SPEED[1], increment=0.05,
-                                    textvariable=scan_speed, width=5), 1, 6)
+                                    textvariable=scan_speed, width=5), 3, 4)
     td_check = ttk.Checkbutton(top, text="Status also to TD at", variable=td_on)
     td_check.grid(row=2, column=0, columnspan=2, sticky="w", padx=8)
     td_entry = ttk.Entry(top, textvariable=td_target, width=16)
@@ -340,9 +340,9 @@ def run_window(config):
         if c:
             link.config = c["config"]
             root.title("Show -- %s" % c["name"])
-    ttk.Label(top, text="Show").grid(row=3, column=0, sticky="e", padx=(8, 2))
+    ttk.Label(top, text="Show").grid(row=4, column=0, sticky="e", padx=(8, 2))
     show_box = ttk.Combobox(top, textvariable=show_pick, state="readonly", width=60, postcommand=refresh_shows)
-    show_box.grid(row=3, column=1, columnspan=6, sticky="w", pady=(2, 4))
+    show_box.grid(row=4, column=1, columnspan=6, sticky="w", pady=(2, 4))
     show_box.bind("<<ComboboxSelected>>", show_changed)
     before_start.append(show_box)
     refresh_shows()
