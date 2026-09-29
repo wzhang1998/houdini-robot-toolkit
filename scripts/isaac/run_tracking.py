@@ -13,6 +13,9 @@ the room reported, and a video from the audience's side.
     C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3
         three people: tracking.Attention picks whom to look at (they take turns; a passer-by is not looked at);
         the one looked at turns green
+    C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage
+        the interactive mode: drag the head onto the ring in front of greet -- the arm stops, perks up, turns to
+        you and follows you along the wall (B); drag the pink hand above the head (C); step off: a nod, back
 
 Per scenario: geo/tracking/<name>.json in, geo/tracking/<name>_isaac.json out
 (tracking error of the simulated arm against the commands, contacts between
@@ -41,6 +44,9 @@ ap.add_argument("scenarios", nargs="*")
 ap.add_argument("--live", action="store_true", help="drag the target in a window; the tracking layer runs live")
 ap.add_argument("--minutes", type=float, default=0.0, help="--live: stop after this long (0: until closed)")
 ap.add_argument("--seed", type=int, default=1, help="--live: the greet clips' order")
+ap.add_argument("--engage", action="store_true",
+                help="--live: the interactive mode (engage.py): stand on the spot in front of greet (the ring on "
+                     "the floor), the arm stops its clip and follows you (B); drag the pink hand up (C)")
 ap.add_argument("--people", type=int, default=1, help="--live: this many heads to drag (several: Attention picks one)")
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
@@ -154,6 +160,17 @@ def walker(k, n, home, along, now):
     return (home[0], home[1], z), not (k == 1 and 40.0 <= now % 60.0 < 45.0)
 
 
+def engage_walker(en, now):
+    """--live --engage --headless: person 1 -- off the spot, onto it at 3 s,
+    swaying 0.25 m along it from 8 s, (a hand up 16-21 s), off at 24 s, back
+    on at 32 s, staying past the 30 s cap."""
+    on = 3.0 <= now < 24.0 or now >= 32.0
+    du = 0.25 * math.sin(2.0 * math.pi * (now - 8.0) / 6.0) if 8.0 <= now < 24.0 else 0.0
+    dv = 0.0 if on else 1.2
+    ax, tw = en.axes[0], en.axes[2]
+    return (en.spot[0] + du * ax[0] - dv * tw[0], en.spot[1] + du * ax[1] - dv * tw[1], 1.62)
+
+
 def live():
     """The tracking layer live: the greet clips back to back (track_eval's
     base motion), --people heads to drag (each its own prim; a body follows
@@ -169,9 +186,17 @@ def live():
     cfg = json.load(open(args.config))
     env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
     graph = S.Graph.load(S.compiled_path(os.path.abspath(args.config)))
+    model = C.load_model("fr20")
     base, clips = TE.base_motion(graph, "greet", 4 * 3600.0, seed=args.seed)
     ti, att = TR.TargetInput(), TR.Attention()
-    gz = TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=C.load_model("fr20"))
+    new_gaze = lambda: TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=model)  # noqa: E731
+    gz = new_gaze()
+    en = player = None
+    if args.engage:
+        import engage as EN
+        player = EN.ClipPlayer(graph, "greet", args.seed)
+        base = player.at
+        en = EN.Engage(cfg, graph.hubs["greet"], env, model, dt=PHYSICS_DT)
     eyes = S.audience_eyes(cfg)
     _, along, _ = TS.zone_frame(cfg)
     n = max(1, args.people)
@@ -195,6 +220,14 @@ def live():
         bodies.append((b, b.AddTranslateOp()))
     target, target_op = ring(stage, "/World/Target", 0.16, (0.2, 0.95, 0.3))
     gaze = line(stage, "/World/Gaze", (0.2, 0.95, 0.3))
+    hand = spot_curve = None
+    if en is not None:                                   # the spot on the floor, a hand for person 1 (mode C)
+        spot_root, spot_op = ring(stage, "/World/Spot", en.r, (0.9, 0.85, 0.3))
+        spot_op.Set(Gf.Vec3d(en.spot[0], en.spot[1], 0.012))
+        spot_curve = UsdGeom.BasisCurves(stage.GetPrimAtPath("/World/Spot/Curve"))
+        hand, hand_op = marker(stage, "/World/LiveHand1", 0.06, (1.0, 0.45, 0.7))
+        hand_home = tuple(homes[0][i] + along[i] * 0.25 for i in range(2)) + (homes[0][2] - 0.5,)
+        hand_op.Set(Gf.Vec3d(*hand_home))
     world.reset()
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
@@ -242,17 +275,37 @@ def live():
     wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
     worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
     tracked_ticks, looked, green, looked_at = 0, None, None, set()
+    states, lit, vel_ratio, prev_q = {}, None, 0.0, None
+    import robot_profile as RP
+    vlim = RP.velocity_limits(RP.load("fr20"))
     while app.is_running():
         now = ticks * PHYSICS_DT
+        if player is not None:
+            player.advance(now)
         pos = []
         for k, (h, h_op) in enumerate(heads):
-            if args.headless:
+            if args.headless and en is not None and k == 0:
+                p, there[k] = engage_walker(en, now), True
+                h_op.Set(Gf.Vec3d(*p))
+            elif args.headless:
                 p, there[k] = walker(k, n, homes[k], along, now)
                 h_op.Set(Gf.Vec3d(*p))
             else:
                 p = tuple(UsdGeom.Xformable(h.GetPrim()).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
                           .ExtractTranslation())
             pos.append(p)
+        hand_p = None
+        if hand is not None:
+            if args.headless:
+                hand_p = (pos[0][0] + 0.2 * along[0], pos[0][1] + 0.2 * along[1],
+                          2.0 if 16.0 <= now < 21.0 else pos[0][2] - 0.5)          # raised 16-21 s
+                hand_op.Set(Gf.Vec3d(*hand_p))
+            else:
+                hand_p = tuple(UsdGeom.Xformable(hand.GetPrim()).ComputeLocalToWorldTransform(
+                    Usd.TimeCode.Default()).ExtractTranslation())
+        if en is not None and ticks % feed == 0:
+            en.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now,
+                      [(1,) + hand_p + (1.0, now)] if hand_p and there[0] else [])
         if ticks % feed == 0:
             if n == 1:
                 if there[0]:
@@ -266,7 +319,21 @@ def live():
                 elif ti.seen is not None:
                     ti.lost()
         tgt = ti.now(now)
-        q = gz.step(base(now), tgt, now, [base(now + d) for d in TR.AHEAD_S])
+        if en is None or en.state == "OFF":
+            q = gz.step(base(now), tgt, now, [base(now + d) for d in TR.AHEAD_S])
+        if en is not None:
+            q = en.step(q, now)
+            states[en.state] = states.get(en.state, 0) + 1
+            if en.resume:                                    # back at the hub: the clips go on, no gaze left over
+                player.restart(now)
+                gz = new_gaze()
+            if en.state != lit:                              # the spot lights up while it is on
+                spot_curve.GetDisplayColorAttr().Set([Gf.Vec3f(*((0.25, 1.0, 0.4) if en.state != "OFF"
+                                                                 else (0.9, 0.85, 0.3)))])
+                lit = en.state
+        if prev_q is not None:
+            vel_ratio = max(vel_ratio, max(abs(a - b) / PHYSICS_DT / v for a, b, v in zip(q, prev_q, vlim)))
+        prev_q = list(q)
         robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
         for k in range(n):
             bodies[k][1].Set(Gf.Vec3d(pos[k][0], pos[k][1], pos[k][2] - 0.9))    # the body under the head
@@ -296,6 +363,10 @@ def live():
                           "contacts %d\ntracking error %.2f deg   %.0f s" % (
                               "looking at " if n > 1 else "", who, off[0], off[1], gz.unsafe, gz.shrunk,
                               getattr(gz, "held_slow", 0), len(contacts), worst, now))
+            if en is not None:
+                label.text = ("INTERACTIVE: %s%s   (%d so far)\n" % (
+                    en.state, (" " + en.mode) if en.state == "TRACK" else "", en.engagements)
+                    if en.state != "OFF" else "clips (stand on the ring to start)\n") + label.text
         ticks += 1
         if not args.headless:
             ahead = now - (time.monotonic() - wall0)
@@ -307,7 +378,11 @@ def live():
            "tracked_share": round(tracked_ticks / max(1, ticks), 2), "looked_at": sorted(looked_at),
            "turns": att.turns, "unsafe_ticks": gz.unsafe, "shrunk_ticks": gz.shrunk,
            "held_slow_ticks": getattr(gz, "held_slow", 0), "arm_room_contacts": len(contacts),
-           "tracking_max_deg": round(worst, 3), "wall_s": round(time.monotonic() - wall0, 1)}
+           "tracking_max_deg": round(worst, 3), "wall_s": round(time.monotonic() - wall0, 1),
+           "joint_speed_of_limit": round(vel_ratio, 3)}
+    if en is not None:
+        out["engage"] = {"engagements": en.engagements, "refused": en.refused, "unsafe_ticks": en.unsafe,
+                         "seconds_in": {k: round(v * PHYSICS_DT, 1) for k, v in states.items()}}
     print("[track] live %s" % json.dumps(out), flush=True)
 
 

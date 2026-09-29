@@ -668,6 +668,7 @@ C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --graph geo/s
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless                  # tracking scenarios (after track_eval --export)
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live                             # drag the person's head, the arm looks
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3                  # a crowd: whom it looks at (green)
+C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage                    # the interactive mode: stand on the ring
 C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --video   # the LED strip's cable
 C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start              # a pose as USD, for other tools
 ```

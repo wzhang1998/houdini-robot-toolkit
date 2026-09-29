@@ -629,8 +629,16 @@ see that the mode began): scripts/engage.py.
      face them), track (B: along with the person, C: up with a raised hand), leave /
      lost / 30 s: a nod, back to the hub, the clips go on; hysteresis at the spot's
      edge, a cooldown; /robot/state TRACK for TD's own light.
-  4c track_sim spot scenarios and track_eval; 4d Isaac live (the spot drawn, heads
-     and a hand to drag); then show_stream's Runner.
+     Done: engage.Engage + ClipPlayer; its self-test (enter after 1 s, faces them,
+     B follows a sway, C rises to a hand, goodbye 0.7 s after they step off, 30 s cap,
+     a passer-by and the edge do not trigger, 24 % of the joints' speed, every pose
+     clear). The first run chose another IK branch for the perk-up and the planned
+     move's check refused it (through the ceiling): IK from the pose sent, 90 deg refused.
+  4d Isaac live: run_tracking --live --engage (the spot as a ring that lights up, the
+     head and a pink hand to drag); headless 72 s: two engagements, 0 refused, 0 unsafe,
+     0 contacts, faster than real time. Done.
+  Next: TD's light for TRACK (/robot/state), show_stream's Runner (a TRACK state, the
+  clips cut and resumed), the OAK-D process (people + hands).
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a

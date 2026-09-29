@@ -153,6 +153,7 @@ class Engage:
         self.rest_until = -1.0
         self.unsafe = self.refused = self.engagements = 0
         self.q = list(hub_q)
+        self.fresh = False
 
     # --- the people -------------------------------------------------------------
     def _on_spot(self, p, r):
@@ -182,6 +183,7 @@ class Engage:
                 self.hands[pid] = (x, y, z, now)
         for pid in [k for k, pr in self.people.items() if now - pr["last"] > LEAVE_S]:
             del self.people[pid]
+        self.fresh = True                                  # TRACK aims again (not every tick: the data's rate)
 
     def _candidate(self, now):
         import tracking as TR
@@ -265,8 +267,9 @@ class Engage:
         elif self.state == "PERK":
             if now - self.t_state >= PERK_S:
                 self._set("TRACK", now)
-        if self.state == "TRACK":
+        if self.state == "TRACK" and (self.fresh or self.inp.target_position is None):
             target, self.mode = self._track_target(now)
+            self.fresh = False
         elif self.state == "BYE":
             if self.reached and now - self.t_state >= BYE_S:
                 if self._plan_ok(self.hub):
@@ -327,6 +330,33 @@ class Engage:
         self.inp.target_velocity = [0.0] * 6
         self.reached = False
         self._set("BYE", now)
+
+
+class ClipPlayer:
+    """A hub's idle clips back to back in a seeded order, as the show plays
+    them, that the interactive mode can cut short: restart(now) begins a clip
+    from the hub at now (where RETURN leaves the arm). advance(now) once a
+    tick; at(t) reads without moving on (the look-ahead reaches the next clip)."""
+
+    def __init__(self, graph, hub="greet", seed=1):
+        import random
+        self.clips = sorted(graph.idle(hub), key=lambda s: s.name)
+        self.rng = random.Random(seed)
+        self.restart(0.0)
+
+    def restart(self, now):
+        self.t0, self.clip, self.next = now, self.rng.choice(self.clips), self.rng.choice(self.clips)
+
+    def advance(self, now):
+        while now - self.t0 >= self.clip.duration:
+            self.t0 += self.clip.duration
+            self.clip, self.next = self.next, self.rng.choice(self.clips)
+
+    def at(self, t):
+        s = t - self.t0
+        if s < self.clip.duration:
+            return self.clip.at(max(0.0, s))
+        return self.next.at(min(s - self.clip.duration, self.next.duration))
 
 
 def self_test():
@@ -462,6 +492,16 @@ def self_test():
     walk = lambda t: (-1.2 + 1.2 * t, 0.0, 1.65) if t < 2.0 else None
     en, log = run(walk, 6.0)
     check("someone walking through the spot at 1.2 m/s: not engaged", en.engagements == 0)
+    pl = ClipPlayer(g)
+    qa, qb_ = pl.at(0.0), pl.at(pl.clip.duration - 1e-6)
+    ahead = pl.at(pl.clip.duration + 0.5)                   # the look-ahead reads the next clip, moves nothing
+    first_clip = pl.clip
+    pl.advance(pl.clip.duration + 0.5)
+    moved = pl.clip is not first_clip and max(abs(a - b) for a, b in zip(pl.at(pl.t0 + 0.5), ahead)) < 1e-9
+    pl.restart(7.3)
+    check("the clip player: clips from the hub, back to back; cut short, the next starts at the hub",
+          max(abs(a - b) for a, b in zip(qa, hub)) < 0.05 and max(abs(a - b) for a, b in zip(qb_, hub)) < 0.05
+          and max(abs(a - b) for a, b in zip(pl.at(7.3), hub)) < 0.05 and moved)
     hover = lambda t: (0.28 + 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.5)), 0.0, 1.62)
     en, log = run(hover, 15.0)
     check("hovering at the spot's edge (0.28-0.40 m out): engaged once, no goodbye from the edge",
