@@ -253,6 +253,37 @@ stopped run keeps them):
 
 Send me the JSON of each run; they go into `docs/results.md`.
 
+## 6d. TouchDesigner with the show (TD-ROBOT-UVSCAN) 🔴
+
+The TD side (private repo Volvox-Labs/TD-ROBOT-UVSCAN, `robot_uvscan_party.toe`):
+the robot's state, STOP, Trigger / Greet / Calm, and the LED pixel scan with
+its previews. Tested on SimMachine 2026-09-28 (trigger, scan, the strip's u
+0 -> 1 in one pass, STOP with the controller's StopMotion reply, STOP with no
+show running). On the real arm it is new: run it next to show_ui, same PC.
+
+**Before**: in TD, `robot_link` > Controls > **Controller IP** = the real
+arm's IP (STOP's StopMotion straight to the controller); **OSC Active** on.
+`pixel_scan` > Output > **Enable LEDs** stays off (no strip yet). In
+show_ui, "Status also to" `127.0.0.1:9002` (the default). Hand on the E-stop.
+
+1. show_ui, Real FR20, Move to start, then Start the show at 0.3. The TD
+   monitor should turn from OFFLINE to IDLE, the Status page fill in, `link ok`.
+2. **Trigger scan** in TD: CAPTURE, then SCANNING when the arm heads for the
+   canvas; the purple line walks across the frozen image left to right once,
+   the LED bar follows the image, the canvas preview writes it faintly; then
+   FADING (60 s), IDLE.
+3. **Greet**, then **Calm** in TD: the arm plays them after the running clip.
+4. **STOP in TD** (button or F12) during an idle clip: the arm stops at once,
+   the state goes STOPPING -> STOPPED, the note says `StopMotion to <IP>: 0`,
+   show_ui shows the show ended. Reset in TD; show_ui Start again.
+5. **STOP in TD during show_ui's Move to start** (Move speed 10 %): the arm
+   stops (StopMotion straight to the controller; no show is running, so TD
+   waits for that reply before STOPPED).
+6. OSC button off: TD goes OFFLINE, the show goes on; on again: IDLE.
+
+Film steps 2 and 4. If TD misbehaves, the show does not depend on it: STOP in
+show_ui or the E-stop.
+
 ## 7. Review the real-robot trajectory (does not move, Houdini)
 
 The `*_actual_*.csv` produced by Record can be played back directly: select it in robot_arm's **Output > Import CSV** and press Import. Even a locked instance can import now; the file is read live.
