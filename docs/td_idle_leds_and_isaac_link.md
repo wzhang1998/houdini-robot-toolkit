@@ -1,10 +1,48 @@
 # Idle LED animations, their Isaac preview, TouchDesigner <-> Isaac
 
-Research, 2026-09-29 (second priority after the cable; nothing built yet).
+Research, 2026-09-29 (second priority after the cable); built the same day -- see What was built.
 The user wants TouchDesigner to play LED animations designed per clip while
 the arm is not scanning, to preview them in Isaac Sim, the scan preview to
 show TD's banana by default, and to know whether TD can drive Isaac's
 run_show.
+
+## What was built (2026-09-29, later that day)
+
+The research below is kept as it was; what runs now differs from it:
+
+- **Where the idle LEDs play**: not greet only. The show sends
+  `/robot/paper` (show.paper_light: how much the strip lights the paper,
+  a fraction of the scan's light square on at 6 cm) and TD's `idle_leds`
+  plays in idle clips and moves (States `IDLE MOVE`, Hubs `*`) while it is
+  under Paper Light Limit 0.001 -- greet, high and low always (at most
+  0.0008 over party), rest (up to 0.024: it faces the paper) and moves
+  towards it stay dark -- and while TD is IDLE or FADING (TD States; the
+  minute after a scan: the paper gate keeps its image clean). Unknown
+  paper light (-1) is dark.
+- **The show's status** also carries `/robot/family`, `/action`,
+  `/clip_t`, `/clip_len` (wall s), `/beat`, `/bpm_now` (the tempo played),
+  `/facing` (the LEDs to the guests, 0..1).
+- **TD** (TD-ROBOT-UVSCAN `td-modules/idle_leds`): four layers in a 60 x 1
+  float TOP -- a breath over the clip, a comet with a trail driven by the
+  arm's speed, a pulse on the beat, dimmed as the LEDs turn from the
+  guests -- weighted per family by the `looks` table (then `move`, the
+  Laban action, `default`), Contrast (a power curve), smoothed, then faded
+  at the clip's ends, gated, Brightness (0-100 % of Master) on the CHOP
+  side so a closed gate is exactly dark. pixel_scan takes the brighter of
+  it and the scan; Enable LEDs stays the last gate. Its parameters: the
+  TD repo's README.
+- **Isaac, live** (not the shared pattern module proposed below: the
+  patterns are designed in TD): `run_show.py --td-live` sends TD the
+  status on 9002 and draws what TD sends back -- the strip's 60 LEDs
+  (Art-Net, 127.0.0.1:6455; artnet.py, isaac/led_viz.py) and the canvas
+  preview (canvas_link.py on 6457, isaac/canvas_viz.py). TD: pixel_scan >
+  Output > Preview Art-Net IP 127.0.0.1.
+- **Isaac, in a video**: `run_show.py --demo --td-live` records the run
+  with TD's LEDs and canvas (td_capture.py); `replay_render.py` renders it
+  at leisure. Without TD: `--demo` simulates the paper (canvas_model.py:
+  pixel_scan and canvas_sim.glsl in numpy, the banana by default).
+- **TD's pixel_scan Source**: Text / Pattern (the banana for now) /
+  Capture (the Capture Image File).
 
 ## 1. What TD needs to animate per clip
 
@@ -110,7 +148,7 @@ from greet stays dark).
   it is slower than real time, TD's wall-clock timers (ack 3 s, watchdog)
   can misfire.
 
-## Plan (proposed, not started)
+## Plan (as proposed; see What was built above for what ran)
 
 1. Isaac <-> TD: `--osc-out`, `/robot/stop`. Done when TD leaves OFFLINE,
    its Trigger scans in Isaac, STOP holds it.
