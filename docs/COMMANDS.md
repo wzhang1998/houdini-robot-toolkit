@@ -76,7 +76,17 @@ C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage           
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3                  # no TD: a crowd, whom it looks at
 ```
 
-SimMachine, the people from TD (SimMachine only):
+The interactive mode on its own (SimMachine or the real arm): the start
+pose, the v9 library's idle clips at random (facing the guests less than
+the show), somebody on the spot -> the arm comes to greet and turns to
+them; End -> back to the start pose. TD people_track Active on.
+
+```bash
+python scripts/track_ui.py                                # the window: target, Start, End, STOP (real arm: red, every move confirmed)
+python scripts/track_mode.py --sim --ip 192.168.116.128   # without the window
+```
+
+SimMachine, the older greet-only test (SimMachine only):
 
 ```bash
 python scripts/track_test.py --sim --ip 192.168.116.128 --minutes 2 --engage
@@ -106,6 +116,7 @@ own placement.
 python scripts/tracking.py && python scripts/engage.py && python scripts/track_sim.py
 python scripts/femto_format.py && python scripts/mocap_cmu.py && python scripts/mocap_scenes.py
 python scripts/track_osc.py && python scripts/track_runner.py && python scripts/track_test.py --self-test
+python scripts/track_mode.py --self-test && python scripts/track_ui.py --self-test
 uv run scripts/show_stream.py --self-test
 ```
 

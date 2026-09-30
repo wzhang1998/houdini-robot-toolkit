@@ -356,8 +356,12 @@ by default (the Active toggle).
 
 - Isaac: `run_tracking.py --live --osc-in 9010 [--engage]` (without
   `--osc-in`: drag the person's head; `--people N` for a crowd).
-- SimMachine: `python scripts/track_test.py --sim --engage` — the people
-  from 9011, streamed as show_stream streams the show. SimMachine only.
+- The interactive mode on its own (SimMachine or the real arm):
+  `python scripts/track_ui.py` (track_mode.py) — the start pose, the v9
+  idle clips at random, facing the guests less often than the show;
+  somebody on the spot and the arm comes to greet and turns to them; End
+  goes back to the start pose. On the real arm every move is confirmed.
+- SimMachine, greet only: `python scripts/track_test.py --sim --engage`.
 
 **Ports:** 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in,
 9010 / 9011 the tracking test's people (Isaac / SimMachine), 6455 Isaac's

@@ -512,17 +512,20 @@ def tracking(start, samples, dt, feedback):
 # test clips, recording, read-only check
 # --------------------------------------------------------------------------
 
-def move_plan(q_from, q_to, env_path, robot="fr20"):
+def move_plan(q_from, q_to, env_path, robot="fr20", env=None):
     """The controller MoveJ(s) from q_from to q_to, checked against the cell
     with move margins (safe_move.py): (waypoints ending at q_to, one line),
-    or (None, why) when no clear route is found. No env file: a single
-    unchecked move."""
-    if not env_path or not os.path.exists(env_path):
-        return [list(q_to)], "not checked (no --env)"
+    or (None, why) when no clear route is found. env: the room itself (a
+    show's, with its canvas: show.show_env) in place of env_path's. No env
+    file: a single unchecked move."""
     import collision
     import safe_move
+    if env is None:
+        if not env_path or not os.path.exists(env_path):
+            return [list(q_to)], "not checked (no --env)"
+        env = collision.load_env(env_path)
     lim = robot_profile_limits(robot)
-    return safe_move.route(q_from, q_to, collision.load_env(env_path), collision.load_model(robot), lim)
+    return safe_move.route(q_from, q_to, env, collision.load_model(robot), lim)
 
 
 def robot_profile_limits(robot):
@@ -531,11 +534,12 @@ def robot_profile_limits(robot):
     return robot_profile.motion_limits(prof)
 
 
-def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label):
+def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label, env=None):
     """MoveJ to target through move_plan()'s waypoints. confirm(text) -> bool
-    asks on hardware. Returns the final offset (deg) or None when refused."""
+    asks on hardware. Returns the final offset (deg) or None when refused.
+    env: the room to check against in place of env_path's (move_plan)."""
     cur = ctrl.joints()
-    path, line = move_plan(cur, target, env_path, robot)
+    path, line = move_plan(cur, target, env_path, robot, env)
     report[key + "_path"] = line
     if path is None:
         report["aborted"] = "%s: %s" % (label, line)

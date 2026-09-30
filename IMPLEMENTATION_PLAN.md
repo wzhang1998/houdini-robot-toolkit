@@ -691,6 +691,22 @@ camera, a Render TOP. Calibrate on the simulated calibration recording
 came back within 2.6 cm of the sim's placement. TD -> Isaac (engage,
 1 min): 1798 frames, 4 engagements, 0 unsafe, 0 contacts.
 
+## Stage 11c: The interactive mode on its own, SimMachine and the real arm (2026-09-29, the user's go)
+**Goal**: tracking as its own mode: to the start pose; the v9 library's idle
+clips at random, facing the guests less (so turning to someone shows);
+somebody in the zone -> to greet and engage; a button back to the start
+pose and end.
+**Done**: track_mode.py (AwaySelector / AwayRunner over show.Runner: 74 % ->
+50 % of the time facing the guests; CALL -> greet -> WAIT -> Engage; End
+latched; one tick a point, never a jump; start/return MoveJ checked with
+the paper) and track_ui.py (real arm red, a checklist every run, clips 0.3
+and the interactive mode 0.2 of the limits by default, every move
+confirmed, its closing stops the mode). SimMachine with TD (mc_wave_call):
+131 s, 7 engagements, 0 refused, 0 unsafe, worst step 0.67 of the limit,
+at a hub, back to the start pose. Also: docs/safety_audit_2026-09-29.md
+(the party show's gaps; its fixes wait for the user's go).
+**Status**: Complete on SimMachine; the real arm is the user's run.
+
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
 canvas the fab team makes much larger than the scan, standing on the

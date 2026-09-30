@@ -260,6 +260,12 @@ class Engage:
                 and (self.glass is None or TR.glass_distance(self.glass, pr["pos"]) <= TR.BAND_M)
                 and TR.is_waving(pr.get("hands", []), now))
 
+    def candidate(self, now):
+        """Whom the mode would engage now (on the spot DWELL_S, or waving), without starting: None when
+        nobody, or while resting after a goodbye. For a player whose arm is elsewhere (track_mode: it
+        comes to the hub first)."""
+        return self._candidate(now) if now >= self.rest_until else None
+
     def _candidate(self, now):
         import tracking as TR
         ok = [(pr["in_since"] if pr["in_since"] is not None else now, pid) for pid, pr in self.people.items()
@@ -663,6 +669,17 @@ def self_test():
           en.engagements == 0)
     en, log = run_wave(lambda t: (-1.2 + 0.9 * t, 0.0, 1.62), 0.5, 3.0)
     check("waving while walking past (0.9 m/s, through the zone): not engaged", en.engagements == 0)
+    en = Engage(cfg, hub, env0, model)                       # candidate(): asked without stepping (the arm elsewhere)
+    for i in range(int(3.0 / en.dt)):
+        now = i * en.dt
+        if i % 4 == 0:
+            en.update([(1, spot[0], spot[1], 1.62, 0.9, now)], now)
+        if i == int(0.5 / en.dt):
+            early = en.candidate(now)
+    check("candidate(): nobody before the dwell, the one on the spot after it -- and nothing moves",
+          early is None and en.candidate(now) == 1 and en.state == "OFF", (early, en.candidate(now), en.state))
+    en.rest_until = now + 1.0
+    check("... nobody while resting after a goodbye", en.candidate(now) is None)
     hidden = lambda t: [p for p in [(1, 0.0, 0.0, 1.62), (2, 0.5, 0.3, 1.7)] if not (p[0] == 1 and 8.0 <= t < 9.2)]
     en, log = run_many(hidden, 14.0)
     check("hidden behind someone for 1.2 s: still followed (%.1f s allowed with people near)" % LOST_CROWD_S,
