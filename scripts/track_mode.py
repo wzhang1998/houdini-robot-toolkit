@@ -8,6 +8,7 @@ to the start pose.
 
     python scripts/track_mode.py --self-test
     python scripts/track_mode.py --sim --ip 192.168.116.128 --engage-share 0.35
+    python scripts/track_mode.py --sim --ip 192.168.116.128 --osc --osc-out 127.0.0.1:9002   # + TD's LEDs
     python scripts/track_mode.py --hardware --ip IP --speed 0.3            # asks before every move
     uv run scripts/track_ui.py                                             # the window for it
 
@@ -17,7 +18,9 @@ Guard every tick, the feedback thread, the fault path); the start and the
 return are its checked MoveJ (fairino_player.move_checked). Commands on
 stdin, one a line (track_ui sends them): `end` (finish and go back to the
 start pose), `stop` (a software stop now). Status on stdout: `[status] {json}`
-twice a second.
+twice a second. With --osc, TouchDesigner hears the arm as in the show
+(robot_status: the idle clips with their cues; at greet the look family) and
+its LEDs play; its Pause ends the mode, its STOP stops.
 
 What plays:
 - IDLE: show.Runner over the library's idle clips (no scan, no big wipes,
@@ -238,6 +241,26 @@ class TrackMode:
         self.mode = "CALL"
         self.log("%.2f somebody to engage: to greet after %s" % (self.clock, self.r.seg.name))
 
+    @property
+    def g(self):
+        """The graph: show.OscBridge computes the LEDs' cues of every clip before the stream (warm_cues)."""
+        return self.r.g
+
+    def robot_status(self, lag_s=0.0, rate=1.0):
+        """What TouchDesigner hears (show.osc_messages; show_stream.Commands.status asks for it): the Runner's
+        status while a clip plays -- the idle LEDs as in the show, cues and all -- and, at greet (WAIT,
+        ENGAGE), an IDLE of the look family (the LEDs' eyes on) with no clip cues."""
+        s = self.r.status(lag_s, rate * self.clip_speed)
+        if self.mode in ("WAIT", "ENGAGE"):
+            t = round(self.clock - self.t_wait, 3)
+            s.update(state="IDLE", clip="interactive", hub=GREET, family="look",
+                     action="wait" if self.mode == "WAIT" else self.en.state.lower(), clip_t=t, clip_len=t + 10.0,
+                     progress=0.0, beat=0.0, anticipate=0.0, release=0.0, accent_in=-1.0, led_speed_a=0.0,
+                     led_speed_b=0.0)
+        if self.state == "FAULT":
+            s["state"] = "FAULT"
+        return s
+
     def status(self):
         en = self.en
         return {"t": round(self.clock, 1), "mode": self.mode, "state": self.state, "clip": self.r.seg.name,
@@ -279,6 +302,13 @@ def main(argv=None):
                          "hardware first tests: 0.2)")
     ap.add_argument("--minutes", type=float, default=240.0, help="an end by itself after this long")
     ap.add_argument("--osc-in", type=int, default=PORT)
+    ap.add_argument("--osc", action="store_true",
+                    help="the status to TouchDesigner as the show's (the config's osc ports): its LEDs play; its "
+                         "Pause ends the mode, its STOP stops")
+    ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
+                    help="with --osc: the status here too (repeatable)")
+    ap.add_argument("--osc-lag-ms", type=float, default=None,
+                    help="how far the arm is behind the commands, for the LEDs' cues (default 120 hardware, 40 sim)")
     ap.add_argument("--move-vel", type=float, default=None, help="MoveJ %% to the start pose (20 sim, 10 hardware)")
     ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"))
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "track_mode"))
@@ -292,6 +322,12 @@ def main(argv=None):
     share = a.engage_share if a.engage_share is not None else (0.2 if a.hardware else 0.35)
     if not 0.05 <= share <= 0.35:
         ap.error("--engage-share within 0.05..0.35 (as tested)")
+    also = []
+    for t in a.osc_out:
+        host, _, port = t.rpartition(":")
+        if not host or not port.isdigit():
+            ap.error("--osc-out wants HOST:PORT, got %r" % t)
+        also.append((host, int(port)))
     dt = 1.0 / SS.RATE_HZ
     mode, graph, env = build(a.config, dt, speed, share, TO.TrackIn(a.osc_in), a.seed,
                              out=lambda s: print(s, flush=True))
@@ -329,7 +365,18 @@ def main(argv=None):
     prof = RP.load("fr20")
     guard = SS.Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, min(1.0, max(speed, share) * 1.1))
     link = SS.Link(a.ip)
-    out, ticks_cmd, start = SS.stream(ctrl, link, mode, cmds, guard, dt, 1.0, a.minutes, analyse=False)
+    osc = None
+    if a.osc:                                            # TouchDesigner hears the arm as in the show: its LEDs play
+        o = cfg["osc"]
+        lag_ms = a.osc_lag_ms if a.osc_lag_ms is not None else (120.0 if a.hardware else 40.0)
+        osc = S.OscBridge(cmds, o["listen_port"], o["send_host"], o["send_port"], also=also, lag_s=lag_ms / 1000.0,
+                          cfg=cfg)
+        print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]), flush=True)
+    try:
+        out, ticks_cmd, start = SS.stream(ctrl, link, mode, cmds, guard, dt, 1.0, a.minutes, osc=osc, analyse=False)
+    finally:
+        if osc is not None:
+            osc.close()
     out.update(rep)
     out["track_mode"] = dict(mode.status(), stats=mode.en.engagements)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -423,8 +470,11 @@ def self_test():
                 bad += 1
             prev = q
             qs.append(q)
+            if i % 125 == 0:                                     # what TouchDesigner would hear, once a second
+                holder.setdefault("told", []).append((m.mode, m.robot_status(0.04, 1.0), q))
             if m.state == "PAUSED":
                 break
+        m.told = holder.get("told", [])
         return m, logs, worst, bad, qs
 
     nobody = lambda t: ([], [])                                   # noqa: E731
@@ -442,6 +492,21 @@ def self_test():
           [x for x in logs if "back" in x])
     check("... every pose clear (sampled), no step over the limits (%.2f of them)" % worst,
           bad == 0 and worst <= 1.0 and m.en.unsafe == 0 and m.en.refused == 0, (bad, round(worst, 3), m.en.unsafe))
+    idle = [s for md, s, _ in m.told if md == "IDLE"]
+    lit = [s for s in idle if s["state"] in ("IDLE", "MOVE")]            # the states idle_leds lights
+    check("the LEDs' status (TouchDesigner, as the show's): the idle clips as they play -- their state, family, "
+          "cues", idle and len(lit) >= 0.9 * len(idle) and all("anticipate" in s for s in idle),
+          "%d of %d idle seconds lit" % (len(lit), len(idle)))
+    engaged = [s for md, s, _ in m.told if md == "ENGAGE"]
+    check("... engaged: IDLE, the look family (the eyes), no clip cues", engaged and all(
+        s["state"] == "IDLE" and s["family"] == "look" and s["anticipate"] == 0.0 and s["clip_len"] > s["clip_t"]
+        for s in engaged), engaged[:1])
+    msgs = [S.osc_messages(s, q) for _, s, q in m.told]
+    import show_stream as SS
+    via = SS.Commands(m).status(0.04)
+    check("... every status makes the show's OSC messages; the stream's Commands give TD this status",
+          all(len(x) == len(msgs[0]) for x in msgs) and via["state"] in ("IDLE", "MOVE", "PAUSED")
+          and "mode" not in via, (len(msgs), via.get("state")))
     m, logs, worst, bad, qs = run(nobody, 200.0, end_at=30.0)
     check("End: the clip finishes at a hub, still, then the mode is PAUSED (the stream ends)",
           m.state == "PAUSED" and m.r.state == "PAUSED" and max(abs(x - y) for x, y in zip(qs[-1], qs[-2])) < 1e-9,

@@ -120,7 +120,7 @@ class Commands:
     def status(self, lag_s=0.0):
         """The Runner's status, time left in wall seconds (at this speed); the
         scan's position where the arm is, lag_s of wall time behind."""
-        s = self.runner.status(lag_s=lag_s, rate=self.speed_now)
+        s = getattr(self.runner, "robot_status", self.runner.status)(lag_s=lag_s, rate=self.speed_now)   # track_mode's
         s["time_left"] = round(s["time_left"] / max(self.speed_now, 1e-6), 2)
         return s
 

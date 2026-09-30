@@ -79,11 +79,14 @@ C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3         
 The interactive mode on its own (SimMachine or the real arm): the start
 pose, the v9 library's idle clips at random (facing the guests less than
 the show), somebody on the spot -> the arm comes to greet and turns to
-them; End -> back to the start pose. TD people_track Active on.
+them; End -> back to the start pose. TD people_track Active on (Send to
+SimMachine / Robot). The LEDs play in TD as in the show (the window's LEDs
+box, on by default: `--osc --osc-out 127.0.0.1:9002`); TD's Pause ends the
+mode, its STOP stops.
 
 ```bash
 python scripts/track_ui.py                                # the window: target, Start, End, STOP (real arm: red, every move confirmed)
-python scripts/track_mode.py --sim --ip 192.168.116.128   # without the window
+python scripts/track_mode.py --sim --ip 192.168.116.128 --osc --osc-out 127.0.0.1:9002   # without the window
 ```
 
 SimMachine, the older greet-only test (SimMachine only):

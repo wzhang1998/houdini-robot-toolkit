@@ -46,8 +46,12 @@ def missing_packages(names=REQUIRED):
     return [n for n in names if importlib.util.find_spec(n) is None]
 
 
-def mode_argv(target, ip, speed, share, move_vel, port=9011, python=sys.executable):
-    """track_mode.py's command; ValueError for what the window does not allow."""
+TD_STATUS = "127.0.0.1:9002"          # TouchDesigner's robot_link (the show's status port there, as show_ui's)
+
+
+def mode_argv(target, ip, speed, share, move_vel, port=9011, python=sys.executable, leds=True):
+    """track_mode.py's command; ValueError for what the window does not allow. leds: the status to
+    TouchDesigner (--osc: its LEDs play, its Pause ends the mode, its STOP stops)."""
     if target not in ("sim", "hardware"):
         raise ValueError("target is sim or hardware, not %r" % target)
     ip = (ip or "").strip()
@@ -62,7 +66,7 @@ def mode_argv(target, ip, speed, share, move_vel, port=9011, python=sys.executab
         if not lo <= v <= hi:
             raise ValueError("%s %g: %g..%g" % (k, v, lo, hi))
     return [python, MODE, "--" + target, "--ip", ip, "--speed", "%g" % speed, "--engage-share", "%g" % share,
-            "--move-vel", "%g" % move_vel, "--osc-in", str(int(port)), "--stdin-control"]
+            "--move-vel", "%g" % move_vel, "--osc-in", str(int(port)), "--stdin-control"] + (["--osc", "--osc-out", TD_STATUS] if leds else [])
 
 
 class ModeLink:
@@ -155,6 +159,7 @@ def run_window():
     move_vel = tk.DoubleVar(value=DEFAULTS["sim"]["move_vel"])
     port = tk.IntVar(value=9011)
     checked = tk.BooleanVar(value=False)
+    leds = tk.BooleanVar(value=True)
     frm = ttk.Frame(root, padding=10)
     frm.grid(sticky="nsew")
     banner = tk.Label(frm, text="SimMachine", bg="#2f6db5", fg="white", font=("Segoe UI", 12, "bold"))
@@ -165,6 +170,8 @@ def run_window():
                                       ("MoveJ %", move_vel), ("People OSC port", port)), start=2):
         ttk.Label(frm, text=label).grid(row=r, column=0, sticky="w")
         ttk.Entry(frm, textvariable=var, width=18).grid(row=r, column=1, sticky="w")
+    ttk.Checkbutton(frm, text="LEDs: the status to TouchDesigner (OSC)", variable=leds).grid(
+        row=2, column=2, columnspan=2, sticky="w")
     chk = ttk.Checkbutton(frm, text="Area clear, a hand on the E-stop, no controller alarms", variable=checked)
     chk.grid(row=7, column=0, columnspan=3, sticky="w", pady=4)
     status = tk.StringVar(value="not running")
@@ -200,7 +207,7 @@ def run_window():
             return
         try:
             argv = mode_argv(t, ip.get(), float(speed.get()), float(share.get()), float(move_vel.get()),
-                             int(port.get()))
+                             int(port.get()), leds=bool(leds.get()))
         except (ValueError, tk.TclError) as e:
             messagebox.showerror("Not started", str(e))
             return
@@ -252,6 +259,9 @@ def self_test():
     a = mode_argv("sim", "192.168.116.128", 1.0, 0.35, 20.0)
     check("SimMachine: the mode's command; its stdin carries end / stop / answers, its end stops it",
           a[1:4] == [MODE, "--sim", "--ip"] and "--engage-share" in a and "--stdin-control" in a, a[1:])
+    check("... TouchDesigner hears it (--osc: its LEDs play) unless the LEDs box is off",
+          "--osc" in a and a[a.index("--osc-out") + 1] == "127.0.0.1:9002"
+          and "--osc" not in mode_argv("sim", "192.168.116.128", 1.0, 0.35, 20.0, leds=False))
 
     def refused(*args):
         try:
