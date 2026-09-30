@@ -192,6 +192,29 @@ def _mocap():
     return MS
 
 
+def recording(path, seed=1):
+    """A recording of the Femto (TD's people_track Record, or a simulation: femto_format's CSV) as a crowd
+    scenario ("rec:<path>"): its frames through femto_format, as TD sends them, 70-110 ms late; the
+    extrinsic: femto_extrinsic.json beside it (people_track's Calibrate), else the simulation's; truth(t):
+    the recording's own heads (the camera is all there is)."""
+    import femto_format as FF
+    folder = os.path.dirname(os.path.abspath(path))
+    ext = next(p for p in (os.path.join(folder, "femto_extrinsic.json"), os.path.join(folder, "femto_sim_extrinsic.json"))
+               if os.path.exists(p))
+    e = json.load(open(ext))
+    frames = FF.read(path)
+    t0 = frames[0][1] if frames else 0.0
+    heads = [({bid: FF.to_robot(e["R"], e["p"], j["head"][:3]) for bid, j in b if "head" in j}) for _, _, b in frames]
+
+    def truth(t):
+        k = int(round((t) * FPS))
+        return heads[k] if 0 <= k < len(heads) else {}
+    PEOPLE.add("rec:" + path)
+    events = FF.events(frames, e["R"], e["p"], seed)
+    events.sort(key=lambda x: x["t"])
+    return events, truth, (frames[-1][1] - t0 + 1.0 / FPS) if frames else 0.0
+
+
 def scenario(name, seed=1, cfg=None):
     """(events, truth, duration): events sorted by arrival, each
     {"t": arrival s, "addr": "/track/target" | "/track/lost", "args": [...]};
@@ -199,6 +222,8 @@ def scenario(name, seed=1, cfg=None):
     (PEOPLE): /track/people events and truth(t) -> {person id: (x, y, z)}."""
     if name.startswith("mc_"):
         return _mocap().scenario(name, seed, cfg)
+    if name.startswith("rec:"):
+        return recording(name[4:], seed)
     if name in PEOPLE:
         return _people_scenario(name, seed, cfg)
     fn, dur, opt, _ = SCENARIOS[name]
@@ -297,6 +322,14 @@ def self_test():
     check("people stand in the audience zone, in the robot's frame, heads ~1.6 m high",
           abs(first[2] - HEAD_Z) < 0.1 and math.dist(first[:2], c[:2]) < 1.5, first)
     check("the same seed, the same data", scenario("jump", seed=4)[0] == scenario("jump", seed=4)[0])
+    rec = os.path.join(ROOT, "geo", "tracking", "femto_sim_mc_wave_call.csv")
+    if _MS is not None and os.path.exists(rec):
+        a_ = scenario("mc_wave_call")[0]
+        b_ = scenario("rec:" + rec)[0]
+        close = len(a_) == len(b_) and all(x["addr"] == y["addr"] and x["args"][1:2] == y["args"][1:2] and all(
+            abs(u - v) < 1e-3 for u, v in zip(x["args"][2:], y["args"][2:])) for x, y in zip(a_, b_))
+        check("a recording (rec:, the Femto's format) plays as the scene it was written from: one door",
+              close, (len(a_), len(b_)))
     ev, truth, _ = scenario("jump")
     ids = sorted({e["args"][5] for e in ev if e["addr"] == "/track/target"})
     before = [e["args"] for e in ev if e["addr"] == "/track/target" and 7.5 < e["args"][4] < 8.0][-1]

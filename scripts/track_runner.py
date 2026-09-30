@@ -100,7 +100,6 @@ def run_scene(name, engage, seed=1, dt=1.0 / 120.0, loops=1, trace=None):
     """A mocap scene's /track/ events (mocap_scenes: the Femto's noise, latency, drops) through a Runner,
     `loops` times back to back; every pose checked against the room. (runner, contacts, joint speed share)."""
     import collision as C
-    import mocap_scenes as MS
     import robot_profile as RP
     import show as S
     import track_sim as TS
@@ -109,7 +108,7 @@ def run_scene(name, engage, seed=1, dt=1.0 / 120.0, loops=1, trace=None):
     graph = S.Graph.load(S.compiled_path(os.path.join(ROOT, "shows", "party.json")))
     model = C.load_model("fr20")
     rn = Runner(cfg, graph, env, model, dt, engage=engage, seed=seed)
-    events, _, dur = MS.scenario(name, seed, cfg)
+    events, _, dur = TS.scenario(name, seed, cfg)            # mc_ scenes, rec:<a recording> ...
     vlim = RP.velocity_limits(RP.load("fr20"))
     evs = [dict(e, t=e["t"] + k * dur) for k in range(loops) for e in events]
     i, hands, bad, vmax, prev = 0, [], 0, 0.0, None

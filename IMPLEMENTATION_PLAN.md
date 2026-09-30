@@ -657,6 +657,40 @@ see that the mode began): scripts/engage.py.
   (a `trouble` flag; the speed still governed). Isaac's summary counts
   every gaze (it is renewed after each engagement).
 
+## Stage 11b: Sim and the real Femto through one door (2026-09-29, the user: "能切换模拟和真机数据")
+**Goal**: the simulation is the Femto's own output, so the real camera
+replaces it with one switch: TD's Kinect Azure CHOP (Orbbec, USB) and the
+sim give the same channels -- `frame`, `timestamp`, `pN/id`,
+`pN/<32 k4abt joints>:tx/ty/tz/confidence` (read from TD itself; an empty
+slot has id 0) -- and everything after reads only those.
+**Stages**:
+1. `femto_format.py` (this repo): the channel layout, a recording as CSV
+   (a row a frame, a column a channel), mocap -> all 32 joints with the
+   Femto's noise and confidence, a recording -> /track/ events (offline
+   tests on real recordings too). mocap_scenes writes the sims in it.
+2. TD people_track: Source Sim (a recording played by a Script CHOP) /
+   Femto (Kinect Azure TOP + CHOP) -> Switch -> `bodies` -> the logic ->
+   OSC Out DATs (Isaac 9010, SimMachine 9011) and the view; Record writes
+   `bodies` in the same CSV. The extrinsic from CHOP space to the robot,
+   solved on site from 3+ known floor marks (Kabsch): the CHOP's axis
+   convention, which TD does not document, does not matter.
+3. The checks: TD screenshot; TD -> Isaac and TD -> SimMachine again.
+**Status**: Complete (2026-09-29). femto_format.py (the layout read from
+TD's own Kinect Azure CHOP; a pure-Python Kabsch that tries both
+handednesses and keeps the one with heads above feet); mocap_scenes writes
+all 32 joints with the tracker's confidence (a hidden hand only
+predicted), and its offline scenarios go through femto_format too;
+`rec:<csv>` plays any recording offline (a sim recording gives exactly its
+scene's events). TD people_track in /project1/tracking_test, Active off by
+default: File In DAT -> DAT to CHOP -> Trim (a Speed CHOP clock) | Kinect
+Azure TOP (Orbbec, DirectML) + CHOP -> Switch -> `bodies` -> Select
+`joints` -> a CHOP Execute on frame/timestamp (only on new data: ~30 Hz)
+-> OSC Out DATs, tables written whole and only when changed -> DAT to
+CHOP -> instanced Geometry COMPs, the layout by DAT to SOP, an ortho
+camera, a Render TOP. Calibrate on the simulated calibration recording
+came back within 2.6 cm of the sim's placement. TD -> Isaac (engage,
+1 min): 1798 frames, 4 engagements, 0 unsafe, 0 contacts.
+
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
 canvas the fab team makes much larger than the scan, standing on the

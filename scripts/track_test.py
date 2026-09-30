@@ -144,22 +144,21 @@ def self_test():
 
     stop = threading.Event()
 
-    def sender():                                          # people_track's messages, from its CSV, at 30 fps
-        sys.path.insert(0, os.path.join(os.path.expanduser("~"), "Documents", "GitHub", "TD-ROBOT-UVSCAN",
-                                        "td-modules", "people_track"))
-        import socket
-        import people_track as PT
-        R, p, _ = PT.load_extrinsic(os.path.join(ROOT, "geo", "tracking", "femto_sim_extrinsic.json"))
-        frames, n = PT.load_frames(csv_path)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    def sender():                          # as TD's people_track sends a recording (femto_format), 30 fps
+        import femto_format as FF
+        from pythonosc import udp_client
+        e = json.load(open(os.path.join(ROOT, "geo", "tracking", "femto_sim_extrinsic.json")))
+        frames = FF.read(csv_path)
+        tx = udp_client.SimpleUDPClient("127.0.0.1", 9018)
         t0, k = time.monotonic(), -1
         while not stop.is_set():
-            kk = PT.frame_at(time.monotonic() - t0, n)
+            kk = int((time.monotonic() - t0) * FF.FPS) % len(frames)
             if kk != k:
                 k = kk
-                ppl, hands = PT.messages(frames.get(k, []), R, p)
-                sock.sendto(PT.osc_message("/track/hands", PT.osc_args(k / 30.0, hands)), ("127.0.0.1", 9018))
-                sock.sendto(PT.osc_message("/track/people", PT.osc_args(k / 30.0, ppl)), ("127.0.0.1", 9018))
+                ppl, hands = FF.messages(frames[k][2], e["R"], e["p"])
+                flat = lambda items: [x for it in items for x in it]      # noqa: E731
+                tx.send_message("/track/hands", [k / 30.0, len(hands)] + flat(hands))
+                tx.send_message("/track/people", [k / 30.0, len(ppl)] + flat(ppl))
             time.sleep(0.005)
 
     rn = TRN.Runner(cfg, graph, env, model, dt, engage=True)

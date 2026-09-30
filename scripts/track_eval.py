@@ -246,7 +246,7 @@ def export(r, m, out_dir):
 
 
 def main(argv):
-    names = [a for a in argv if not a.startswith("--") and a in TS.SCENARIOS] or list(TS.SCENARIOS)
+    names = [a for a in argv if not a.startswith("--") and (a in TS.SCENARIOS or a.startswith("rec:"))]         or list(TS.SCENARIOS)                             # rec:<a recording>: the Femto's, or a simulation
     cfg = json.load(open(os.path.join(ROOT, "shows", "party.json")))
     env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
     model = C.load_model("fr20")

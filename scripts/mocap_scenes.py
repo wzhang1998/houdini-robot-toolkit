@@ -1,11 +1,12 @@
 """Tracking scenes from real people (CMU motion capture, mocap_cmu.py) placed
-in the audience zone, seen as the Femto would see them: the tracking data
-for the tracking layer (track_sim's format: /track/people and /track/hands,
-robot frame) and a camera-frame table for TouchDesigner's people_track
-module to play back in place of the Femto.
+in the audience zone, seen as the Femto would see them -- in its own format
+(femto_format.py: TouchDesigner's Kinect Azure CHOP, all 32 joints, the
+body tracker's confidence), so TD's people_track plays them where the real
+camera would be, and the tracking layer's tests get them through the same
+conversion (femto_format.messages -> /track/people, /track/hands).
 
     ev, truth, dur = scenario("mc_wave_call")          # track_sim's scenario() for mocap scenes
-    write_camera_csv("mc_wave_call", "geo/tracking/femto_sim_mc_wave_call.csv")
+    write_camera_csv("mc_wave_call", "geo/tracking/femto_sim_mc_wave_call.csv")      # a recording, the CHOP's channels
 
     python scripts/mocap_scenes.py --self-test
     python scripts/mocap_scenes.py --write-all geo/tracking          every scene's camera table for TD
@@ -15,10 +16,11 @@ facing the arm or walking along; a standing clip plays back and forth to the
 scene's length, a walking one once (they come and go). The Femto: FEMTO_POSE
 (on the guests' side of the glass, above it, looking down at them); its body
 tracking's error -- 1 cm at the head, 2 cm at the wrists, 70-110 ms late,
-30 frames a second, a frame or a hand missed now and then.
+30 frames a second, a frame missed now and then (the body gone from it, the
+others moving up a slot, as the CHOP does), a hand now and then only
+predicted (LOW confidence, 6 cm off).
 """
 
-import csv
 import json
 import math
 import os
@@ -29,12 +31,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
+import femto_format as FF  # noqa: E402
 import mocap_cmu as MC  # noqa: E402
 
 FPS = 30.0
 LATENCY_S = (0.07, 0.11)
-NOISE_M = {"head": 0.01, "wrist": 0.02}
+NOISE_M = {"head": 0.01, "wrist": 0.02, "hand": 0.02, "body": 0.015, "predicted": 0.06}
 DROP_P, HAND_DROP_P = 0.03, 0.08
+ARM = ("elbow", "wrist", "hand", "handtip", "thumb")    # a hand the tracker loses: these only predicted
 FEMTO_HEIGHT_M, FEMTO_PITCH_DEG = 2.3, 30.0      # above the glass, looking down at the guests
 
 # name: (duration s, [(pid, clip, u, v, pose, start s)]); pose: "face" (facing the arm), "+u" / "-u" (walking),
@@ -68,13 +72,13 @@ def _heading(tr, pose):
 
 
 class Person:
-    """A clip placed in the room: at(t) -> {"head", "lwrist", "rwrist"} (robot frame) or None (not there).
+    """A clip placed in the room: at(t) -> the 32 joints (femto_format.JOINTS, robot frame) or None.
     pair: the first frames of both clips of a pair captured together ([first, second]): both are placed
     with the one transform -- their middle at (u, v), the line between them along the zone."""
 
     def __init__(self, pid, name, u, v, pose, start, dur, frame, pair=None):
         self.pid, self.start, self.dur = pid, start, dur
-        self.t, self.tr = MC.clip(name, FPS)
+        self.t, self.tr = MC.clip(name, FPS, want=MC.BONES)
         c, along, across = frame
         if pair is not None:
             a, b = pair[0]["root"], pair[1]["root"]
@@ -86,7 +90,7 @@ class Person:
             self.rot = want - _heading(self.tr, pose)
             self.origin = self.tr[0]["root"]
         self.at_xy = (c[0] + u * along[0] + v * across[0], c[1] + u * along[1] + v * across[1])
-        heads = [p["head"][2] for p in self.tr]
+        heads = [MC.k4a(p)["head"][2] for p in self.tr]
         self.dz = HEAD_Z.get(pid, 1.65) - sum(heads) / len(heads)
         self.walk = pose in ("+u", "-u")
 
@@ -108,8 +112,7 @@ class Person:
             period = 2 * (n - 1)
             i = i % period
             i = i if i < n else period - i                  # back and forth
-        p = self.tr[i]
-        return {k2: self._place(p[k2]) for k2 in ("head", "lwrist", "rwrist")}
+        return {j: self._place(q) for j, q in MC.k4a(self.tr[i]).items()}
 
 
 def people(name, cfg=None):
@@ -118,7 +121,7 @@ def people(name, cfg=None):
     firsts = {}                                            # a pair's first frames, in the pair's order
     for pid, clip_name, u, v, pose, start in specs:
         if isinstance(pose, tuple):
-            firsts.setdefault((u, v, start), {})[pose[1]] = MC.clip(clip_name, FPS)[1][0]
+            firsts.setdefault((u, v, start), {})[pose[1]] = MC.clip(clip_name, FPS, want=MC.BONES)[1][0]
     out = []
     for pid, clip_name, u, v, pose, start in specs:
         pair = None
@@ -129,42 +132,50 @@ def people(name, cfg=None):
     return dur, out
 
 
-def _hand(pts):
-    return pts["rwrist"] if pts["rwrist"][2] >= pts["lwrist"][2] else pts["lwrist"]
+def frames(name, seed=1, cfg=None):
+    """The scene as the Femto's body tracking gives it (femto_format: [(frame, t, bodies)], the CHOP's space
+    -- here the Kinect camera's axes, x right, y down, z forward -- all 32 joints): each joint off by its
+    noise, MEDIUM (seen); a lost hand's arm only predicted (LOW, 6 cm off); a body missed now and then."""
+    dur, ps = people(name, cfg)
+    R, p = femto_pose(cfg)
+    rng = random.Random(seed)
+    out = []
+    for i in range(int(dur * FPS)):
+        t = i / FPS
+        bodies = []
+        for per in ps:
+            a = per.at(t)
+            if a is None or rng.random() < DROP_P:
+                continue
+            lost = {s: rng.random() < HAND_DROP_P for s in "lr"}
+            joints = {}
+            for j, q in a.items():
+                part, _, side = j.rpartition("_")
+                hidden = side in lost and part in ARM and lost[side]
+                sd = NOISE_M["predicted"] if hidden else NOISE_M.get(part or j, NOISE_M["body"])
+                c = to_camera(R, p, q)
+                joints[j] = tuple(x + rng.gauss(0, sd) for x in c) + (FF.LOW if hidden else FF.MEDIUM,)
+            bodies.append((per.pid, joints))
+        out.append((i, t, bodies))
+    return out
 
 
 def scenario(name, seed=1, cfg=None):
-    """(events, truth, duration) as track_sim.scenario: /track/people and /track/hands, one each a frame
-    after the latency; truth(t) -> {pid: head}."""
+    """(events, truth, duration) as track_sim.scenario: the scene's frames (frames) through femto_format --
+    /track/hands and /track/people a frame, as TD's people_track sends them, 70-110 ms late; truth(t) ->
+    {pid: head}."""
     dur, ps = people(name, cfg)
-    rng = random.Random(seed)
+    R, p = femto_pose(cfg)
 
     def truth(t):
         out = {}
-        for p in ps:
-            a = p.at(t)
+        for per in ps:
+            a = per.at(t)
             if a is not None:
-                out[p.pid] = a["head"]
+                out[per.pid] = a["head"]
         return out
 
-    def noisy(q, s):
-        return tuple(round(x + rng.gauss(0, s), 4) for x in q)
-
-    events = []
-    for i in range(int(dur * FPS)):
-        tm = i / FPS
-        arrive = tm + rng.uniform(*LATENCY_S)
-        seen, hands = [], []
-        for p in ps:
-            a = p.at(tm)
-            if a is None or rng.random() < DROP_P:
-                continue
-            conf = round(rng.uniform(0.75, 0.95), 3)
-            seen += [p.pid] + list(noisy(a["head"], NOISE_M["head"])) + [conf]
-            if rng.random() >= HAND_DROP_P:
-                hands += [p.pid] + list(noisy(_hand(a), NOISE_M["wrist"])) + [conf]
-        events.append({"t": arrive, "addr": "/track/people", "args": [round(tm, 4), len(seen) // 5] + seen})
-        events.append({"t": arrive + 1e-4, "addr": "/track/hands", "args": [round(tm, 4), len(hands) // 5] + hands})
+    events = FF.events(frames(name, seed, cfg), R, p, seed, LATENCY_S)
     events.sort(key=lambda e: e["t"])
     return events, truth, dur
 
@@ -200,7 +211,8 @@ def layout(cfg=None):
     """What a top-down view of the tracking needs (robot base frame, m; for TouchDesigner's people_track):
     the glass (normal, offset: the guests on its far side), the band BAND_M in front of it where waving
     counts, the audience zone's corners, the interactive mode's spot (centre, radius) and follow zone's
-    corners (at greet), the Femto's position."""
+    corners (at greet), the Femto's position, the floor marks to calibrate on (marks: [(name, x, y)] -- the
+    spot, 0.6 m either side of it along the zone, 0.35 m nearer the glass: not in a line)."""
     import collision as C
     import engage as E
     import show as S
@@ -216,35 +228,49 @@ def layout(cfg=None):
         return [[round(o[0] + su * hu * along[0] + sv * hv * across[0], 4),
                  round(o[1] + su * hu * along[1] + sv * hv * across[1], 4)]
                 for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-    return {"glass": {"normal": list(g["normal"][:2]), "offset": g["offset"]}, "band_m": TR.BAND_M,
+    marks = [(name, round(spot[0] + u * along[0] + v * across[0], 3), round(spot[1] + u * along[1] + v * across[1], 3))
+             for name, u, v in (("spot", 0.0, 0.0), ("left", -0.6, 0.0), ("right", 0.6, 0.0), ("glass", 0.0, 0.35))]
+    return {"marks": marks, "glass": {"normal": list(g["normal"][:2]), "offset": g["offset"]}, "band_m": TR.BAND_M,
             "zone": rect(c, size[0] / 2, size[1] / 2), "spot": [round(spot[0], 4), round(spot[1], 4)], "spot_r": r,
             "follow": rect(spot, E.FOLLOW_M[0], E.FOLLOW_M[1]), "femto": [round(x, 4) for x in femto_pose(cfg)[1]]}
 
 
-def write_camera_csv(name, path, seed=1, cfg=None):
-    """The scene as the Femto's body tracking would give it, camera frame (m): a row a body a frame --
-    frame, t, body, conf, head xyz, wrist_left xyz, wrist_right xyz (empty when the hand was missed)."""
-    dur, ps = people(name, cfg)
+CALIB_S = 4.0            # the calibration recording: this long on each mark
+
+
+def calib_frames(seed=1, cfg=None):
+    """A calibration as the Femto sees it: someone standing still (a CMU pose) on each floor mark in turn
+    (layout's marks), CALIB_S each, their ankles' middle on the mark -- femto_format frames, the noise as
+    frames'."""
     R, p = femto_pose(cfg)
+    lay = layout(cfg)
+    c, along, across = zone(cfg)
+    k = MC.k4a(MC.clip("141_20", FPS, want=MC.BONES)[1][0])
+    mid = [(a + b) / 2 for a, b in zip(k["ankle_l"], k["ankle_r"])]
+    rot = math.atan2(across[1], across[0]) - _heading([{"lclavicle": k["shoulder_l"], "rclavicle": k["shoulder_r"]}],
+                                                      "face")
     rng = random.Random(seed)
+    out, i = [], 0
+    for name, mx, my in lay["marks"]:
+        cr, sr = math.cos(rot), math.sin(rot)
+        placed = {j: (mx + cr * (q[0] - mid[0]) - sr * (q[1] - mid[1]), my + sr * (q[0] - mid[0]) + cr * (q[1] - mid[1]),
+                      q[2] - min(k["ankle_l"][2], k["ankle_r"][2]) + FF_ANKLE_Z) for j, q in k.items()}
+        for _ in range(int(CALIB_S * FPS)):
+            joints = {j: tuple(x + rng.gauss(0, NOISE_M["body"]) for x in to_camera(R, p, q)) + (FF.MEDIUM,)
+                      for j, q in placed.items()}
+            out.append((i, i / FPS, [(1, joints)]))
+            i += 1
+    return out
+
+
+FF_ANKLE_Z = 0.08        # the ankles over the floor (TD's people_track: ANKLE_Z)
+
+
+def write_camera_csv(name, path, seed=1, cfg=None):
+    """The scene as a recording in the Femto's format (femto_format.write: the Kinect Azure CHOP's channels,
+    a row a frame) -- what TD's people_track plays in place of the camera, and what it records from it."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["frame", "t", "body", "conf", "head_x", "head_y", "head_z", "wristl_x", "wristl_y", "wristl_z",
-                    "wristr_x", "wristr_y", "wristr_z"])
-        for i in range(int(dur * FPS)):
-            t = i / FPS
-            for per in ps:
-                a = per.at(t)
-                if a is None or rng.random() < DROP_P:
-                    continue
-                row = [i, round(t, 4), per.pid, round(rng.uniform(0.75, 0.95), 3)]
-                row += [round(x + rng.gauss(0, NOISE_M["head"]), 4) for x in to_camera(R, p, a["head"])]
-                for k in ("lwrist", "rwrist"):
-                    row += ([round(x + rng.gauss(0, NOISE_M["wrist"]), 4) for x in to_camera(R, p, a[k])]
-                            if rng.random() >= HAND_DROP_P else ["", "", ""])
-                w.writerow(row)
-    return path
+    return FF.write(path, frames(name, seed, cfg))
 
 
 def self_test():
@@ -268,11 +294,18 @@ def self_test():
     w = ps[1].at(5.0)
     check("the waver: head %.2f m up; not there before 3 s" % HEAD_Z[2],
           abs(w["head"][2] - HEAD_Z[2]) < 0.2 and ps[1].at(2.0) is None, round(w["head"][2], 2))
+    fr = frames("mc_wave_call")
+    ids = [[b[0] for b in f[2]] for f in fr]
+    lows = sum(1 for f in fr for b in f[2] if b[1]["wrist_r"][3] == FF.LOW)
+    check("frames: the Femto's format -- both people, all 32 joints, a hand now and then only predicted",
+          max(len(x) for x in ids) == 2 and all(sorted(b[1]) == sorted(FF.JOINTS) for f in fr for b in f[2])
+          and 0 < lows < 0.2 * sum(len(x) for x in ids), lows)
     ev, truth, dur = scenario("mc_crowd")
     kinds = {e["addr"] for e in ev}
     n = max(e["args"][1] for e in ev if e["addr"] == "/track/people")
     ids = {e["args"][2 + 5 * k] for e in ev if e["addr"] == "/track/people" for k in range(e["args"][1])}
-    check("the crowd: /track/people and /track/hands a frame; five people come and go (four at once at most)",
+    check("the crowd, through femto_format: /track/people and /track/hands a frame; five people come and go "
+          "(four at once at most)",
           kinds == {"/track/people", "/track/hands"} and n == 4 and ids == {1, 2, 3, 4, 5}, (kinds, n, sorted(ids)))
     R, p = femto_pose()
     q = (c[0], c[1], 1.6)
@@ -282,6 +315,16 @@ def self_test():
           cam[2] > 0.5 and cam[1] > 0.0 and math.dist(back, q) < 1e-9 and p[2] == FEMTO_HEIGHT_M,
           [round(x, 2) for x in cam])
     lay = layout()
+    cf = calib_frames()
+    per = int(CALIB_S * FPS)
+    got = []
+    for m in range(len(lay["marks"])):
+        b = cf[m * per + per // 2][2][0][1]
+        a = FF.to_robot(R, p, [(x + y) / 2 for x, y in zip(b["ankle_l"][:3], b["ankle_r"][:3])])
+        got.append(math.dist(a[:2], lay["marks"][m][1:]))
+    check("the calibration recording: someone on each of the %d marks in turn, ankles on the mark (within "
+          "3 cm, the noise)" % len(lay["marks"]), len(cf) == per * len(lay["marks"]) and max(got) < 0.03,
+          [round(x, 3) for x in got])
     n, off = lay["glass"]["normal"], lay["glass"]["offset"]
     gd = lambda q: off - n[0] * q[0] - n[1] * q[1]
     check("the layout: the spot and the zone on the guests' side of the glass, the spot within the band, "
@@ -297,9 +340,11 @@ if __name__ == "__main__":
         out = sys.argv[sys.argv.index("--write-all") + 1]
         for k in SCENES:
             print(write_camera_csv(k, os.path.join(out, "femto_sim_%s.csv" % k)))
+        print(FF.write(os.path.join(out, "femto_sim_calibration.csv"), calib_frames()))
         R, p = femto_pose()
         with open(os.path.join(out, "femto_sim_extrinsic.json"), "w") as f:
-            json.dump({"R": R, "p": p, "note": "camera (x right, y down, z forward) to robot base: q = R c + p",
+            json.dump({"R": R, "p": p, "note": "the Kinect Azure CHOP's space (the sims: the Kinect camera's axes, "
+                       "x right, y down, z forward, m) to the robot base: q = R c + p", "source": "simulated",
                        "layout": layout()}, f, indent=1)
         sys.exit(0)
     sys.exit(self_test())
