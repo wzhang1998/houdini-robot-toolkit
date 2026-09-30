@@ -63,7 +63,7 @@ class Runner:
         self.tgt = self.ti.now(now)
         q = self.q
         if self.en is None or self.en.state == "OFF":
-            q = self.gz.step(base(now), self.tgt, now, [base(now + d) for d in self.TR.AHEAD_S])
+            q = self.gz.step(base(now), self.tgt, now, [base(now + d) for d in self.TR.AHEAD_S], clip=base)
         if self.en is not None:
             q = self.en.step(q, now)
             self.states[self.en.state] = self.states.get(self.en.state, 0) + 1

@@ -104,7 +104,7 @@ def run(name, graph, env, model, hub="greet", seed=1):
             k += 1
         target = ti.now(now)
         b = base(now)
-        q = gz.step(b, target, now, [base(now + d) for d in TR.AHEAD_S])
+        q = gz.step(b, target, now, [base(now + d) for d in TR.AHEAD_S], clip=base)
         ts.append(now)
         qs.append(q)
         qb.append(b)

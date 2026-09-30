@@ -50,6 +50,11 @@ AHEAD_S = (0.2, 0.4, 0.6, 1.0, 1.4)   # the clip's poses this far ahead are chec
 SLOW_KEEP_M = 0.2              # J1's offset towards a slow zone stops where the anchor's tool point is this far from it
 SLOW_NEAR_M = 0.15             # the tool point this near a slow zone, now or AHEAD_S ahead: the offsets hold still
 CHECK_EVERY = 4                # the aim and look-ahead checks every 4th tick (~31 Hz, the data's rate)
+CLIP_LOOK_S = 0.5              # the offsets get what the clip leaves of the joints' limits over this long ahead
+                               # (more than the 0.2 s the offsets' jerk needs to take their acceleration back) ...
+CLIP_BUDGET = 0.95             # ... of this much of each limit: a clip at 0.8 of J5's acceleration and the offsets'
+                               # own share on top reached 1.07 (the real walk, 2026-09-30)
+CLIP_FLOOR = 0.02              # ... and at least this much (Ruckig needs some; only a clip at the limit itself)
 
 
 class OneEuro:
@@ -228,8 +233,12 @@ class Gaze:
         self.inp.current_velocity = [0.0] * n
         self.inp.current_acceleration = [0.0] * n
         self.vmax = [vel[j] * share for j in GAZE_JOINTS]
+        self.vgov = list(self.vmax)    # the velocity limit as governed near a slow zone (_govern)
+        self.amax = [acc[j] * share for j in GAZE_JOINTS]
+        self.v_lim, self.a_lim = [vel[j] for j in GAZE_JOINTS], [acc[j] for j in GAZE_JOINTS]
+        self.clip_rates = None         # the clip's peak |velocity|, |acceleration| per gaze joint, CLIP_LOOK_S ahead
         self.inp.max_velocity = list(self.vmax)
-        self.inp.max_acceleration = [acc[j] * share for j in GAZE_JOINTS]
+        self.inp.max_acceleration = list(self.amax)
         self.inp.max_jerk = [jerk[j] * share for j in GAZE_JOINTS]
         self.want = [0.0] * n          # the offsets aimed at
         self.aim_for = None            # (target, offsets) of the last aim
@@ -290,17 +299,41 @@ class Gaze:
             v = math.dist(tcp, self.prev_tcp) / self.dt
             near = [o for o in self.slow if self.C.sdf(o, tcp) < 0.1]
             if near and v > 0.8 * min(o["tcp_speed_mps"] for o in near):
-                self.inp.max_velocity = [max(x * 0.5, 0.05 * m) for x, m in zip(self.inp.max_velocity, self.vmax)]
+                self.vgov = [max(x * 0.5, 0.05 * m) for x, m in zip(self.vgov, self.vmax)]
                 self.governed += 1
             else:
-                self.inp.max_velocity = [min(x * 1.02, m) for x, m in zip(self.inp.max_velocity, self.vmax)]
+                self.vgov = [min(x * 1.02, m) for x, m in zip(self.vgov, self.vmax)]
         self.prev_tcp = tcp
 
-    def step(self, q_base, target, now, ahead=()):
+    def _clip_rates(self, clip, now):
+        """The clip's peak |velocity| and |acceleration| (deg/s, deg/s^2) per gaze joint from now to
+        CLIP_LOOK_S ahead: clip(t) -> its pose; differences over two ticks."""
+        h = 2.0 * self.dt
+        qs = [clip(now + (k - 1) * h) for k in range(int(CLIP_LOOK_S / h) + 3)]
+        v, a = [], []
+        for j in GAZE_JOINTS:
+            col = [q[j] for q in qs]
+            v.append(max(abs(col[i + 1] - col[i - 1]) / (2.0 * h) for i in range(1, len(col) - 1)))
+            a.append(max(abs(col[i + 1] - 2.0 * col[i] + col[i - 1]) / h ** 2 for i in range(1, len(col) - 1)))
+        return v, a
+
+    def _limits(self):
+        """The offsets' limits this tick: their share, less what the clip ahead uses of the joints' limits."""
+        vmax, amax = list(self.vgov), list(self.amax)
+        if self.clip_rates is not None:
+            vc, ac = self.clip_rates
+            vmax = [min(g, max(CLIP_FLOOR * L, CLIP_BUDGET * L - c)) for g, L, c in zip(vmax, self.v_lim, vc)]
+            amax = [min(s, max(CLIP_FLOOR * L, CLIP_BUDGET * L - c)) for s, L, c in zip(amax, self.a_lim, ac)]
+        return vmax, amax
+
+    def step(self, q_base, target, now, ahead=(), clip=None):
         """The pose to send this tick: the clip's q_base with the offsets.
-        ahead: the clip's poses AHEAD_S ahead (what the runner knows)."""
+        ahead: the clip's poses AHEAD_S ahead (what the runner knows). clip: clip(t) -> its pose, when
+        known -- the offsets then get only what it leaves of the joints' limits (_limits)."""
         self.ticks = getattr(self, "ticks", -1) + 1
         heavy = self.env is not None and self.ticks % CHECK_EVERY == 0
+        if clip is not None and (self.clip_rates is None or self.ticks % CHECK_EVERY == 0):
+            self.clip_rates = self._clip_rates(clip, now)
         poses = [q_base] + list(ahead)
         if target is not None:
             self.lost_at = None
@@ -334,6 +367,7 @@ class Gaze:
             self.want = [0.0] * len(GAZE_JOINTS)
         self.inp.target_position = list(self.want)
         self.inp.target_velocity = [0.0] * len(GAZE_JOINTS)
+        self.inp.max_velocity, self.inp.max_acceleration = self._limits()
         if all(abs(t - c) < 1e-6 and abs(v) < 1e-6 and abs(a) < 1e-6 for t, c, v, a in
                zip(self.want, self.inp.current_position, self.inp.current_velocity, self.inp.current_acceleration)):
             # there and still: snapped (Ruckig finds no step in a round-off, 2026-09-29)
@@ -762,6 +796,24 @@ def self_test():
                for j, col in ((j, [q[j] for q in qs]) for j in GAZE_JOINTS))
     check("a jump of the target 1.5 m: each joint's turn within %.0f %% of its velocity and acceleration limits"
           % (100 * SHARE), ratio <= 1.01 and racc <= 1.02, "velocity %.2f, acceleration %.2f of the share" % (ratio, racc))
+    def busy(t):                    # a clip swinging J1 and J5 at 0.8 of their acceleration limits (0.5 Hz)
+        w = 2 * math.pi * 0.5
+        q = list(hub)
+        for j in GAZE_JOINTS:
+            q[j] += 0.8 * amax[j] / w ** 2 * math.sin(w * t + j)
+        return q
+    gz = Gaze(anchor=hub, dt=0.008)
+    people = ((-0.9, -1.75, 1.6), (0.6, -1.9, 1.7))
+    qs = [gz.step(busy(k * gz.dt), people[(k // 150) % 2], k * gz.dt, clip=busy) for k in range(1500)]
+    arm = max(max(abs(c - 2 * b + a) / gz.dt ** 2 / amax[j] for a, b, c in zip(col, col[1:], col[2:]))
+              for j, col in ((j, [q[j] for q in qs]) for j in GAZE_JOINTS))
+    armv = max(max(abs(b - a) / gz.dt / vmax[j] for a, b in zip(col, col[1:]))
+               for j, col in ((j, [q[j] for q in qs]) for j in GAZE_JOINTS))
+    check("a clip already at 0.8 of the acceleration limits, the target jumping every 1.2 s: the arm (clip + "
+          "offsets) within the limits -- the offsets get what the clip leaves", arm <= 1.0 and armv <= 1.0,
+          "acceleration %.2f, velocity %.2f of the limits" % (arm, armv))
+    check("... and the offsets still turn to them", max(abs(x) for x in gz.offsets) > 2.0,
+          [round(x, 1) for x in gz.offsets])
     gz = Gaze(anchor=hub, env=env)
     qs = [gz.step(hub, person if k < 300 else None, k * gz.dt) for k in range(900)]
     held = qs[300 + int(0.5 / gz.dt)]
