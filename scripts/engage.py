@@ -147,6 +147,21 @@ def look_on_strip(a, b, head):
     return max(0.0, min(1.0, u))
 
 
+def look_status(en, q):
+    """{look_u, look_w} of an Engage with the arm at q (TouchDesigner's look on the strip): while someone is
+    engaged (PERK, TRACK) their head along the strip (look_on_strip; show.motion_cues' end a) and look_weight of
+    their distance from the glass; else none (-1, 0)."""
+    import collision as C
+    import tracking as TR
+    pr = en.people.get(en.who) if en.state in ("PERK", "TRACK") else None
+    caps = C.capsules(en.model, q)[0] if pr is not None else []
+    strip = next((c for c in caps if c[0] == "tool_strip"), None)
+    if strip is None:
+        return {"look_u": -1.0, "look_w": 0.0}
+    d = TR.glass_distance(en.glass, pr["pos"]) if en.glass else 1.0
+    return {"look_u": round(look_on_strip(strip[1], strip[2], pr["pos"]), 4), "look_w": round(look_weight(d), 4)}
+
+
 def look_weight(d_glass):
     """The look's light: 1 within LOOK_NEAR_M of the glass, down to LOOK_FAR_W at LOOK_FAR_M."""
     f = max(0.0, min(1.0, (d_glass - LOOK_NEAR_M) / (LOOK_FAR_M - LOOK_NEAR_M)))

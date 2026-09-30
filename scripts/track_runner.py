@@ -77,6 +77,34 @@ class Runner:
         self.ticks += 1
         return self.q
 
+    def robot_status(self, now):
+        """What TouchDesigner hears (show.osc_messages: its LEDs play), as track_mode's robot_status: the greet
+        clip playing, IDLE, with its cues; engaged, the look family, no clip cues, and the look on the strip."""
+        import engage as EN
+        import show as S
+        pl = self.player
+        if not getattr(self, "_warm", False):
+            for c in pl.clips:                                    # the cues of every clip now, none while playing
+                S.motion_cues(c)
+            self._warm = True
+        seg, t = pl.clip, max(0.0, min(now - pl.t0, pl.clip.duration))
+        lab = seg.labels or {}
+        beat, bpm = S.clip_beat(lab, t)
+        s = {"state": "IDLE", "clip": seg.name, "hub": "greet", "sequence": None, "family": lab.get("family") or "",
+             "action": lab.get("action") or "", "clip_t": round(t, 3), "clip_len": round(seg.duration, 3),
+             "beat": round(beat, 4), "bpm_now": round(bpm, 2),
+             "progress": round(t / seg.duration, 4) if seg.duration > 0 else 1.0, "scan": -1.0, "scan_u": -1.0,
+             "scan_led": 0, "scan_mps": 0.0, "time_left": round(seg.duration - t, 2), "next": pl.next.name,
+             "queue": [], "pending": [], "fault": None, "energy": 0.0,
+             "clip_energy": round(float(lab.get("energy") or 0.0), 3), **S.cue_values(seg, t, pl.next)}
+        if self.engaged:
+            te = round(now - getattr(self.en, "t_engaged", now), 3)
+            s.update(clip="interactive", family="look", action=self.en.state.lower(), clip_t=te, clip_len=te + 10.0,
+                     progress=0.0, beat=0.0, anticipate=0.0, release=0.0, accent_in=-1.0, led_speed_a=0.0,
+                     led_speed_b=0.0)
+        s.update(EN.look_status(self.en, self.q) if self.en is not None else {"look_u": -1.0, "look_w": 0.0})
+        return s
+
     @property
     def engaged(self):
         return self.en is not None and self.en.state != "OFF"
@@ -96,7 +124,7 @@ class Runner:
         return out
 
 
-def run_scene(name, engage, seed=1, dt=1.0 / 120.0, loops=1, trace=None):
+def run_scene(name, engage, seed=1, dt=1.0 / 120.0, loops=1, trace=None, told=None):
     """A mocap scene's /track/ events (mocap_scenes: the Femto's noise, latency, drops) through a Runner,
     `loops` times back to back; every pose checked against the room. (runner, contacts, joint speed share)."""
     import collision as C
@@ -123,6 +151,8 @@ def run_scene(name, engage, seed=1, dt=1.0 / 120.0, loops=1, trace=None):
             else:
                 rn.feed(got, hands, now)
         q = rn.step(now)
+        if told is not None and tick % 60 == 0:           # what TouchDesigner would hear, twice a second
+            told.append((rn.en.state if rn.en else "OFF", rn.robot_status(now), list(q)))
         if tick % 12 == 0 and not C.check(model, env, [0.0], [q])["ok"]:
             bad += 1
             if trace is not None:
@@ -155,8 +185,19 @@ def self_test():
                                 ", %d engaged, 0 unsafe" % e.get("engagements", 0) if engage else ""),
                   st["unsafe"] == 0 and bad == 0 and vmax <= 1.0 and e.get("unsafe", 0) == 0,
                   (st["unsafe"], bad, round(vmax, 3), e.get("engagements"), e.get("refused")))
-    rn, _, _ = run_scene("mc_wave_call", True, loops=2)
+    told = []
+    rn, _, _ = run_scene("mc_wave_call", True, loops=2, told=told)
     check("mc_wave_call engage: the waver called it each time round", rn.en.engagements >= 2, rn.en.engagements)
+    import show as S
+    idle = [s for st, s, q in told if st == "OFF"]
+    looking = [s for st, s, q in told if st in ("PERK", "TRACK")]
+    check("robot_status (TouchDesigner's LEDs, as the show's): the greet clips as they play -- IDLE, the clip, "
+          "its cues; engaged: the look family and the look on the strip",
+          idle and all(s["state"] == "IDLE" and s["clip"].startswith("greet") and "anticipate" in s for s in idle)
+          and looking and all(s["family"] == "look" and 0.0 <= s["look_u"] <= 1.0 and s["look_w"] > 0.0
+                              for s in looking)
+          and all(len(S.osc_messages(s, q)) == len(S.osc_messages(idle[0], q)) for _, s, q in told),
+          (idle[:1], looking[:1]))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

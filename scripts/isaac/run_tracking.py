@@ -55,6 +55,9 @@ ap.add_argument("--engage", action="store_true",
 ap.add_argument("--people", type=int, default=1, help="--live: this many heads to drag (several: Attention picks one)")
 ap.add_argument("--osc-in", type=int, default=0,
                 help="--live: the people from OSC on this port (/track/people, /track/hands; TD's people_track: 9010)")
+ap.add_argument("--td", action="store_true",
+                help="--live: TouchDesigner's LEDs on the strip -- the status to TD (127.0.0.1:9002, as the show's: "
+                     "its idle LEDs and the look play) and its LEDs back (Art-Net 6455; pixel_scan > LEDs to Isaac on)")
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
@@ -91,6 +94,20 @@ def audience_camera(cfg):
     eye = [c[0] - across[0] * 2.2, c[1] - across[1] * 2.2, 2.3]
     g = cfg["hubs"]["greet"]["tcp"]
     return eye, [g[0], g[1], g[2] - 0.2]
+
+
+def camera_now(stage, path, dist):
+    """'ex ey ez tx ty tz focal' of the camera at path as it is now (the viewport moves it): its target dist
+    ahead; None when there is none."""
+    prim = stage.GetPrimAtPath(path)
+    if not prim.IsValid():
+        return None
+    m = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    eye = m.ExtractTranslation()
+    fwd = m.TransformDir(Gf.Vec3d(0.0, 0.0, -1.0)).GetNormalized()
+    tgt = eye + fwd * dist
+    focal = UsdGeom.Camera(prim).GetFocalLengthAttr().Get() or 0.0
+    return "%.2f %.2f %.2f %.2f %.2f %.2f %.1f" % (eye[0], eye[1], eye[2], tgt[0], tgt[1], tgt[2], focal)
 
 
 def marker(stage, path, radius, rgb):
@@ -256,7 +273,25 @@ def live():
         print("[track] contact reports unavailable: %s" % e)
     render_settings()
     eye, look = audience_camera(cfg)
-    use_camera(stage, "/World/TrackCam", *(camera_spec(args.camera or ("interact" if args.live else ""), cfg, room) if (args.camera or args.live) else (eye, look, 16.0)))
+    view = (camera_spec(args.camera or ("interact" if args.live else ""), cfg, room) if (args.camera or args.live)
+            else (eye, look, 16.0))
+    use_camera(stage, "/World/TrackCam", *view)
+    cam_said = [None]
+
+    def say_camera(final=False):
+        """The view as it is now (moved in the viewport or not), as a --camera to give next time."""
+        spec = camera_now(stage, "/World/TrackCam", math.dist(view[0], view[1]))
+        if spec is not None and (spec != cam_said[0] or final):
+            cam_said[0] = spec
+            print('[camera] --camera "%s"' % spec, flush=True)
+    td_out = led_rx = leds = None
+    if args.td:                                          # TouchDesigner hears the arm; its LEDs come back on the strip
+        from pythonosc import udp_client
+        import artnet
+        from led_viz import LedViz
+        td_out, led_rx, leds = udp_client.SimpleUDPClient("127.0.0.1", 9002), artnet.Receiver(6455), LedViz(stage)
+        td_eyes, td_canvas = S.audience_eyes(cfg), cfg.get("canvas")
+        print("[track] TD: status to 127.0.0.1:9002, its LEDs from Art-Net :6455", flush=True)
 
     there, label = [True] * n, None
     if not args.headless:
@@ -392,6 +427,13 @@ def live():
             if render:
                 last_render[0] = wall
         world.step(render=render)
+        if td_out is not None and ticks % 4 == 0:            # ~30 Hz, as the show's stream tells TD
+            for addr, v in S.osc_messages(rn.robot_status(now), q, td_eyes, td_canvas):
+                td_out.send_message(addr, v)
+        if leds is not None and render:
+            leds.update(led_rx.poll(), q)
+        if not args.headless and ticks % 240 == 0:
+            say_camera()
         if now > 0.5:
             js = robot.get_joint_positions(joint_indices=idx)
             if js is None:                               # the simulation stopped (the window closed): the summary
@@ -419,6 +461,10 @@ def live():
                 time.sleep(ahead)
         if end is not None and now >= end:
             break
+    if not args.headless:
+        say_camera(final=True)
+    if led_rx is not None:
+        led_rx.close()
     st = rn.stats()                                      # over every gaze (renewed after each engagement)
     out = {"people": n, "live_seconds": round(ticks * PHYSICS_DT, 1),
            "tracked_share": round(tracked_ticks / max(1, ticks), 2), "looked_at": sorted(looked_at),

@@ -266,22 +266,9 @@ class TrackMode:
         return s
 
     def _look(self):
-        """The look on the strip while someone is engaged (perk, track): look_u where their head is along it (0..1
-        from LED 0's end, show.motion_cues' end a), look_w brighter the nearer the glass; else none."""
-        import collision as C
+        """The look on the strip (engage.look_status) where the arm is."""
         import engage as EN
-        import tracking as TR
-        en = self.en
-        pr = en.people.get(en.who) if en.state in ("PERK", "TRACK") else None
-        if pr is None:
-            return {"look_u": -1.0, "look_w": 0.0}
-        caps, _ = C.capsules(en.model, self.q)
-        strip = next((c for c in caps if c[0] == "tool_strip"), None)
-        if strip is None:
-            return {"look_u": -1.0, "look_w": 0.0}
-        d = TR.glass_distance(en.glass, pr["pos"]) if en.glass else 1.0
-        return {"look_u": round(EN.look_on_strip(strip[1], strip[2], pr["pos"]), 4),
-                "look_w": round(EN.look_weight(d), 4)}
+        return EN.look_status(self.en, self.q)
 
     def status(self):
         en = self.en
