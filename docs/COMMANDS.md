@@ -71,6 +71,8 @@ Isaac, the people from TD:
 
 ```bash
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 --engage
+C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 --engage --td   # + TD's LEDs (pixel_scan > LEDs to Isaac on)
+python scripts/track_replay.py geo/tracking/femto_rec_20260930-150731.csv --crouch 13-18   # a real recording to 9010, no TD
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 --engage --headless --minutes 1
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage                    # no TD: drag the head onto the ring
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3                  # no TD: a crowd, whom it looks at
