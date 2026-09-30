@@ -356,6 +356,17 @@ class Engage:
         rep = self.C.check(self.model, self.env, [0.0], [q])
         return rep["ok"]
 
+    def _retreat(self):
+        """A pose back towards the hub's point along the box (half, a quarter of the way the tool is out, then the
+        point itself), whose move from here is clear; None when none is."""
+        o = self._offset(self.q)
+        aim = (self.spot[0], self.spot[1], 1.6)
+        for f in (0.5, 0.25, 0.0):
+            q = self._reach((o[0] * f, o[1] * f, 0.03), aim)
+            if q is not None and self._plan_ok(q):
+                return q
+        return None
+
     def _plan_ok(self, target):
         """The move from where the arm is now to target, checked every PLAN_STEP_S."""
         from ruckig import InputParameter
@@ -452,7 +463,11 @@ class Engage:
                     self._set("RETURN", now)
                     target = self.hub
                 else:
-                    self.refused += 1                      # wait where it is, try again
+                    back = self._retreat()                 # the way back from far out: halfway along the box first
+                    if back is not None:
+                        target, self.reached = back, False
+                    else:
+                        self.refused += 1                  # wait where it is, try again
         elif self.state == "RETURN" and self.reached:
             self._set("OFF", now)
             self.resume, self.q_prev = True, []
@@ -501,10 +516,22 @@ class Engage:
         self.engagements += 1
         self._set("ENTER", now)
 
+    def _offset(self, q):
+        """(along, up, towards) of the tool point at q from the hub's, in the box's axes."""
+        import show as S
+        tcp0 = S.tool_pose(self.hub)[1]
+        d = tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp0))
+        return tuple(_dot(d, ax) for ax in self.axes)
+
     def _goodbye(self, now):
+        """A nod where the tool is (the box reaches 0.9 m from the hub's point: pulled back there unchecked, a
+        nod's way crossed the room -- Isaac, 2026-09-30); none where its move would not be clear."""
         head = self._head() or (self.spot[0], self.spot[1], 1.6)
-        cur = self.inp.current_position
-        nod = self._pose((0.0, 0.0, 0.0), (head[0], head[1], head[2] - NOD_DOWN_M))
+        cur = list(self.inp.current_position)
+        o = self._offset(cur)
+        nod = self._reach((o[0], o[1], 0.0), (head[0], head[1], head[2] - NOD_DOWN_M))
+        if nod is not None and not self._plan_ok(nod):
+            nod = None
         self.inp.target_position = list(nod if nod is not None else cur)
         self.inp.target_velocity = [0.0] * 6
         self.reached = False
@@ -711,6 +738,19 @@ def self_test():
     check("C: a hand raised to 2 m: the tool rises and tilts up to it", modes == {"C"} and up_c and up_b
           and min(up_c) > max(up_b) + 0.1, (modes, round(max(up_b), 2) if up_b else None,
                                             round(min(up_c), 2) if up_c else None))
+    for side in (-1.0, 1.0):                                  # to the far end, then on out of the zone
+        leave = lambda t, s=side: (0.0 if t < 5.0 else s * min(1.4, 0.3 * (t - 5.0)), 0.0, 1.62)   # noqa: E731
+        en, log = run(leave, 25.0)
+        states = [s_ for _, s_, *_ in log]
+        along_of = lambda q: _dot(tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp)), axes[0])   # noqa: E731
+        bye = [along_of(q) for _, s_, q, *_ in log if s_ == "BYE"]
+        check("... the nod where the tool is (%s end): not pulled back to the hub's point unchecked" % (
+            "left" if side < 0 else "right"), bye and max(abs(x - bye[0]) for x in bye) < 0.12,
+            (round(bye[0], 2), round(min(bye), 2), round(max(bye), 2)) if bye else None)
+        check("they walk %s to the zone's end and on out: a nod where the tool is, back to the hub (checked), "
+              "the clips again -- nothing unsafe, the way back found" % ("left" if side < 0 else "right"),
+              "BYE" in states and states[-1] == "OFF" and en.unsafe == 0 and en.refused <= 3
+              and sum(r for *_, r, m in log) == 1, (en.unsafe, en.refused, states[-1]))
     crouch = lambda t: (0.0, 0.0, 1.62 if t < 7.0 or t >= 11.0 else 1.12)             # noqa: E731
     en, log = run(crouch, 14.0)
     tz = lambda t0, t1: [S.tool_pose(q)[1][2] for t, s, q, *_ in log if s == "TRACK" and t0 < t < t1]  # noqa: E731
