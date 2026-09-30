@@ -1,13 +1,17 @@
 # houdini-robot-toolkit
 
 Houdini toolset for animating a 6-axis robot arm — FK and IK, motion
-analysis, and CSV export to a real controller.
+analysis, and CSV export to a real controller — and the tools around it: a
+clip library, a room with collision and safety zones, playback on a Fairino
+arm, a show state machine, Isaac Sim views and a tracking test.
 
 Model-agnostic by design: the kinematic specification for a given arm lives
 in `profiles/`, not in the assets. Two profiles so far: **UF850** (FBX rig) and
 **Fairino FR20** (built from the vendor URDF). The asset reads the profile when
 it cooks, so a *locked* instance follows whichever robot its Robot Profile
-names — see [Profiles drive the asset](#profiles-drive-the-asset).
+names.
+
+See [docs/COMMANDS.md](docs/COMMANDS.md) for the commands you run day to day.
 
 ## Layout
 
@@ -15,112 +19,52 @@ names — see [Profiles drive the asset](#profiles-drive-the-asset).
 |---|---|
 | `otls/` | Digital assets (runtime binaries) |
 | `profiles/` | Per-robot spec JSON — joint limits, axes, sign conventions, output format |
-| `scripts/` | Python and VEX extracted from the binaries, in diffable form |
+| `scripts/` | Python and VEX: the tools, and the code inside the assets in diffable form |
+| `scripts/isaac/` | Isaac Sim scripts (Isaac's own Python) |
 | `scenes/` | `.hiplc` scene files |
-| `assets/fbx/` | Source geometry |
-| `assets/fairino_description/` | FR20 URDF and link STLs, copied unmodified from FAIR-INNOVATION/frcobot_ros2 (`fairino_description/`), which declares no license; the asset reads `urdf/fairino20_v6.urdf` and `meshes/fairino20_v6/*.STL` |
-| `tests/csv/` | Reference fixtures for export/import validation |
-| `tests/clips/` | Sample clips (JSON) from the dance factory |
-| `tests/keypoints/` | A keypoint take (the retargeting input format) |
+| `shows/` | Show configs (`<show>.json`), their builds and USD layers |
 | `envs/` | Rooms the robot works in, as OpenUSD (`.usda`): obstacles with collision, keep-out / slow / work zones |
-| `docs/images/` | Pictures the README shows |
-| `docs/` | Design notes |
-| `geo/` | IK solve cache — gitignored, regenerate with **Clear and Recache** |
+| `assets/fbx/` | UF850 source geometry |
+| `assets/fairino_description/` | FR20 URDF and link STLs, copied unmodified from FAIR-INNOVATION/frcobot_ros2 (`fairino_description/`), which declares no license |
+| `assets/tools/` | The LED strip tool (URDF, STL) |
+| `tests/` | Fixtures: joint CSVs, sample clips, a keypoint take, acceleration probe results |
+| `docs/` | Design notes and the pictures below |
+| `houdini/` | The Houdini package file |
+| `geo/` | Generated output (solve cache, atlas, clips, show builds, recordings) — gitignored |
 
 ## The asset
 
 `wenyi::robot_arm::1.0` (`otls/sop_wenyi.robot_arm.1.0.hdalc`) wraps the whole
-tool: 110 internal nodes, six tabs following the workflow.
+tool. Tabs follow the workflow: **Setup · 1 Motion · 2 Solve · 3 Analyze ·
+4 Output · Advanced**.
 
 | Input | |
 |---|---|
-| 0 | Rest skeleton — optional override of the profile's own (FBX or URDF) skeleton; the mesh still follows the profile |
+| 0 | Rest skeleton — optional override of the profile's own skeleton |
 | 1 | Goal curve |
 | 2 | Goal point — overrides the built-in target when connected |
-| 3 | **Tool geometry** — display only |
-| 4 | Collision — **reserved, unused** |
+| 3 | **Tool geometry** |
+| 4 | Collision — reserved, unused |
 
 | Output | |
 |---|---|
 | 0 | Display |
-| 1 | **Tool Tip** — one point: `P`, `transform`, `orient` |
+| 1 | **Tool Tip** — one point: `P`, `transform`, `orient` (the achieved tip, not the goal) |
 | 2 | Analysis |
 | 3 | Posed Skeleton — the KineFX skeleton the active Pose Source produces |
 
-Outputs 2 and 3 existed inside the asset and were labelled in its dialog
-script, but the definition allowed only two outputs, so neither was reachable.
-It now allows four.
+**Tools.** Setup → Tool sets the tool frame relative to the flange face
+(`joint_6` plus the profile's `flange_offset_m`), tool axis +Y. The IK goal
+is moved back by that frame so the **tip** lands on the goal. **Tool Frame:
+From Geometry** (default) reads the TCP from input 3 — a point group or
+point named `tcp`, else the centroid of the points furthest along +Y; Tool
+Status says when the tip was guessed, so add a `tcp` point when it matters.
+**Manual** uses the typed offset. Rotation is always manual. The analysis
+measures the tip, not the flange.
 
-## Tools
-
-**Setup → Tool** sets the tool frame relative to the flange face, tool axis
-+Y. The face is `joint_6` plus the profile's `flange_offset_m` along +Y — zero
-on UF850, where `joint_6` is the face; 0.12 m on FR20, whose last joint sits
-behind it. The IK goal is moved *back* by that frame so the **tip** lands on the
-goal, and the solver keeps targeting `joint_6` exactly as before — no tool
-means a bit-identical no-op.
-
-**Tool Frame** decides where the TCP comes from:
-
-- **From Geometry** (default) — read out of the mesh on input 3, in order:
-  a point group called `tcp`, else a point named `tcp`, else the centroid of
-  the points furthest along +Y. Wire a tool and the arm reaches with it.
-- **Manual** — the numeric Tool Offset / Rotate
-
-The switch lives in one place: `TCP_PATH_CTRL/tool_offset` takes
-`tool_tcp_probe`'s `tcp_p` under From Geometry with input 3 wired, else the
-typed offset, and the goal offset, `TOOL_TIP` and `joint_angles` all read it.
-Rotation stays manual — the probe finds a point, not a frame. Until this was
-wired, be5f879's probe and status shipped but the solve still read only the
-typed offset, so a wired tool moved nothing. Checked on FR20 with an off-axis
-tip at (0.03, 0.15, -0.02) m: the solved tip sits 154.3 mm from the flange
-face (the tool's length) and lands on the goal to within the solver's own
-residual.
-
-Tool Status names the source and says outright when a tip was *guessed* from
-extent rather than declared, so add a `tcp` point when it matters.
-
-The centroid, not a single furthest vertex: on a tube the far points form a
-ring, so picking one put the tip a tool-radius off axis.
-
-Output 1 is the **achieved** tip, not the goal — the two differ by the tracking
-residual.
-
-The **analysis follows the tip too**: the achieved path, TCP speed and the
-whole Analyze tab measure the working point, not the flange. On a 150 mm tool
-that is not cosmetic — peak TCP speed read 0.61 m/s at the flange against
-1.22 m/s at the tip, so the flange reading understated it by half.
-
-> Appending a rigid `tool_tip` joint and retargeting FBIK at it does **not**
-> work. The joint stays rigid correctly, but FBIK will not solve to a goal on
-> an appended joint: zero weights, zero limits and untouched config all left
-> every joint at 0.0 with an 886 mm residual.
-
-Tabs: **Setup · 1 Motion · 2 Solve · 3 Analyze · 4 Output · Advanced**.
-
-An internal `TCP_PATH_CTRL` null sits beside the VEX nodes so every
-`ch("../TCP_PATH_CTRL/...")` reference inside the wrangles keeps resolving
-untouched; its parameters are channel-referenced to the asset's. Input
-parameters flow *down* (asset is master); status strings flow *up* (the inner
-node writes, the asset mirrors).
-
-The solve cache name is a **raw string with backtick expressions**, not a parm
-expression — `setExpression` is flattened to a literal when the definition is
-saved, which made every new instance inherit one stale path and overwrite its
-neighbour's cache.
-
-## Two selectors drive everything
-
-**Goal Mode** — what the IK solver aims at:
-
-| Mode | Position from | Notes |
-|---|---|---|
-| Manual Rig Pose | Manual TCP Goal parms | direct translate/rotate on the TCP |
-| Curve | `CURVE_IN` sampled at Progress | |
-| Point Transform | `POINT_IN`, else the built-in target | external input overrides the built-in |
-
-Position and orientation are **independent**. All three orient modes work with
-either goal source:
+**Goal Mode** — what the IK solver aims at: Manual Rig Pose (the Manual TCP
+Goal parms), Curve (`CURVE_IN` sampled at Progress) or Point Transform
+(`POINT_IN`, else the built-in target). **Orient Mode** is independent of it:
 
 | Orient Mode | Curve goal | Point goal |
 |---|---|---|
@@ -128,643 +72,317 @@ either goal source:
 | Aim At Target | point the tool at Aim Target | same |
 | Fixed Direction | Fixed Tool Direction + Roll | same |
 
-`Point Roll` adds spin about the tool axis on top of the point's orientation.
+Aim Target is Manual XYZ or **From Object** (SOP geometry: point 0; an OBJ
+node: its origin); Aim Object Status says which was resolved.
 
-**Aim Target Source** is either Manual XYZ or **From Object**. The object may be
-either:
+**Pose Source** — what drives the robot *and* the CSV exporter: FK (manual
+joints) / IK (solved) / Imported CSV / Baked IK→FK. Manual FK is typed in
+the **robot frame**, clamped to the profile's limits, so what you type is
+what the CSV exports.
 
-- **SOP geometry** — aims at point 0 (an Add or Transform SOP works)
-- **An OBJ node** — aims at its origin (a null you drag in the viewport)
-
-Aim Object Status states which was resolved and how, so a silent zero is not
-mistaken for a working target. Relative paths are resolved against the asset,
-which is where you type them.
-
-**Pose Source** — what actually drives the deformed robot *and* the CSV
-exporter: FK (manual joints) / IK (solved) / Imported CSV / Baked IK→FK.
-
-Manual FK is typed into `Joint_controller`'s `j1`–`j6` in the **robot frame**,
-clamped to the profile's limits. The profile's sign is applied on the way to
-the Rig Pose, so what you type is what the CSV exports.
-
-`COLLISION_IN` is a reserved, unconnected wiring point. Collision avoidance is
-not implemented.
+The solve does not avoid collisions; clips are checked against the room
+instead (see [The cell](#the-cell-collision-and-safety-zones-real2sim)).
 
 ## `$HIP` is not the project root
 
-Scenes live in `scenes/`, so `$HIP` resolves to that folder. Project-relative
-paths inside a scene use `$HIP/../`:
-
-```
-$HIP/../assets/fbx/uf850_fk_01.fbx
-$HIP/../geo
-$HIP/../tests/csv/test01_houdini.csv
-```
-
-`$JOB` would read better but needs environment setup to be reliable. `$HIP/..`
-resolves correctly on a fresh clone with no configuration.
+Scenes live in `scenes/`, so project-relative paths inside a scene use
+`$HIP/../` (`$HIP/../geo`, `$HIP/../envs/volvox_lab.usda`). It works on a
+fresh clone with no environment setup.
 
 ## scripts/ vs otls/
 
-`otls/` holds what Houdini runs. `scripts/` holds the same code as text so it
-can be reviewed and diffed — a change inside a `.hdalc` is otherwise invisible
-in a commit. Treat `scripts/` as the readable copy, and keep it in sync when
-the asset changes.
-
-`joint_angles_sop.py` had drifted: the readable copy carried the "analysis
-follows the tool tip" block (d916492) but the asset never did — that commit
-changed a scene instance, not the definition. The asset now runs the copy.
+`otls/` holds what Houdini runs. `scripts/` holds the same code as text
+(`scripts/hda/`, `scripts/vex/`, `scripts/callbacks/`) so it can be reviewed
+and diffed — a change inside a `.hdalc` is otherwise invisible in a commit.
+Keep the two in sync when the asset changes.
 
 ## Profiles drive the asset
 
-Until now three things inside `wenyi::robot_arm` were written for UF850 only,
-although limits and presets already came from the profile: the axis each joint
-turns about (J5 pinned to z) and literal J2/J4/J6 limits in `configurejoints1`;
-the FK axis per joint and J3's sign as a literal `-1` in `rigpose_fk`; and
-UF850's limits baked into the `fk_j1..6` slider templates as strict ranges.
+Joint axes, signs, limits and presets are **expressions** on the internal
+nodes, evaluated against the current profile by the asset's PythonModule
+(`scripts/hda/robot_arm_module.py`) — not written by a callback, because a
+locked instance forbids writes to internal parameters. The Robot Profile menu
+lists every `profiles/*.json`; its callback touches only promoted parameters.
 
-They are now **expressions** on the internal nodes, evaluated against the
-current profile by the asset's PythonModule (`scripts/hda/robot_arm_module.py`).
-Not a callback that writes them: a locked instance forbids writes to internal
-parameters, so a callback would only ever have worked on an unlocked copy.
+Limits are per joint: `robot.max_velocity_deg_s` and
+`robot.max_acceleration_deg_s2` are one number or one per joint (FR20:
+J1–J3 120, J4–J6 180 deg/s; acceleration measured on the arm with
+`accel_ui.py`, planned at J1–J3 300, J4–J6 600 deg/s²). Export, Pre-Flight,
+Retime, the analysis and the player all compare each joint to its own limit.
 
-What a callback still does — `on_profile_changed()`, run by the Robot Profile
-menu and on creation — touches only promoted parameters: the `invert_jN`
-toggles from the profile's sign, Robot Mesh on when the profile has a body
-(FBX or URDF) and off when it has neither, and the Configuration presets via
-`cfg_reset`. The menu lists every
-`profiles/*.json`.
-
-The FK sliders are now plain ±360 °; `Joint_controller` clamps each one to the
-profile's limit.
-
-**Solve cache path.** `cache_solve`'s basename was the literal
-`ik_solve_uf850_robot_arm`, not a reference to `cache_name`, so every instance
-in every scene shared one folder — and Recache deletes the matching files
-before writing. It now follows `cache_name` (`ik_solve_<profile>_<node>`). An
-instance named `robot_arm` on UF850 resolves to the same folder as before;
-any other name gets its own and needs one recache.
-
-**Checked against a baseline.** Before any of this, a fresh UF850 instance was
-recorded over four FK poses and three IK goals (skeleton P/transform, tool tip,
-residuals, joint config). After each change a fresh locked instance matched it
-except for the cache path and J2's range, which moved from the literal ±132 to
-the profile's ±131.9.
+The solve cache is `ik_solve_<profile>_<node>`, so two arms in one scene
+never share one.
 
 ## Adding a robot from a URDF
 
 `scripts/urdf_rig.py` builds the rest skeleton and places the link meshes from
-a URDF. KineFX wants +Y down each bone; a URDF turns every joint about its own
-local z, Z-up. So each joint frame is rebuilt from where the joints are and
-which way each turns, and classified: `y` where the axis runs along the bone
-(a twist), `z` where it is perpendicular (a hinge). A skewed joint raises
-rather than producing a wrong rig.
+a URDF: each joint frame is rebuilt so +Y runs down the bone, as KineFX
+wants, and classified as a twist or a hinge; a skewed joint raises rather
+than producing a wrong rig. `python scripts/urdf_rig.py` checks FR20 against
+the URDF and `profiles/fr20.json`.
 
-`python scripts/urdf_rig.py` checks, for FR20: frames orthonormal and
-right-handed, +Y down every bone at rest and posed, +25° in reads +25° out on
-every joint, upper arm + forearm + J5→J6 = the datasheet's 1854 mm, and that
-`profiles/fr20.json` states the same axes, signs, limits and flange offset the
-geometry does.
-
-The asset does this itself. When a profile names `rig.urdf` and no `rig.fbx`:
-
-| Node | |
-|---|---|
-| `urdf_skeleton` | Python SOP — the rest skeleton, into `SKEL_SOURCE` (input 2) |
-| `urdf_links` | Python SOP — one rigid STL per link at the URDF zero, prim `name` = the joint that moves it (`base` for the static link). STLs are reversed on load: their CCW winding points every face inward in Houdini |
-| `urdf_normals` | vertex N, cusp 45° — CAD tessellation smears under point normals |
-| `urdf_drive` | Transform Pieces — each link from `to_fk_ik` (rest) to `POSE_SOURCE` (posed) |
-| `ROBOT_MESH_SOURCE` | switch — FBX skin (`out_robot`) or URDF links (`urdf_robot`), into Robot Mesh |
-
-Both switches are Python expressions (`skel_source`, `mesh_source` in the
-module), so a locked instance follows the profile. Mesh paths are
-`package://` URIs, resolved the ROS way: the URDF sits at
-`<package_root>/<package>/urdf/`. Nothing is wired outside — dropping the
-asset and picking `fr20` is the whole setup. Input 0 still overrides the
-skeleton when wired, but the links stay placed for the URDF's own rest, so
-only wire one that matches it.
-
-`scenes/FR20_rig.hiplc` is that: one locked `robot_arm`, profile `fr20`, no
-inputs. On a fresh locked instance, FK matches URDF forward kinematics to
-4 µm, every link-mesh vertex matches its STL placed by URDF FK to 5 µm, and
-IK → extracted angles → URDF FK lands on the solved tool tip to 2 µm.
+The asset does this itself when a profile names `rig.urdf` and no `rig.fbx`
+(`urdf_skeleton`, `urdf_links`, `urdf_drive`, switched by Python
+expressions). Dropping the asset and picking `fr20` is the whole setup;
+`scenes/FR20_rig.hiplc` is that. FK matches URDF forward kinematics to 4 µm.
 
 ## Closed-form IK (UR-type arms)
 
 `rig.ik_solver` in the profile picks the solver: `fbik` (default, UF850) or
-`ur_closed_form` (FR20). The closed form is `scripts/ur_ik.py`, pure Python:
-it checks the URDF is UR-type (J2/J3/J4 parallel, J5 ⟂ J4, J6 ⟂ J5), derives
-the solve from the URDF's own zero-pose geometry — no DH table, so no angle
-offsets or signs to transcribe — and returns every branch, up to 8
-(shoulder × elbow × wrist). Each branch is polished by a few Newton steps on
-the exact URDF (its π/2 is written 1.5708) and kept only if it reproduces the
-goal to 1 µm / 1e-6 rad. `python scripts/ur_ik.py` runs its tests: over
-10,000 random in-limit poses every branch reproduces its target (worst
-4e-12 m), and away from singularities the pose's own q is always among them.
-Near the wrist, elbow or shoulder singularity branches merge or a family of
-solutions reaches the same pose, so there only exactness is checked.
+`ur_closed_form` (FR20). `scripts/ur_ik.py` checks the URDF is UR-type,
+derives the solve from its zero-pose geometry (no DH table) and returns
+every branch, up to 8 (shoulder × elbow × wrist), each kept only if it
+reproduces the goal to 1 µm. On FR20 it reaches goals to under 0.001 mm
+(FBIK: 3–24 mm), and the controller's own `GetInverseKin` answer is among its
+branches. `python scripts/ur_ik.py` runs its tests.
 
-Inside the asset: `analytic_ik` (Python SOP) solves the joint_6 goal from
-`tool_goal_offset`, writing `ik_q` / `ik_ok` / `ik_singular` / `ik_nsol` /
-`ik_branch` as detail attributes; `ik_rigpose` — a copy of `rigpose_fk` —
-poses the skeleton from them; `IK_SOLVER` switches between that and
-`fullbodyik1`. Everything downstream is unchanged.
-
-Branch choice per frame: the Solve tab presets (shoulder / elbow / wrist)
-filter the branches — the usual industrial configuration flags — and the one
-nearest the previous frame's solution wins, else the one nearest
-`rig.ik_reference_deg`. Recache clears that memory and writes frames in
-order, so a cached solve is continuous and reproducible. With no admissible
-branch (out of reach, or all outside limits / presets), `closest()` gets as
-near as the arm can from the previous pose — Levenberg–Marquardt, clamped to
-the limits — and `ik_ok` reads 0.
-
-Measured on FR20, locked instance:
-
-| | FBIK | closed form |
-|---|---|---|
-| Manual goals, residual | 3–24 mm | 0.0001–0.0008 mm (an out-of-reach one: 3.2 mm) |
-| Drawn curve, 240 frames | 67 frames > 1 mm, max 134 mm | all solved, max 0.005 mm |
-| Branch changes on the curve | wrist flips mid-branch | 4, each forced: the branch it left needed J1 −175.7 / −175.3, J6 176.1 or J4 95.0 |
-| Against the FR20 controller (SimMachine) | — | its `GetInverseKin` answer is among our branches for 18/18 poses, to within its 0.001-unit output rounding |
-
-Joint steps above the velocity limit remain on that curve where the curve
-itself asks for them — passing near the wrist singularity (q5 ≈ −10°: J4/J6
-turn 8–14°/frame while the goal turns 2°) and at the four forced branch
-changes. That is the curve, not the solver; Pre-flight flags it.
+The Solve tab presets (shoulder / elbow / wrist) filter the branches; the
+one nearest the previous frame wins. Recache writes frames in order, so a
+cached solve is continuous and reproducible. With no admissible branch the
+arm gets as near as it can and `ik_ok` reads 0.
 
 ## Capability atlas (FR20)
 
 What the arm can do at each point of its workspace, baked into volumes so
-paths can be designed against it rather than discovered by Pre-Flight.
-`scripts/capability.py` measures a TCP target over every IK branch within
-the limits; `scripts/hda/atlas_sop.py` fills a grid with it:
+paths can be designed against it rather than discovered by Pre-Flight
+(`scripts/capability.py`, `scripts/hda/atlas_sop.py`):
 
 | Field | Meaning |
 |---|---|
 | `reachable` | 1 if the tool reaches the point pointing along Tool Direction |
-| `headroom` | m/s: fastest TCP speed in the *worst* direction, orientation held, before a joint hits its velocity limit. 0 at a singularity |
-| `wrist` | \|sin q5\|: 0 at the wrist singularity (where J4/J6 blow up) |
+| `headroom` | m/s: fastest TCP speed in the *worst* direction before a joint hits its velocity limit; 0 at a singularity |
+| `wrist` | \|sin q5\|: 0 at the wrist singularity |
 | `margin` | degrees to the nearest joint limit |
 | `nsol` | branches within limits |
-| `capability` | Mode Capability only: fraction of 26 tool directions that reach it |
+| `clear`, `clearance` | with a Cell Environment: reachable clear of the room and itself; metres beyond the nearest margin |
 
-**Build and bake** (headless, `hython` from the Houdini install):
-
-```
-hython scripts/build_atlas_scene.py --bake
-hython scripts/atlas_check.py
-```
-
-`scenes/FR20_atlas.hiplc` is generated by the first line (rebuild it rather
-than hand-edit it). Its TOP network `/obj/atlas_tops` wedges the grid into
-Slabs along Y and bakes them in parallel with ROP Geometry Output into
-`geo/atlas/v<voxel>mm/` (gitignored). At 10 cm: 43 x 34 x 43 voxels, 89 s
-of solving done in 23 s over 8 work items. PDG reuses existing slab files:
-delete the folder (or the bake node's output files) after changing the bake.
-
-**Looking at it** — open the scene; `/obj/fr20_atlas/OUT` shows:
-
-- a **half shell** (`reach_shell` → `shell_cutaway`): the iso-surface of
-  `reachable`, the +Z half cut away so the inside shows;
-- a **slice** (`slice` grid → `slice_look`) through the base, only where the
-  tool reaches, coloured by `headroom`: green is fast, red is slow / near a
-  singularity (Green At, m/s). Move or turn the grid (Center, Orientation)
-  to scan the workspace; middle-click a point for its `headroom` / `wrist`.
+`hython scripts/build_atlas_scene.py --bake` generates
+`scenes/FR20_atlas.hiplc` and bakes the grid through PDG into `geo/atlas/`
+(delete the folder after changing the bake); `atlas_check.py` checks it.
+`/obj/fr20_atlas/OUT` shows a half shell of the reachable space and a slice
+coloured by `headroom`. Along a path: `volumesample(1, "headroom", @P)`
+with `atlas_merge` on the second input.
 
 ![FR20 atlas, tool pointing down](docs/images/fr20_atlas.png)
 
-With the tool pointing down, two regions stand out: the band around the J1
-axis, where a UR-type arm cannot put its wrist, and the rim of the reach,
-where the arm is nearly straight and slow.
-
-**The room counts.** With a Cell Environment on the bake SOP (default the
-lab) every voxel also gets `clear` -- some in-limit branch reaches it
-without touching the room or itself -- and `clearance` (m beyond the nearest
-object's margin). The shell is the *clear* space; the slice marks space
-reachable only by touching something dark red. Tool down, 10 cm: 45 % of
-the reachable space is clear of the estimated lab. To read the atlas along a path,
-sample it: `f@headroom = volumesample(1, "headroom", @P);` in a wrangle with
-`atlas_merge` on its second input.
-
-`atlas_check.py` compares 200 random voxels with a direct measurement at
-their centres (exact), checks beyond-reach is 0 and the shoulder singularity
-above the base reads 0, and that every viewer cooks.
-
-## Motion clips and the clip factory
+## Clips, the factory and the library
 
 A **clip** (`scripts/motion_clip.py`) is one JSON file shaped like ROS
-`JointTrajectory` — `points: [{t, q}]`, `joint_names` — plus the TCP path
-(URDF FK), bounds, tags, the style that made it, and a **safety** block
-measured the way `fairino_player.py` plays it: peaks per joint, the playback
-time scale (1.0 = plays at its own speed), jerk against the profile's limit
-where it has one, `ok` and the `reasons` when not. `from_csv()` turns an
-asset export into a clip; `to_csv()` gives the player's input back;
-`write_manifest(dir)` lists every clip with ok / rejected and why.
+`JointTrajectory` — `points: [{t, q}]`, `joint_names` — plus the TCP path,
+tags, the style that made it, and a **safety** block measured the way the
+player plays it (`ok`, and the `reasons` when not).
 
 The **factory** (`scripts/clip_factory.py`) makes clips from a primitive
-(line, circle, figure-8) and a style (size, centre, plane, tool direction,
-safety): it checks the path against the Stage 2 measures (reachable with the
-tool direction, clear of the wrist singularity), solves IK continuously,
-times it with the Retime pipeline (velocity + acceleration, corners fitted
-on the frames) and writes the clip — rejected ones too, with the reason.
-`wedge(n)` draws n variants from a fixed seed.
-
-```
-hython scripts/build_factory_scene.py --cook
-```
-
-builds `scenes/FR20_clip_factory.hiplc` and runs its TOP network: a Wedge of
-50 variants, one out-of-process Python work item each (18 s for all 50),
-then the manifest in `geo/clips/manifest.json`. Last run (with the cell
-check): 20 ok; 14 unreachable with their tool direction, 11 upper arm too
-close to the floor / base plate, 3 too fast in the operator's slow zone, 2
-outside the stage.
-
-`hython scripts/render_previews.py` renders pictures of both into
-`docs/images/previews/`: the atlas from the side and from above, every
-variant's path around the robot, and a sheet of the ok clips.
+(line, circle, figure-8) and a style, checks them against the atlas and the
+cell, solves and retimes them, and writes rejected ones too, with the
+reason. `scenes/FR20_clip_factory.hiplc` wedges it in PDG.
 
 ![Clip library](docs/images/previews/clips_sheet.png)
 
-## The cell: collision and safety zones (real2sim)
-
-The robot works in a room, so every clip is checked against it. The room
-is an OpenUSD file, `envs/volvox_lab.usda`, in the robot base frame (URDF,
-Z up, metres; the arm's working front is -X). Houdini Solaris, Isaac Sim,
-usdview and a text editor open it as it is; `scripts/room_usd.py` reads it
-into the shapes the checks use. Each shape has a role, stored as the
-attribute `motionlab:role` (a prim with collision and no role is an
-obstacle):
-
-| Role | Rule |
-|---|---|
-| `obstacle` | no link or tool within the env's `margin_m` (per object `margin_m` overrides; the base plate: 0) |
-| `keep_out` | no link inside at all -- where the operator stands |
-| `slow` | inside it the TCP may not exceed `tcp_speed_mps` (ISO/TS 15066-style) |
-| `work` | the TCP must stay inside -- the stage |
-
-`scripts/collision.py` models FR20 as capsules fitted to its URDF meshes
-(1-3 per link, every vertex inside; a tool capsule from the asset's tool
-offset), with exact capsule-vs-shape clearance and self-collision on the
-link pairs MoveIt's SRDF rules would keep. The capsules are conservative:
-round the wrist the real flange-to-forearm gap is ~3 cm larger than they
-say, and a quarter of the configurations they flag there are within 1 cm
-on the real meshes -- the wrist folding back is a real hazard.
-
-**The file** (`python scripts/room_usd.py` for its self-test):
-
-| Prim | What it is |
-|---|---|
-| `/Room` | `motionlab:margin_m`, the clearance obstacles keep unless they set their own; the frame in its documentation |
-| `/Room/Structure/<name>` | floor, ceiling, walls: an Xform holding a `slab` (a Cube with UsdPhysics collision). The slab's face towards the robot base is the measured plane, and the checks treat the slab as the halfspace behind it, so the result does not depend on how long the slab is. A wall's `face` is one single-sided quad turned into the room: the cutaway you see |
-| `/Room/Objects/<name>` | obstacles: Cube, Cylinder or Sphere with collision and a UsdPreviewSurface look |
-| `/Room/Zones/<name>` | work / keep-out / slow: a `volume` with purpose guide (drawn as a helper, never rendered, no collision) and its `outline` |
-
-Also on a shape: `motionlab:margin_m`, `motionlab:tcp_speed_mps` (a slow
-zone), `motionlab:measured`, and its note as USD documentation.
-
-**Editing the room.** In Houdini Solaris (tried in H22):
-Sublayer LOP (`envs/volvox_lab.usda`) -> Cube LOP (Primitive Path
-`/Room/Objects/<name>`, placed and scaled) -> Configure Primitive (that
-path, API Schemas `PhysicsCollisionAPI`): a new obstacle -> Transform LOP
-on `/Room/Structure/ceiling` (or Edit): the ceiling moved -> USD ROP (Save
-Style: Flatten Layer Stack) to a new file, then replace the room with it.
-Deactivate a prim to drop it. Or edit the text: every value is a plain `xformOp` or attribute.
-Objects and zones may turn about Z only (the checks' boxes), and a mesh
-with collision is refused. After moving walls,
-`python scripts/room_usd.py --rewrite envs/volvox_lab.usda` re-fits the
-slabs' lengths, the wall faces and the zone outlines. A show's own objects
-(its paper, its stage) are a layer over the room, not a copy:
-`python scripts/room_usd.py --show shows/party.json` writes
-`shows/party.usda`, which Isaac opens.
-
-Until 2026-09-27 the room was JSON (`envs/*.json`); an old path in a saved
-scene opens the `.usda` beside it, with a note.
-
-**The room file is an estimate from one photo.** Measure it with the arm
-itself: hand-guide the tool tip onto points and record them (read-only,
-never moves the robot), then fit shapes:
-
-```
-python scripts/probe_ui.py                   # window: record / undo / preview fit / write env, live URDF-vs-controller TCP
-python scripts/probe_env.py --ip IP          # prompt: wall_tv:plane, control_cart:box, operator:cylinder ...
-python scripts/env_from_points.py envs/volvox_lab_points.json
-hython scripts/scan_to_env.py scan.usdz --front Wall2 --left Wall1 --name Storage1=control_cart --drop chairs [--write]
-```
-
-What the arm cannot reach comes from a RoomPlan scan (iOS "RoomPlan" app, USDZ export): every wall and
-object is a box. `scan_to_env.py` places it in the robot frame by the probed walls and floor (each wall
-gives the rotation -- their agreement is the check; together they fix the position), adds the other walls
-as planes and the objects as boxes; probed objects stay as measured. Run it without --front/--left to list
-the scan's walls and objects.
-
-On SimMachine the probe's TCP (this toolkit's URDF FK) agrees with the
-controller's own to 0.004 mm. Planes need 3+ points, boxes their top
-corners (min-area yaw), cylinders 3+ points round the foot (least-squares
-circle); an existing object keeps its role and note, and the change is
-printed.
-
-Where it is used: **Pre-Flight's Cell check** (the asset's Setup > Cell
-Environment, default `$HIP/../envs/volvox_lab.usda`; UF850: not applicable,
-no URDF), both clip factories, the dance generator and retargeting, and
-`scenes/FR20_cell.hiplc` (`hython scripts/build_cell_scene.py`): the room
-by role, the FR20 playing any clip CSV / JSON (`/obj/CELL_CTRL`), its
-capsules coloured by clearance, and an onion-skin view of a whole phrase
-(`/obj/ghosts`).
-
-![The cell](docs/images/previews/cell_overview.png)
-
-## Dance phrases and labels
-
-`scripts/choreo.py` writes phrases in Laban's Effort vocabulary. Each bar
-names an action -- punch, slash, press, wring, dab, flick, glide, float --
-and the four Effort axes shape how it moves:
-
-| Axis | Robot |
-|---|---|
-| Weight (strong / light) | which joints lead: whole arm (J1-J3, far kinesphere reaches) vs wrist (J4-J6, near the body) |
-| Time (sudden / sustained) | attack sharpness and tempo |
-| Space (direct / indirect) | detours and wandering harmonics |
-| Flow (bound / free) | held beats between moves vs overlapping, breathing moves |
-
-Moves: kinesphere travels by IK (level x direction x reach, tool aimed out,
-down, up or at the audience), sudden jabs, proximal / distal travelling
-waves, sway, bounce, twist, look, hold. Phrases stay on the beat grid: a
-travel takes the fewest beats its distance allows at the joint limits, and
-oscillation amplitudes are capped by a / w^2. The limits are FR20's
-measured ones (J1-J3 300, J4-J6 600 deg/s^2, `accel_ui.py`, 2026-09-25):
-twice the manual's 150 on the big joints, four times on the wrist, so jabs
-are bigger and phrases shorter (d32: 37.6 s -> 25.8 s); `Kin(acc=...)`
-plans with others. Every phrase starts and
-ends at rest in HOME, plays at its own speed and clears the cell.
-
-`scripts/motion_labels.py` measures the efforts back from any clip --
-proximal joint speed, acceleration over speed, TCP stroke directness,
-stillness -- the nearest action per clip and per bar, and descriptors
-(level, direction from the robot's own view, dominant joints, accents,
-loopable, start / end pose) and tags. Intent and measurement are both kept:
-all 8 single-action phrases order their efforts as intended (6/6 pairs),
-7/8 measure as their action; per bar 66/127 (short bars are noisy, and a
-sustained wave's acceleration / speed is its frequency, so float reads as
-flick).
-
-**In Houdini: `wenyi::dance_phrase`** (`otls/sop_wenyi.dance_phrase.1.0.hdalc`,
-built by `scripts/build_dance_hda.py`; install it once with Assets > Install
-Asset Library). Bars -- a Laban action each --, Tempo, Flow, Seed, Plan
-Acceleration (0 = the profile's; put `accel_probe.py`'s result), Cell
-Environment. **Generate** makes the phrase (a few seconds) and keeps it on
-the node, so scrubbing and reopening never regenerate; the output is the
-TCP path coloured by each bar's action. **Drive robot_arm** points an FR20's
-FK joints at the phrase; **Export** writes the player's CSV and the clip
-JSON; **Load Clip** reads any factory clip back in, bars and all.
-`scenes/FR20_dance.hiplc` has one ready (float -> punch -> glide).
-
-`/obj/dance` in `scenes/FR20_clip_factory.hiplc` makes 48 phrases in PDG
-(each action alone, contrasting pairs AB / ABA, random mixes: 42 s, all
-clear of the lab); `tests/clips/` and `tests/csv/dance_*.csv` hold three to
-play on the arm.
+**Dance phrases** (`scripts/choreo.py`) are written in Laban's Effort
+vocabulary: each bar names an action (punch, slash, press, wring, dab,
+flick, glide, float) and Weight, Time, Space and Flow shape how it moves.
+Phrases stay on the beat grid, start and end at rest in HOME, play at their
+own speed and clear the cell. `scripts/motion_labels.py` measures the
+efforts back from any clip and tags it. In Houdini,
+**`wenyi::dance_phrase`** generates a phrase, drives an FR20 `robot_arm`
+and exports it (`scenes/FR20_dance.hiplc`).
 
 ![Dance phrases](docs/images/previews/dance_sheet.png)
 
-## The clip library: find, chain
-
-`scripts/clip_library.py` searches every clip (geo/dance, geo/clips,
-tests/clips) by its measured labels and chains clips into one show:
+**The library** (`scripts/clip_library.py`) searches every clip by its
+labels and chains clips into one, with minimum-jerk joins where needed:
 
 ```
 python scripts/clip_library.py search --action punch --level mid
-python scripts/clip_library.py sequence d01_punch-punch d17_punch-float-punch --out geo/show.csv
 ```
 
-Dance phrases start and end at rest in HOME and join directly; any other
-join gets a minimum-jerk transition in joint space sized to the joint
-limits. The show is measured as the player plays it, checked against the
-cell and labelled like any clip.
+`hython scripts/roundtrip_check.py` sends a clip through robot_arm's Import
+CSV and back out of its exporter: FR20 CSV, clip JSON and UF850 CSV come
+back exact.
 
-`hython scripts/roundtrip_check.py [clip] [--profile uf850] [--fk]` sends a
-clip through robot_arm's Import CSV (or FK expressions) and back out of the
-asset's exporter, on a locked instance: FR20 CSV, dance clip JSON and UF850
-CSV all come back to 0.00000 deg.
+**From a person** (`scripts/retarget.py`, keypoints as in
+`tests/keypoints/`): **direct** maps the wrist's motion into the workspace,
+shrunk and slowed until FR20 can play it; **effort** turns the performer's
+Laban efforts into a choreo.py phrase.
 
-## From a person to the arm
+## The cell: collision and safety zones (real2sim)
 
-`scripts/retarget.py` takes one arm's 3D keypoints per frame
-(`motionlab.keypoints/1`, template in `tests/keypoints/`) -- an OAK-D
-body-pose capture, a BVH export, AIST++ dance data:
+The room is an OpenUSD file, `envs/volvox_lab.usda`, in the robot base frame
+(URDF, Z up, metres; the arm's working front is -X). Solaris, Isaac Sim,
+usdview and a text editor open it as it is; `scripts/room_usd.py` reads it
+for the checks. Each shape has a role, `motionlab:role`:
 
-- **direct** -- the wrist's motion 1:1 in metres in front of the robot, the
-  tool pointing outward from the shoulder (or along the smoothed forearm);
-  shrunk, then slowed, until FR20 can play it. Slow sweeps keep their size
-  and tempo (TCP within 3 mm of the target path); human-speed jabs fit only
-  at half size and 1.7x slower, and lose their punch.
-- **effort** -- the performer's Laban efforts per 2 s window, relative to
-  the take, become a choreo.py phrase: a style transfer that keeps the
-  qualities (the jabs read as punch) instead of the geometry.
+| Role | Rule |
+|---|---|
+| `obstacle` | no link or tool within the room's `margin_m` (per-object `margin_m` overrides) |
+| `keep_out` | no link inside at all — where the operator stands |
+| `slow` | the TCP may not exceed `tcp_speed_mps` inside (ISO/TS 15066-style) |
+| `work` | the TCP must stay inside — the stage |
 
-Smooth first: 2 mm of tracker jitter read as 9 m/s^2 at the TCP.
+`scripts/collision.py` models FR20 as conservative capsules fitted to its
+URDF meshes, plus a tool capsule, with exact clearance to the room and
+self-collision.
+
+The file: `/Room/Structure/*` (floor, ceiling, walls as collision slabs),
+`/Room/Objects/*` (Cube, Cylinder or Sphere with collision),
+`/Room/Zones/*` (guide volumes, never rendered). Edit it in Solaris or as
+text; objects and zones turn about Z only. After moving walls,
+`python scripts/room_usd.py --rewrite envs/volvox_lab.usda` re-fits slabs
+and outlines. A show's own objects are a layer over the room
+(`shows/<show>.usda`).
+
+**The room is an estimate from one photo.** Measure it with the arm:
+`python scripts/probe_ui.py` records points you hand-guide the tool tip onto
+(read-only, never moves the robot) and fits shapes; `scan_to_env.py` adds a
+RoomPlan scan placed by the probed walls.
+
+Where it is used: Pre-Flight's **Cell** check (Setup > Cell Environment;
+FR20 only), the clip factories, the dance generator, the show build, the
+atlas, and `scenes/FR20_cell.hiplc`: the room by role, the FR20 playing any
+clip, its capsules coloured by clearance. **Display > Cell (room)** draws
+the room in any scene.
+
+![The cell](docs/images/previews/cell_overview.png)
 
 ## Playback on a Fairino arm
 
-`scripts/fairino_player.py` plays the asset's exported joint CSV on a Fairino
-controller by ServoJ streaming — standard library only, XML-RPC on port
-20003, which is what Fairino's SDK calls underneath. The approach is the one
-td-robot-twin arrived at for UF850 (`PLAYBACK_FINDINGS.md` there): condition
-the whole path first (shape-preserving cubic per joint, at rest at both
-ends, equal-interval resampling at the control rate, uniform time scaling to
-the velocity / acceleration envelope — never per-joint clipping), MoveJ to
-the first sample, stream on absolute deadlines and coalesce stale samples,
-read feedback on a separate connection, and report what happened.
+`scripts/fairino_player.py` plays an exported joint CSV on a Fairino
+controller by ServoJ streaming (XML-RPC, port 20003, standard library only).
+It conditions the whole path first — smooth per joint, at rest at both ends,
+uniformly time-scaled to the velocity / acceleration envelope, never
+per-joint clipping — MoveJ's to the first sample, streams on absolute
+deadlines and reports what happened.
 
-**A window: `python scripts/play_ui.py`** — target, IP, clip (Browse…),
-speed and wiggle fields, one button per step, a log with a one-line summary,
-and a STOP button (StopMotion + ServoMoveEnd, then ends the player; a
-software stop, not an E-stop). Hardware steps that move ask to confirm in a
-dialog. It saves to the same `playback.toml`.
+Run it from `python scripts/play_ui.py` (a window, with a STOP button:
+StopMotion + ServoMoveEnd, a software stop, not an E-stop) or from
+`playback.toml` with `python scripts/play.py`:
 
-**Or edit `playback.toml` and run `python scripts/play.py`.** The file
-holds target, IP, clip, speed, wiggle settings; the menu offers check /
-dry-run / goto-start / wiggle / play and re-reads the file before each step
-(`python scripts/play.py 5` runs a step directly; `e` in the menu opens the
-file). Recordings and reports are named automatically next to the clip.
-`play.py` only builds the player's arguments, so the table below is what it
-runs:
-
-| Command | Moves? | Use |
+| Step | Moves? | Use |
 |---|---|---|
-| `--self-test` | no | conditioning, wiggle and recording tests |
-| `clip.csv --dry-run` | no | how much the clip is slowed to fit, peaks per joint |
-| `--check --ip IP` | no | controller model / version / errors, current pose, FK vs the URDF |
-| `clip.csv --hardware --ip IP --goto-start` | MoveJ only | reach the clip's first pose |
-| `--hardware --ip IP --goto-home` | MoveJ only | to the profile's HOME (`robot.home_deg`: upper arm up, forearm forward, tool down). Not all zeros: at zero FR20 lies flat, 8 cm over the plate. `--env envs/x.json` checks the MoveJ's path against a cell first -- on hold (no tool, coarse sampling, estimated room); collision is checked in Houdini's Pre-Flight |
-| `--hardware --ip IP --wiggle 6 5 4 2` | small | J6 +5° and back, 4 s, twice, from the current pose |
-| `accel_probe.py --hardware --ip IP --joint 6 --amp 3` | small | J6 out and back at rising peak acceleration; the last level that tracks cleanly |
-| `accel_ui.py` | small | the same in a window: checks the joint limits and the room from the current pose before anything moves (`accel_probe.py --check-only`), asks before each level on the real arm, STOP; results to `tests/accel/` |
-| `clip.csv --hardware --ip IP --speed 0.3 --record actual.csv` | yes | play, and record the actual joints |
+| `--dry-run` | no | how much the clip is slowed to fit, peaks per joint |
+| `--check` | no | controller model / errors, current pose, FK vs the URDF |
+| `--goto-start` | MoveJ only | the clip's first pose |
+| `--goto-home` | MoveJ only | the profile's HOME, path checked against `--env` first |
+| `--wiggle 6 5 4 2` | small | J6 +5° and back, twice |
+| play, `--record actual.csv` | yes | play, and record the actual joints |
 
 Every move names its target, `--sim` or `--hardware`. Speed defaults to 30 %
-of the envelope (`--speed`; 1.0 plays as designed). `--hardware` also
-defaults to a 10 % MoveJ, prints the plan and waits for `yes` (`--yes` skips it). `--record` writes the actual joints one
-row per clip row, at the clip's own times (playback time ÷ time scale), in
-the export format — so **Output → Import CSV** keys it frame-for-frame
-against the design, controller lag included.
+of the envelope. `--hardware` defaults to a 10 % MoveJ, prints the plan and
+waits for `yes`. A recording imports with **Output → Import CSV**
+frame-for-frame against the design.
 
-On SimMachine FR20 (the WebApp shows the VM's internal 192.168.58.2; the
-host reaches it at its VMware NAT address): the scene's 240-frame clip,
-2666 ServoJ at 125 Hz, 0 skips, ~40 ms follow lag, 0.065° tracking once
-aligned; `--wiggle 6 5 4 2`, 36 ms lag, 0.012°; `--check` matches the URDF to
-0.015 mm / 0.0004°. A physical arm will differ in latency and dynamics:
-check, goto-start, wiggle, then the clip at `--speed 0.3` → `0.6` → `1.0`,
-with an operator at the E-stop. Segment-by-segment sending, as
-td-robot-twin's worker does, is later.
+On SimMachine FR20 a clip streams at 125 Hz with 0 skips and ~40 ms lag.
+On a physical arm: check, goto-start, wiggle, then the clip at `--speed 0.3`
+→ `0.6` → `1.0`, with an operator at the E-stop.
 
 ## The show: build, try, run
 
 A show (`shows/<show>.json`: the room, its hubs, the library's recipe, the
-canvas, the scan) is built into `shows/<show>.compiled.json`: every motion
-made and checked (collisions, limits, the room's margins), then played by
-one state machine (`show.py`'s Runner) -- a dry run, Isaac Sim, SimMachine
-or the FR20. A player refuses a build older than its inputs.
+canvas, the scan) is built into `shows/<show>.compiled.json` — every motion
+made and checked — then played by one state machine (`show.py`'s Runner):
+a dry run, Isaac Sim, SimMachine or the FR20. A player refuses a build older
+than its inputs.
 
 ```
-uv run scripts/show.py build shows/party.json              # every motion, checked (~2.5 min)
-uv run scripts/show.py build shows/party.json --scan-only  # the scan alone, a preview: geo/show/party_scan/
-uv run scripts/show.py dry-run shows/party.json --minutes 10 --triggers scan,low_wipe_rows
-uv run scripts/show.py report shows/party.json             # the library as numbers, the variety targets
-uv run scripts/show_ui.py                                  # the show's window: target, triggers (scan, sequences, big wipes), stop
-uv run scripts/scan_test_ui.py                             # the scan step by step: line the strip up, try exposures
-uv run scripts/show_stream.py shows/party.json --sim --ip 192.168.116.128 --osc      # SimMachine
-uv run scripts/show_stream.py shows/party.json --hardware --osc --osc-out 127.0.0.1:9002
+uv run scripts/show.py build shows/party.json
+uv run scripts/show_ui.py            # the show's window: target, triggers, stop
 ```
 
-`show_stream --hardware` plays at speed 0.3 and asks first. Its clock is
-paced by the controller's playback rate (`playback.toml`
-`[controller_playback_ppm]`, or `--playback-ppm`; play_ui keeps the
-section when it saves), and it pulls its lag back while the arm rests at a
-hub (`--no-lag-correction` to turn that off); the report in `logs/stream/`
-has the lag by window and the corrections.
+`show_stream.py` streams the show to SimMachine or the arm (`--hardware`
+plays at speed 0.3 and asks first), paced by the controller's playback rate
+(`playback.toml`), and pulls its lag back while the arm rests at a hub.
+`scan_test_ui.py` runs the scan step by step. In Houdini,
+`scenes/FR20_show.hiplc` holds `/obj/robot_show` (`wenyi::robot_show`), the
+show on one parameter page — see [docs/show_pipeline.md](docs/show_pipeline.md).
 
-OSC (TouchDesigner): the player listens on 9000 and sends its status to
-9001 (show_ui) and each `--osc-out` (TD: 9002) -- state, clip, hub, the
-scan's position, the joints, and what TD's idle LEDs play from (family,
-action, clip time and length, beat, facing the guests, how much the strip
-lights the paper). One player holds 9000 at a time: show_stream, scan_test
-and Isaac's run_show exclude each other.
+OSC (TouchDesigner): the player listens on 9000 and sends its status to 9001
+(show_ui) and each `--osc-out` (TD: 9002). One player holds 9000 at a time:
+show_stream, scan_test and Isaac's run_show exclude each other.
 
-## Isaac Sim: the show, TouchDesigner, reviews
+## Isaac Sim
 
-Every Isaac view uses the lab's room (`isaac_stage.load_room`: the look of
-the lab's photos; the safety guides hidden, `--guides` draws them). Isaac
-brings its own Python: `C:/isaacsim6/python.bat`.
+Isaac brings its own Python: `C:/isaacsim6/python.bat`. Every Isaac view
+loads the lab's room through `isaac_stage.load_room` (the look of the lab's
+photos); the safety guides are hidden unless `--guides`.
 
-```
-C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                      # a window: panel, keys, OSC
-C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live            # TD live: its LEDs and canvas drawn
-C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo       # the 5 min demo, the paper simulated
-C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo --td-live   # ... with TD, recorded
-C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera audience
-C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless                      # the library review (v9)
-C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless --graph geo/show/party_scan/compiled.json --segments to_scan,scan,from_scan --no-pages
-C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless                  # tracking scenarios (after track_eval --export)
-C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live                             # drag the person's head, the arm looks
-C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3                  # a crowd: whom it looks at (green)
-C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage                    # the interactive mode: stand on the ring, or wave (the panel's button)
-C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 --engage      # the people from TD's people_track
-C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --video   # the LED strip's cable
-C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start              # a pose as USD, for other tools
-```
+- **run_show.py** — the show in a window: panel, keys, OSC.
+- **TD live** (`--td-live`) — TD hears the show as from show_stream, and its
+  LEDs (Art-Net) and canvas preview come back, drawn on the strip and the
+  paper. Close show_stream, scan_test and show_ui first.
+- **Demos** (`--demo`) — headless, 5 min, from the audience's camera,
+  recorded to `geo/isaac/`; with `--td-live` it records what TD sent and
+  `replay_render.py` renders it afterwards from any camera.
+- **The library review** (`record_library.py`) — every idle clip, the big
+  wipes and the scan, as the Houdini review's pages and a contact sheet.
+- **run_tracking.py** — the tracking test (below).
 
-- **TD live** (`--td-live` = `--osc-out 127.0.0.1:9002 --artnet 6455
-  --canvas 6457`, real time): TD hears the show as from show_stream and
-  its idle / scan LEDs (Art-Net) and canvas preview come back, drawn on
-  the strip and the paper. In TD: pixel_scan > Output > Preview Art-Net IP
-  `127.0.0.1`. Close show_stream, scan_test and show_ui first, and clear
-  robot_link's Controller IP (STOP holds the arm in Isaac). Without TD:
-  `python scripts/artnet.py --send-test 6455` and `python
-  scripts/canvas_link.py --send-test 6457` stand in for it.
-- **Demos**: `--demo` is headless, 5 min, the audience's camera, the auto
-  trigger firing scans with the show's big wipes between them, recorded
-  to `geo/isaac/`. Alone it simulates the paper (`canvas_model.py`,
-  `--canvas-image`, TD's banana by default); with `--td-live` it records
-  what TD sent (`td_capture.py`) and `replay_render.py` renders it, any
-  camera, as often as wanted -- TD runs in real time as in the show, the
-  render takes as long as it takes.
-- **The library review** (`record_library.py`): every idle clip, the big
-  wipes and the scan in Isaac, the Houdini review's pages (4 x 2) and
-  overview (5 x 5) with its header per tile and the version and Isaac's
-  tracking at the foot (`geo/isaac/review/v9/`), a contact sheet, and the
-  clips one after the other with a card (`--no-sequence` to skip).
-  `--segments` / `--graph` / `--still`: a new scan's preview, or one
-  picture a camera.
-- **Tracking offline** (no Isaac): `python scripts/track_eval.py` runs
-  every scenario of `track_sim.py` through the tracking layer and checks
-  it; the `mc_` ones are real people (CMU mocap, `mocap_cmu.py` reads
-  `geo/mocap/cmu/`, `mocap_scenes.py` stages them: walking by, waving to
-  call it, a crowd ...). `python scripts/mocap_scenes.py --write-all
-  geo/tracking` writes them as the Femto would see them (camera frame
-  CSVs, the extrinsic and a top-down layout) for TD's `people_track`.
-  `python scripts/track_runner.py` runs them through the live loop
-  itself (clips, gaze, interactive mode) and checks every pose.
-- **Tracking from TD** (a test, apart from the party show): TD's
-  `people_track` (TD-ROBOT-UVSCAN) plays those CSVs and sends
-  `/track/hands` + `/track/people` (robot frame) to 9010 (Isaac:
-  `run_tracking.py --live --osc-in 9010`) and 9011 (SimMachine: `python
-  scripts/track_test.py --sim --ip 192.168.116.128 --minutes 2 --engage`,
-  streamed as show_stream streams the show; SimMachine only). Both run
-  `track_runner.Runner`.
+## The tracking test
 
-Ports: 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in, 9010 / 9011
-the tracking test's people (Isaac / SimMachine), 6455
-Isaac's LEDs (Art-Net; not 6454, TD and a real node may hold it), 6457
-Isaac's canvas, 7000 TD's agent bridge.
+A person followed on top of the clips — a test apart from the party show.
+
+- `scripts/tracking.py` — `TargetInput` (drops low confidence and impossible
+  jumps, filters), `Attention` (whom to look at when several are there),
+  `Gaze` (small J1 / J5 offsets that turn the tool to the head, bounded,
+  kept clear of the room, smoothed by Ruckig).
+- `scripts/engage.py` — the interactive mode: step onto the spot in front of
+  the greet hub, or wave within 1.2 m of the glass, and the arm stops its
+  clip, perks up, follows you, nods goodbye and goes back.
+- `scripts/track_runner.py` — the one live loop (greet clips, gaze,
+  interactive mode) that Isaac and the SimMachine test both run.
+- `scripts/track_osc.py` — OSC in: `/track/hands` + `/track/people`, robot
+  base frame, metres.
+
+**One format for sim and the real camera.** `scripts/femto_format.py` is
+TouchDesigner's Kinect Azure CHOP as channels: `frame`, `timestamp`, and per
+player `pN/id` and `pN/<joint>:tx/ty/tz/confidence` for the 32 Azure Kinect
+joints; an empty slot has id 0. `scripts/mocap_scenes.py` stages real people
+(CMU mocap, `mocap_cmu.py`) with the Femto's noise and writes them in that
+format with `--write-all geo/tracking`: `femto_sim_<scene>.csv`,
+`femto_sim_calibration.csv` and `femto_sim_extrinsic.json` (the transform,
+the layout and the floor marks). A real recording from TD plays the same
+way: `rec:<file.csv>` is a scenario in `track_sim.py`, `track_eval.py` and
+`track_runner.py`. `python scripts/track_eval.py` checks every scenario
+offline.
+
+**TouchDesigner side** (TD-ROBOT-UVSCAN, `td-modules/people_track`): Source
+— Sim (a recording) or Femto (Kinect Azure TOP, Library Orbbec, + Kinect
+Azure CHOP) — → `bodies` → OSC to Isaac on 9010 and SimMachine on 9011.
+Record writes a recording; Calibrate (stand on 4 floor marks, Kabsch solve,
+handedness decided by heads above feet) writes `femto_extrinsic.json`. Off
+by default (the Active toggle).
+
+**Running it:**
+
+- Isaac: `run_tracking.py --live --osc-in 9010 [--engage]` (without
+  `--osc-in`: drag the person's head; `--people N` for a crowd).
+- SimMachine: `python scripts/track_test.py --sim --engage` — the people
+  from 9011, streamed as show_stream streams the show. SimMachine only.
+
+**Ports:** 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in,
+9010 / 9011 the tracking test's people (Isaac / SimMachine), 6455 Isaac's
+LEDs (Art-Net; not 6454, TD and a real node may hold it), 6457 Isaac's
+canvas, 7000 TD's agent bridge.
 
 ## Conventions
 
-- All assets use the **`wenyi::`** namespace. `sop_vvox.robot_anim_by_csv.1.0.hdalc`
-  (type `boning::robot_anim_by_csv::1.0`) is legacy and superseded by
-  `wenyi::robot_anim_csv_io::1.0`.
+- All assets use the **`wenyi::`** namespace.
 - Houdini incremental saves (`backup/`, `otls/backup/`) are gitignored.
-
-## Curve Check and the room in the viewport
-
-**3 Analyze > Curve Check** walks the goal curve (Progress 0 -> 1) through
-the real solve -- orient mode, tool, presets -- and measures what each pose
-leaves for the robot, independent of timing: reachable, speed headroom,
-closeness to the wrist singularity, joint-limit margin. The curve is drawn
-red where unreachable, else green .. red by the worst of the three
-(Display > Curve Check), with a one-line result; Progress is restored
-exactly. A red stretch is hard at any speed: reshape it or change the tool
-orientation there. On the FR20 scene the curve's final hook passes 3 deg
-from the wrist singularity. FR20 (closed-form IK) only.
-
-**Display > Cell (room)** draws Setup > Cell Environment -- the room
-Pre-Flight's Cell check tests against -- in any scene.
-
-![Curve Check](docs/images/previews/curve_check.png)
 
 ## Reading the analysis colours
 
-**3 Analyze** is three collapsible groups in workflow order — **Cache** (recache
-first, nothing below is valid until you do), **Colour** (read the result),
-**Retime** (act on it). Cache location lives under Advanced → Cache Location,
-since it is set once rather than used daily.
+**3 Analyze** is three groups in workflow order — **Cache** (recache first,
+nothing below is valid until you do), **Colour** (read the result),
+**Retime** (act on it).
 
 **Colour By** picks the metric; **Colour Scale** decides what red means:
+**Profile Limits** (default: red at a fixed value, comparable across clips)
+or **Percentile (5–95)** (this clip only; used for `flip_ratio` and
+`tcp_speed`, which have no absolute reference).
 
-- **Profile Limits** (default) — red at a fixed value, so a colour means the
-  same thing on every clip and takes are comparable. `vel_max` reds out at the
-  profile's 180 °/s, `residual` at Red At Residual, and so on.
-- **Percentile (5–95)** — spans this clip only. Used automatically for
-  `flip_ratio` and `tcp_speed`, which have no absolute reference.
-
-Only the threshold belonging to the current metric is shown — pick velocity and
-you see Red At Velocity, not four fields of which three are irrelevant.
-
-### Colour is reserved for data
-
-The metric ramp owns **blue → cyan → green → yellow → red**, and the bands own
-green / amber / red. Nothing else is drawn in those colours, so a colour on
-screen always means a measurement:
+Colour is reserved for data: the metric ramp owns **blue → cyan → green →
+yellow → red**, the bands own green / amber / red, and nothing else uses
+them.
 
 | | |
 |---|---|
@@ -772,52 +390,33 @@ screen always means a measurement:
 | Planned curve | white — a reference, not a measurement |
 | TCP marker / Aim target | magenta / violet — controls |
 | Residual ties | light neutral |
-| Problem markers | hot pink — deliberately loud |
+| Problem markers | hot pink |
 | Tool | steel grey |
 
-The planned curve used to be cyan, which sat **0.12** from the ramp's cyan
-stop — on a well-tracking clip both curves rendered nearly the same colour.
-It is now 0.86 away.
-
-**Legend** states the scale in words, e.g.
-`vel_max  blue 0 → red 180 deg/s  (profile limits)  actual range 0 .. 4264`.
-Outliers pin to the ends of the ramp rather than being clipped out of the data.
-
 **Pass / Warn / Fail** replaces the ramp with three flat colours against the
-profile limits — green fine, amber approaching, red over. A ramp shows
-relative severity but never states where the line is; banding answers "where
-does this clip break?" directly. **Warn At** sets the amber boundary as a
-fraction of the limit.
+profile limits (**Warn At** sets amber). **Problem Frames** markers sit at
+the frames the last pre-flight rejected — empty until **Run Pre-Flight
+Check** has been pressed. If the analysis looks frozen, the cache is stale
+— recache.
 
-**Problem Frames** markers sit on the path at the frames the last pre-flight
-rejected. They come from pre-flight's own numbers rather than being recomputed,
-because the analysis chain works on *wrapped* angles and cannot see unwrap
-accumulation — J4 reaching −422° is invisible to `limit_margin`, since wrapped
-it never leaves ±180. Consequence: markers are empty until **Run Pre-Flight
-Check** has been pressed.
+**Curve Check** walks the goal curve through the real solve and colours it
+by what each pose leaves the robot — reachable, speed headroom, wrist
+singularity, joint-limit margin — independent of timing. A red stretch is
+hard at any speed: reshape it or change the tool orientation there. FR20
+only.
 
-Cache controls live on this tab, not on Solve: `cache_solve` reads
-`POSE_SOURCE` and only the analysis chain consumes it — export and pre-flight
-both read the live solve. If the analysis looks frozen (identical values on
-every frame, zero velocity), the cache is stale — recache.
+![Curve Check](docs/images/previews/curve_check.png)
 
-Cache Directory, Cache Name and Cache Version are asset parameters, not
-buried in the internal filecache. That is not cosmetic: **a locked asset
-instance can read its internal parameters but not write them**, so anything a
-callback has to change must be promoted. Cache Name defaults to
-`ik_solve_`chs("robot_profile")`_`opname(".")`` — backticks evaluate at cook
-time and `opname(".")` is the instance, so two arms in one scene never share a
-cache directory.
+**Retime** plans velocity and acceleration together
+(`scripts/retime_topp.py`) and verifies the keyed frames with Pre-Flight's
+own check. Keep **Resample Length** fine (5 mm on FR20).
 
 ## Pre-flight gate
 
-**4 Output** is grouped as **Export CSV · Pre-Flight · Import CSV · Bake IK to
-FK**.
-
-**Run Pre-Flight Check** validates the clip and writes a report.
-**Gate Export On Pre-Flight** is on by default and refuses to write a CSV that
-fails. Checks run through the same `_collect()` the exporter uses, so the gate
-validates exactly what ships.
+**4 Output**: **Export CSV · Pre-Flight · Import CSV · Bake IK to FK**.
+**Gate Export On Pre-Flight** is on by default and refuses to write a CSV
+that fails. Checks run through the same `_collect()` the exporter uses, so
+the gate validates exactly what ships.
 
 | Check | Blocks? |
 |---|---|
@@ -825,165 +424,54 @@ validates exactly what ships.
 | Angle continuity — any step over 180° | **FAIL** |
 | Unwrap enabled | **FAIL** |
 | Joint velocity vs profile max | **FAIL** |
-| Robot playback: the player would slow the clip (acceleration) -- safe, the player slows the whole clip; the export message says by how much | warn |
-| Cell: a link or the tool within an obstacle's margin, inside a keep-out zone, the TCP too fast in a slow zone or outside the work zone (Setup > Cell Environment) | **FAIL** |
+| Cell: link or tool within an obstacle's margin, inside a keep-out zone, TCP too fast in a slow zone or outside the work zone | **FAIL** |
+| Robot playback: the player would slow the clip (acceleration) | warn |
 | Wrist branch resolved | warn |
 | Frame range vs playbar | warn |
 | Tracking residual vs tolerance | warn |
 | Solve cache vs live solve | warn |
 
-The cache check matters: the Analyze tab reads the cache while pre-flight and
-export read live, so a stale cache means the numbers on screen describe a
-different clip from the one about to ship.
+A clip that passes plays at its own speed. **Import CSV** (a joint CSV or a
+clip JSON) sets the frame range and switches Pose Source to Imported CSV,
+reading the file live. **Quiet (no popup dialogs)** in Advanced keeps modal
+dialogs from blocking scripted runs.
 
-**Quiet (no popup dialogs)** in Advanced suppresses modal dialogs.
-`hou.ui.displayMessage` blocks Houdini's main thread until dismissed, which
-deadlocks scripted and bridge-driven runs.
+## Installing
 
-## Installing the assets
+The scripts run in the project's own environment, managed by
+[uv](https://docs.astral.sh/uv/) (`pyproject.toml`, pinned by `uv.lock`):
+run `uv sync` once, and after pulling a changed `uv.lock`. Houdini's hython
+and Isaac Sim's Python do not use `.venv`.
 
-The scripts (the show, the player, `show_ui`) run in the project's own environment, managed by
-[uv](https://docs.astral.sh/uv/): `pyproject.toml` lists what they need -- `python-osc` (TouchDesigner),
-`usd-core` (Pixar's OpenUSD: the room is `envs/*.usda`), `ruckig` (jerk-limited moves) -- and `uv.lock`
-pins the versions, so the lab PC gets the same set. Whichever Python a `.py` file would open with (the
-`py` launcher's default, a conda base) no longer matters:
-
-```
-uv sync                                  # once, and after pulling a changed uv.lock: makes .venv
-uv run scripts/show_ui.py                # any script, in .venv (show_ui starts show_stream in the same one)
-uv run scripts/show_stream.py shows/party.json --sim --ip 192.168.116.128 --osc
-```
-
-Houdini's hython has its own OpenUSD, and Isaac Sim brings its own Python (`C:/isaacsim6/python.bat`);
-neither uses `.venv`.
-
-The toolkit is a Houdini package, `houdini/houdini_robot_toolkit.json` (paths relative to itself via
-`$HOUDINI_PACKAGE_PATH`): it puts this repo's `otls/` on `HOUDINI_OTLSCAN_PATH`, so robot_arm, the CSV I/O
-asset inside it and dance_phrase load at every start. Register it once per machine (again if the repo
-moves), then restart Houdini:
+The toolkit is a Houdini package, `houdini/houdini_robot_toolkit.json`, that
+puts `otls/` on `HOUDINI_OTLSCAN_PATH`. Register it once per machine (again
+if the repo moves), then restart Houdini:
 
 ```
 python scripts/install_houdini_package.py
 ```
 
-That writes a one-line pointer, `Documents/houdiniXX.X/packages/houdini_robot_toolkit_path.json` =
-`{"package_path": "<repo>/houdini"}`. Or, with nothing in the Houdini user dir and for every Houdini
-version: set the environment variable `HOUDINI_PACKAGE_DIR=<repo>/houdini`. Without either, an asset
-installed for one session is gone after a restart and a scene falls back to the copy embedded in the .hip;
-the CSV I/O asset's embedded copy has no Python module, and Retime, Export and Import fail with
-`KeyError: 'PythonModule'`.
+Or set `HOUDINI_PACKAGE_DIR=<repo>/houdini`. Without either, a scene falls
+back to the copy embedded in the .hip, whose CSV I/O asset has no Python
+module: Retime, Export and Import fail with `KeyError: 'PythonModule'`.
 
 ## Known issues
 
-- **No orientation mode currently passes pre-flight on the drawn curve.**
-  Measured on the same clip: Tangent hits 3307 °/s, Aim puts J6 at 627.6° and
-  misses by 634 mm, Fixed puts J4 at −422.1° (62.1° past its limit) at frame
-  225. The curve is more aggressive than the arm can follow as planned —
-  slow it down, constrain J4 through Roll Freedom, or redraw.
-
-- **Why J4 unwraps past its limit.** Extracted angles can only live in
-  (−180, 180], but a controller needs continuous values: 179° followed by
-  −179° reads as a −358° command and spins the joint backwards at speed. So
-  the exporter unwraps, adding ±360° to preserve continuity — and that
-  accumulates. J4 is a wrist roll joint, it is the one FBIK ignores limits on,
-  and the flip resolver commits to whichever branch is nearest, so it can wind
-  steadily in one direction until it runs past the ±360° the joint has.
-
+- **J4 can unwrap past its limit under FBIK.** The exporter unwraps angles
+  so the controller gets continuous values, and that accumulates (UF850's
+  drawn curve: −422°). Constrain J4 with Roll Freedom, slow the curve, or
+  redraw.
+- **FBIK ignores joint limits on J4** (it enforces them on J1/J2/J3/J5);
+  rotation weights do bind. Unexplained.
 - **FBIK cannot use a range that crosses ±180° without being a full turn.**
-  FR20's J2 and J4 ([−265, 85]) jammed the solver — J2 sat at 5° on every
-  frame of the drawn curve, the tip missing by 200–800 mm. `fbik_range()` in
-  the module now keeps such a range's part inside ±179° (−180 itself still
-  failed a frame); full-turn ranges like UF850's ±360° pass unchanged. It
-  also trims UF850's Shoulder *back* [90, 270] and Elbow *down* presets,
-  which cross the same edge — not measured on UF850.
-- ~~FR20 misses frames of the drawn curve at the wrist flip~~ — resolved:
-  FR20 no longer uses FBIK (see [Closed-form IK](#closed-form-ik-ur-type-arms)).
-  Under FBIK, 6 of 40 sampled frames missed by 190–520 mm where J5 crossed 0;
-  every frame solved from the stretched, singular URDF zero. The range trim
-  above still applies to any profile that stays on FBIK.
-- **Joint velocity limits are per joint.** `robot.max_velocity_deg_s` is one
-  number (UF850: 180) or one per joint (FR20, from Fairino's datasheet: J1–J3
-  120, J4–J6 180 deg/s). Export, pre-flight, Retime, the analysis
-  (`path_metrics`: `vel_limit1..6`, `vel_ratio`, `speed_pct`) and
-  `fairino_player.py` all compare each joint to its own limit; Max Joint
-  Velocity caps every joint on top and is set to the profile's highest on a
-  profile change. Before this, Houdini checked FR20 against the asset
-  parameter's UF850 default of 180 on every joint — the profile's number was
-  never read. Checked: an FK clip turning J1 and J5 at 150 deg/s fails
-  pre-flight on J1 only (150 > 120) and warns on J5 (above 80 % of 180).
-- **Joint acceleration: a clip that passes Pre-Flight plays at its own
-  speed.** Houdini used to budget velocity only, and the player — which
-  also holds an acceleration limit — slowed the whole clip for one sharp
-  stretch (the FR20 test clip x8.5). Now one set of limits, profile
-  `robot.max_acceleration_deg_s2` -- one per joint; FR20 measured on the arm
-  with `accel_ui.py` (2026-09-25): clean to 900 on every joint, planned at
-  J1-J3 300 (they shake; the base is below spec), J4-J6 600 -- capped by the
-  asset's Max Joint Acceleration, is used by all three (the player's
-  `--acc-limit` / playback.toml `acc_limit` is a cap too; 0 = the
-  profile's). Pre-Flight's **Robot
-  playback** check runs the player's own conditioning and warns when it
-  would slow the clip (a warning, not a block: slower is safe). **Retime** plans velocity and acceleration together
-  (`scripts/retime_topp.py`, at rest at both ends), then measures the frames
-  as the player will and slows only where they still break the robot's
-  limit, verified on cooked frames; any small remainder is a uniform
-  stretch shown in the status line. Last, the KEYED frames -- eased, cooked
-  in order -- are measured with Pre-Flight's own check and the plan slowed
-  until they pass ("verified on the keyed frames" in the status line): the
-  fit's measure read a few % under Pre-Flight's, which left a retimed FR20
-  clip at 1.04x (J4 acceleration by the wrist). Its Max Velocity / Max Acceleration are
-  read-only: robot limit x Safety. Keep **Resample Length** fine (5 mm on
-  FR20): the goal curve is followed as a polyline, and at 5 cm its corners,
-  amplified by the wrist near its singularity, cost the FR20 clip 30 s
-  instead of 18.
-- `path_metrics` reads `fps` from the scene (`$FPS`) and `speed_cap` from the
-  asset's Speed Cap; they were literals 24 and 50 (the asset's is 100). The
-  Colour By `vel_max` scale is still one number (`viz_vel_max`); `vel_ratio`
-  is the per-joint measure, not yet a colour option.
-- **Max Joint Velocity / Acceleration default to the profile** (expressions);
-  a literal 150 default had left UF850 instances on FR20's acceleration,
-  since only a profile *change* wrote it. UF850: 1146 deg/s^2, UFACTORY's
-  published joint acceleration for the series.
-- **Import CSV reads the file live** (Output > Import CSV: a joint CSV or a
-  clip JSON, Start Frame, Import). Import checks the file, sets the frame
-  range and switches Pose Source to Imported CSV; the FK joints then read
-  the file at each frame. It used to build a Rig Pose node inside the asset
-  -- refused on a locked instance, i.e. on every matched one -- and the Pose
-  Source switch played an old test clip's 1201 keyframes embedded in the
-  definition, whatever file was imported. `roundtrip_check.py`: FR20 CSV,
-  dance clip JSON and UF850 CSV all come back exact through Import.
-- **Retime is ~4x faster** (FR20 scene: 106 s -> 27 s, same result): 90 % of
-  each IK solve was `urdf_rig`'s generic 3x3 product inside the Newton
-  polish; unrolled and with joint-origin rotations cached, forward
-  kinematics is bit-identical and the solve 14.5 -> 2.9 ms.
-- **Progress** now defaults to `fit($FF, $RFSTART, $RFEND, 0, 1)`, what Reset
-  Progress writes; it used to default to a flat 0, so a new instance on curve
-  mode never moved unless someone had pressed Reset or Retime.
-- FBIK enforces joint limits on J1/J2/J3/J5 but ignores them on J4. Rotation
-  weights *do* bind on J4, so use J4 Roll Freedom to constrain it. Unexplained.
-  Reproduced on FR20: an IK solve returned J4 = +95.67° against a configured
-  [−265, 85]. FR20's other joints are not yet probed.
-- ~~FR20's URDF zero vs the controller's~~ — **confirmed in SimMachine**
-  (`FR20-V1-001(V6.0)`, controller v3.9.3). Controller `GetForwardKin` vs
-  `fairino20_v6.urdf` over 23 poses: zero pose (-1716.0, -286.0, 77.0) mm
-  both; position within 0.016 mm; orientation within 0.0006° with rx/ry/rz
-  as R = Rz·Ry·Rx; fitted flange 120.0 mm (the profile's 0.12 m) and base
-  offset 0. The controller's own IK returns other branches than the one
-  asked about (e.g. J4 = −184° for a −157° pose) — send joint angles, not
-  poses, for authored motion.
-  URDF and controller *can* disagree across hardware versions: on the
-  SimMachine's default FR5 (V5.0) the v6 URDF's J4→J5 is 102.1 mm against the
-  controller's 130 mm. Check any new model the same way (queries only,
-  nothing moves).
-- ~~Recache left the old solve on screen~~ — resolved. On a **locked**
-  instance, after `cache_solve` wrote, its load side kept serving the solve it
-  had loaded before (same filenames, nothing dirtied): 222 mm off the new files
-  on UF850, 647 mm on FR20, robot and debug path both. Unlocked instances were
-  unaffected, which is why an unlocked UF850 scene never showed it. Recache
-  now presses `cache_solve`'s Reload after writing; all four cases read the
-  new files. The internal `TCP_PATH_CTRL/recache_btn` still carries an older
-  copy of the script and is not exposed in the asset's UI.
+  `fbik_range()` trims such a range to ±179°.
+- The Colour By `vel_max` scale is one number; the per-joint `vel_ratio` is
+  not yet a colour option.
+- The internal `TCP_PATH_CTRL/recache_btn` carries an older copy of the
+  recache script (not exposed in the UI).
 - J3 carries a +90° offset between the Configure Joints frame and the frame
   the analysis and CSV export report in.
-- ~~Joint limits duplicated across three files~~ — resolved; `profiles/uf850.json`
-  is now the single source and `scripts/robot_profile.py` the only place the
-  frame conversion lives.
+- **Send joint angles, not poses.** FR20's URDF matches its controller to
+  0.016 mm, but the controller's own IK may pick another branch. URDF and
+  controller can disagree across hardware versions: check any new model with
+  `--check` (queries only).
