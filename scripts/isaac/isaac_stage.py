@@ -68,7 +68,8 @@ def render_settings():
 
 
 def cameras(cfg, env):
-    """{name: (eye, target, focal mm)}: room -- the whole room from the corner
+    """{name: (eye, target, focal mm)}: interact -- the interactive mode, the guest on the left and the whole
+    room: 2.0 m behind the audience zone, 0.9 m to its right, at eye height (the user, 2026-09-30); room -- the whole room from the corner
     behind the robot (the audience's wall and the back wall: where the
     user's photo was taken, 2026-09-29); audience -- the guests' side, from
     1.5 m behind the audience zone through the glass; side -- along the
@@ -86,7 +87,13 @@ def cameras(cfg, env):
     eye_room = [corner[0] + (cx - corner[0]) * k, corner[1] + (cy - corner[1]) * k, 2.0]
     eye_aud = [a["center"][0] - n[0] * 1.5, a["center"][1] - n[1] * 1.5, 1.65]
     eye_side = [middle[0] + right[0] * 1.5 - n[0] * 1.4, middle[1] + right[1] * 1.5 - n[1] * 1.4, 1.8]
-    return {"room": (eye_room, [cx, cy, 0.7], 8.0),
+    yaw = math.radians(a.get("yaw_deg", 0.0))
+    across, along = (-math.sin(yaw), math.cos(yaw)), (math.cos(yaw), math.sin(yaw))
+    g = cfg["hubs"]["greet"]["tcp"]
+    eye_int = [a["center"][0] - across[0] * 2.0 + along[0] * 0.9, a["center"][1] - across[1] * 2.0 + along[1] * 0.9,
+               1.45]
+    return {"interact": (eye_int, [g[0] - 0.13, g[1] + 0.21, 1.15], 12.0),
+            "room": (eye_room, [cx, cy, 0.7], 8.0),
             "audience": (eye_aud, [(cx + middle[0]) / 2, (cy + middle[1]) / 2, 1.0], 13.0),
             "side": (eye_side, [middle[0] - n[0] * 0.4, middle[1] - n[1] * 0.4, middle[2]], 14.0)}
 

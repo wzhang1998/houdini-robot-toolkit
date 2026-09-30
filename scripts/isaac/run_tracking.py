@@ -60,7 +60,7 @@ ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
 ap.add_argument("--headless", action="store_true")
 ap.add_argument("--video", action="store_true", help="an mp4 per scenario from the audience's side")
-ap.add_argument("--camera", default="", help="room, audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame); "
+ap.add_argument("--camera", default="", help="interact (--live's default), room, audience, side, or 'ex ey ez tx ty tz [focal]' (robot frame); "
                                           "default: behind the audience zone, above the person")
 ap.add_argument("--look", default="room", choices=("room", "plain"), help="room: lit as the lab (room_look.py)")
 args = ap.parse_args()
@@ -256,7 +256,7 @@ def live():
         print("[track] contact reports unavailable: %s" % e)
     render_settings()
     eye, look = audience_camera(cfg)
-    use_camera(stage, "/World/TrackCam", *(camera_spec(args.camera, cfg, room) if args.camera else (eye, look, 16.0)))
+    use_camera(stage, "/World/TrackCam", *(camera_spec(args.camera or ("interact" if args.live else ""), cfg, room) if (args.camera or args.live) else (eye, look, 16.0)))
 
     there, label = [True] * n, None
     if not args.headless:
@@ -474,7 +474,7 @@ def main():
     from omni.kit.viewport.utility import capture_viewport_to_file
     render_settings()
     eye, look = audience_camera(cfg)
-    view = camera_spec(args.camera, cfg, env) if args.camera else (eye, look, 16.0)
+    view = camera_spec(args.camera or ("interact" if args.live else ""), cfg, env) if (args.camera or args.live) else (eye, look, 16.0)
     vp = use_camera(stage, "/World/TrackCam", *view)
 
     results = {}
