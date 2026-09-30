@@ -10,8 +10,8 @@ engaged they may move within FOLLOW_M of the spot (1.6 m along the wall,
     spot         SPOT_R_M around the point SPOT_GLASS_M out from the glass,
                  straight across from the greet hub's tool point (track_spot)
     the box      BOX_M (along the wall, up, towards the person) around the hub's
-                 tool point, 25 x 15 x 6 cm: what the room leaves the upright
-                 1 m strip there; the tool faces the head (B) or the raised
+                 tool point, up to 140 x 23 x 6 cm: as far as the arm goes there
+                 with the upright 1 m strip (_reach); the tool faces the head (B) or the raised
                  hand (C), the strip upright as at the hub (face_pose)
 
     uv run scripts/engage.py        self-test (the spot, the box: every pose reachable and clear)
@@ -29,9 +29,15 @@ import tracking as TR  # noqa: E402
 SPOT_R_M = 0.4                     # the spot: 0.8 m across (the user, 2026-09-30; was 0.6) ...
 SPOT_GLASS_M = 0.95                # ... this far out from the glass: where a guest stands for the Femto to see them
                                    # whole (the real recordings: 0.85-1.1 m; the zone's middle line was 0.73)
-BOX_M = ((-0.15, 0.10), (-0.12, 0.03), (0.0, 0.06))   # along the wall (left -), up, towards the person: what
-                                   # the room leaves -- right of +0.1 the strip meets the wall, above +0.03 (the tool tilted down at a child) the
-                                   # ceiling's margin (the 1 m strip stands upright), left of -0.15 the partition
+BOX_M = ((-0.9, 0.5), (-0.2, 0.03), (0.0, 0.06))   # along the wall (left -), up, towards the person: the
+                                   # outer bounds (the user, 2026-09-30: the whole reach, along and up / down; was
+                                   # 25 x 15 cm); within them _reach takes the farthest pose that is on the branch and
+                                   # clear. Measured with the room's margins + BOX_ROOM_M: left of -1.2 the IK flips,
+                                   # right of +0.25..+0.5 (the lower, the nearer) the forearm meets the wrist, above
+                                   # +0.03 the upright 1 m strip meets the ceiling's margin, below -0.4 out of reach;
+                                   # lower than -0.2 or left of -0.9 a child's head followed turns the wrist 35-70 deg
+                                   # a 5 cm step
+REACH_SHRINK = (1.0, 0.8, 0.6, 0.4, 0.2, 0.0)       # an offset not reachable or not clear: tried this much of it
 AIM_YAW_DEG = 30.0                 # the tool turns at most this far left / right of straight at the spot ...
 AIM_PITCH_DEG = (-20.0, 25.0)      # ... and tilts down / up at most this far: a child, a hand up at the side
 BOX_ROOM_M = 0.02                  # every pose of the box keeps this much more than the room's margins
@@ -109,7 +115,7 @@ GLASS = "partition_left"           # the room's halfspace between the guests and
 WAVE_S = 1.0                       # waving this long (tracking.is_waving), within the follow zone and BAND_M of
                                    # the glass: as good as stepping onto the spot (the user)
 DWELL_S = 1.0                      # on the spot this long (not walking) before the arm turns to them
-FOLLOW_M = (0.8, 0.5)              # once engaged, followed while within this of the spot (along, across): the
+FOLLOW_M = (1.0, 0.5)              # once engaged, followed while within this of the spot (along, across): the
                                    # spot says "me"; then they may move -- and the edge does not flap
 LEAVE_S = 0.7                      # off the spot this long: goodbye
 UNSEEN_S = TR.DROPOUT_S            # unseen this long: goodbye (shorter: the camera lost them, they are still there)
@@ -125,8 +131,8 @@ PERK_UP_M = 0.35                   # perking up: looks this much above the head,
 NOD_DOWN_M = 0.6                   # the nod: looks this much below the head
 HAND_UP_M = 0.45                   # a hand above (head - this, about the chest) is up: mode C follows it
 C_RANGE_M = (1.0, 2.0)             # a hand's height mapped onto the box's height
-B_GAIN = 0.18                      # the tool moves along the wall this much of the person's own move (the box is small;
-                                   # the aim turns with them the whole way)
+B_GAIN = 1.0                       # the tool moves along the wall with the person, one to one, to the box's ends
+                                   # (then the aim turns with them); was 0.18 in a 25 cm box -- hardly seen
 SHARE = 0.35                       # of the joints' velocity, acceleration and jerk limits
 SLOW_SHARE = 0.08                  # ... near a slow zone
 SLOW_NEAR_M = 0.15
@@ -156,6 +162,9 @@ class Engage:
         self.C, self.Result, self.Trajectory, self.RuckigCls = C, Result, Trajectory, Ruckig
         self.rig = rig or G.Rig()
         self.hub, self.env, self.model, self.dt = list(hub_q), env, model, dt
+        self.box_env = None if env is None else dict(env, objects=[           # TRACK's targets keep BOX_ROOM_M more
+            dict(o, margin_m=o.get("margin_m", env.get("margin_m", 0.05)) + BOX_ROOM_M) if o["role"] == "obstacle"
+            else o for o in env["objects"]])
         self.spot, self.r = track_spot(cfg, hub_q)
         self.axes = box_axes(cfg, hub_q, self.spot)
         self.slow = [o for o in (env or {}).get("objects", []) if o["role"] == "slow"]
@@ -310,6 +319,16 @@ class Engage:
             return None
         return q
 
+    def _reach(self, offset, aim):
+        """TRACK's pose for offset (along, up, towards), or, where the arm cannot go that far there (out of reach,
+        another branch, not clear by BOX_ROOM_M more than the room's margins), the farthest of REACH_SHRINK of it
+        towards the hub's point; None when not even the hub's point will do."""
+        for f in REACH_SHRINK:
+            q = self._pose((offset[0] * f, offset[1] * f, offset[2]), aim)
+            if q is not None and (self.box_env is None or self.C.check(self.model, self.box_env, [0.0], [q])["ok"]):
+                return q
+        return None
+
     def _head(self):
         pr = self.people.get(self.who)
         return pr["pos"] if pr else None
@@ -328,8 +347,8 @@ class Engage:
             f = (hand[2] - C_RANGE_M[0]) / (C_RANGE_M[1] - C_RANGE_M[0])
             lo, hi = BOX_M[1]
             up = lo + (hi - lo) * max(0.0, min(1.0, f))
-            return self._pose((du * B_GAIN, up, 0.03), hand[:3]), "C"
-        return self._pose((du * B_GAIN, 0.0, 0.03), head), "B"
+            return self._reach((du * B_GAIN, up, 0.03), hand[:3]), "C"
+        return self._reach((du * B_GAIN, 0.0, 0.03), head), "B"
 
     def step(self, q_clip, now):
         """The pose to send now; self.state says which mode."""
@@ -499,32 +518,38 @@ def self_test():
                              if o["role"] == "obstacle" else o for o in env["objects"]])
     model = C.load_model("fr20")
     grid = lambda lo, hi, k: [lo + (hi - lo) * i / (k - 1) for i in range(k)]      # noqa: E731
-    bad, jump, n = [], 0.0, 0
-    for du in (-SPOT_R_M - 0.2, 0.0, SPOT_R_M + 0.2):                  # the person anywhere they are followed
-        for hz in (1.2, 1.6, 2.1):                                     # a head, or a hand up
-            aim = (spot[0] + du * axes[0][0], spot[1] + du * axes[0][1], hz)
-            prev_row = None
-            for oa in grid(*BOX_M[0], 6):
-                row = []
-                for ou in grid(*BOX_M[1], 4):
-                    for od in grid(*BOX_M[2], 2):
-                        qq = face_pose(rig, hub, axes, (oa, ou, od), aim)
+    # the reach: a person walking out from the spot to the zone's ends at each height, the tool after them
+    # (_reach from the pose before, as TRACK asks): every pose on one branch and clear by BOX_ROOM_M more
+    en_r = Engage(cfg, hub, S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"]), model)
+    bad, jump, n, ends = [], 0.0, 0, {}
+    for lag in (-0.5, 0.0, 0.5):                         # the person up to 0.5 m ahead of or behind the tool
+        for hz in (1.2, 1.6, 2.1):                        # a child's head, a head, a hand up
+            for ou in (BOX_M[1][0], 0.0, BOX_M[1][1]):
+                for sign in (-1, 1):
+                    en_r.q = list(hub)
+                    for k in range(int(FOLLOW_M[0] / 0.05) + 1):
+                        du = sign * k * 0.05
+                        aim = (spot[0] + max(-FOLLOW_M[0], min(FOLLOW_M[0], du + lag)) * axes[0][0],
+                               spot[1] + max(-FOLLOW_M[0], min(FOLLOW_M[0], du + lag)) * axes[0][1], hz)
+                        qq = en_r._reach((du, ou, 0.03), aim)
                         n += 1
-                        row.append(qq)
                         if qq is None:
-                            bad.append(("no IK", oa, ou, od, du, hz))
-                            continue
-                        rep = C.check(model, env, [0.0], [qq])
-                        if not rep["ok"]:
-                            bad.append((C.describe(rep)[:60], round(oa, 2), round(ou, 2), od, du, hz))
-                if prev_row:
-                    jump = max([jump] + [max(abs(x - y) for x, y in zip(a_, b_))
-                                         for a_, b_ in zip(prev_row, row) if a_ and b_])
-                prev_row = row
-    check("the box: %d poses over it, facing anyone they follow, reachable and clear by %.0f mm more than the "
-          "room's margins" % (n, 1000 * BOX_ROOM_M), not bad, bad[:3])
-    check("... one branch: no joint turns more than 25 deg between neighbouring poses (5 cm apart)", jump < 25.0,
-          round(jump, 1))
+                            bad.append(("none", round(du, 2), ou, lag, hz))
+                            break
+                        if k:                             # a 5 cm step along (k 0: to the height from the hub)
+                            jump = max(jump, max(abs(x - y) for x, y in zip(qq, en_r.q)))
+                        if not C.check(model, env, [0.0], [qq])["ok"]:
+                            bad.append(("hit", round(du, 2), ou, lag, hz))
+                        en_r.q = qq
+                        along = _dot(tuple(a - b for a, b in zip(S.tool_pose(qq)[1], tcp)), axes[0])
+                        key = (ou, sign)
+                        ends[key] = min(ends.get(key, 9.0), along) if sign < 0 else max(ends.get(key, -9.0), along)
+    check("the reach: %d poses as a person walks out to the zone's ends, the tool after them -- each reachable, "
+          "clear by %.0f mm more than the room's margins" % (n, 1000 * BOX_ROOM_M), not bad, bad[:3])
+    check("... on one branch (no joint turns more than 25 deg a 5 cm step)", jump < 25.0, round(jump, 1))
+    at0 = (ends[(0.0, -1)], ends[(0.0, 1)])
+    check("... at the hub's height the tool goes %.2f m left and %.2f m right with them" % (-at0[0], at0[1]),
+          at0[0] < -0.85 and at0[1] > 0.45, {k: round(v, 2) for k, v in ends.items()})
 
     # --- the state machine, the clip at rest at the hub, people at 30 Hz -------------------
     env0 = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
@@ -597,15 +622,16 @@ def self_test():
     check("... every joint within %.0f %% of its speed limit, every pose clear" % (100 * SHARE),
           peak <= SHARE * 1.01 and en.unsafe == 0, (round(peak, 3), en.unsafe))
 
-    sway = lambda t: (0.0 if t < 5.0 else 0.7 * math.sin(2 * math.pi * (t - 5.0) / 8.0), 0.0, 1.62)
-    en, log = run(sway, 14.0)
+    sway = lambda t: (0.0 if t < 5.0 else 0.7 * math.sin(2 * math.pi * (t - 5.0) / 16.0), 0.0, 1.62)   # ~0.3 m/s
+    en, log = run(sway, 21.0)
     tr = [(t, q) for t, s, q, *_ in log if s == "TRACK" and t > 6.0]
     along = [_dot(tuple(a - b for a, b in zip(S.tool_pose(q)[1], tcp)), axes[0]) for t, q in tr]
     yaw = [math.degrees(math.atan2(_dot(S.tool_pose(q)[2], axes[0]), _dot(S.tool_pose(q)[2], axes[2]))) for t, q in tr]
     check("B: they walk 0.7 m left and right of the spot (inside the follow zone, %.1f x %.1f m): still engaged; "
-          "the tool moves along the wall and turns with them" % (2 * FOLLOW_M[0], 2 * FOLLOW_M[1]),
-          en.engagements == 1 and first(log, "BYE") is None and max(along) > 0.08 and min(along) < -0.1
-          and max(yaw) - min(yaw) > 30.0,
+          "the tool goes along the wall with them, one to one, as far as the room lets it (%+.1f..%+.1f m)"
+          % (2 * FOLLOW_M[0], 2 * FOLLOW_M[1], BOX_M[0][0], BOX_M[0][1]),
+          en.engagements == 1 and first(log, "BYE") is None and max(along) > 0.25 and min(along) < -0.5
+          and max(abs(y) for y in yaw) <= AIM_YAW_DEG + 1.0,
           (round(min(along), 3), round(max(along), 3), round(min(yaw), 1), round(max(yaw), 1)))
     far = lambda t: (0.0 if t < 5.0 else min(1.2, 0.3 * (t - 5.0)), 0.0, 1.62)
     en, log = run(far, 14.0)
