@@ -38,6 +38,12 @@ BOX_M = ((-0.9, 0.5), (-0.2, 0.03), (0.0, 0.06))   # along the wall (left -), up
                                    # lower than -0.2 or left of -0.9 a child's head followed turns the wrist 35-70 deg
                                    # a 5 cm step
 REACH_SHRINK = (1.0, 0.8, 0.6, 0.4, 0.2, 0.0)       # an offset not reachable or not clear: tried this much of it
+TRACK_STEP_M = (0.05, 0.03)          # a TRACK target at most this far (along, up) from where the tool is: the move to
+                                     # it (a straight line in the joints) keeps near the box -- 0.6 m at once rose 7 cm
+                                     # over its top into the ceiling's margin and stopped the arm (mc_wave_call)
+CENTER_ALONG_M = sum(BOX_M[0]) / 2.0                # the middle of the reach along (-0.2: the arm goes further to the
+                                                     # guests' left): the spot is across from it, and the tool is here
+                                                     # when they stand on it -- as far either way (+-0.7 m; the user)
 AIM_YAW_DEG = 30.0                 # the tool turns at most this far left / right of straight at the spot ...
 AIM_PITCH_DEG = (-20.0, 25.0)      # ... and tilts down / up at most this far: a child, a hand up at the side
 BOX_ROOM_M = 0.02                  # every pose of the box keeps this much more than the room's margins
@@ -62,14 +68,15 @@ def _dot(a, b):
 
 
 def track_spot(cfg, hub_q):
-    """(centre (x, y), radius): straight across from the hub's tool point
-    along the audience zone, SPOT_GLASS_M out from the glass."""
+    """(centre (x, y), radius): across from the middle of the tool's reach
+    (CENTER_ALONG_M along from the hub's tool point), SPOT_GLASS_M out from
+    the glass."""
     import collision as C
     import show as S
     import track_sim as TS
     c, along, _ = TS.zone_frame(cfg)
     tcp = S.tool_pose(hub_q)[1]
-    u = (tcp[0] - c[0]) * along[0] + (tcp[1] - c[1]) * along[1]
+    u = (tcp[0] - c[0]) * along[0] + (tcp[1] - c[1]) * along[1] + CENTER_ALONG_M
     p = (c[0] + u * along[0], c[1] + u * along[1])
     g = next(o for o in C.load_env(cfg["env"])["objects"] if o["name"] == GLASS)
     n, off = g["normal"], g["offset"]
@@ -435,8 +442,14 @@ class Engage:
             f = (hand[2] - C_RANGE_M[0]) / (C_RANGE_M[1] - C_RANGE_M[0])
             lo, hi = BOX_M[1]
             up = lo + (hi - lo) * max(0.0, min(1.0, f))
-            return self._reach((du * B_GAIN, up, 0.03), hand[:3]), "C"
-        return self._reach((du * B_GAIN, crouch_up(pr["tall"], pr["pos"][2]), 0.03), head), "B"
+            return self._reach(self._near((CENTER_ALONG_M + du * B_GAIN, up, 0.03)), hand[:3]), "C"
+        return self._reach(self._near((CENTER_ALONG_M + du * B_GAIN, crouch_up(pr["tall"], pr["pos"][2]), 0.03)),
+                           head), "B"
+
+    def _near(self, offset):
+        """offset, but at most TRACK_STEP_M (along, up) from the tool's offset now."""
+        cur = self._offset(self.q)
+        return tuple(max(c - s_, min(c + s_, o)) for o, c, s_ in zip(offset[:2], cur[:2], TRACK_STEP_M)) + offset[2:]
 
     def step(self, q_clip, now):
         """The pose to send now; self.state says which mode."""
@@ -510,7 +523,7 @@ class Engage:
     def _start(self, who, q_clip, now):
         self.q = list(q_clip)
         head = self.people[who]["pos"]
-        perk = self._pose((0.0, BOX_M[1][1], BOX_M[2][1]), (head[0], head[1], head[2] + PERK_UP_M))
+        perk = self._pose((CENTER_ALONG_M, BOX_M[1][1], BOX_M[2][1]), (head[0], head[1], head[2] + PERK_UP_M))
         dt = self.dt
         qs = self.q_prev
         v = [(b - a) / dt for a, b in zip(qs[-2], qs[-1])] if len(qs) >= 2 else [0.0] * 6
@@ -604,10 +617,10 @@ def self_test():
     c0, along0, _ = TS.zone_frame(cfg)
     u_spot = (spot[0] - c0[0]) * along0[0] + (spot[1] - c0[1]) * along0[1]
     u_tcp = (tcp[0] - c0[0]) * along0[0] + (tcp[1] - c0[1]) * along0[1]
-    check("the spot: 0.8 m across, %.2f m out from the glass (where a guest stands to be seen whole), straight "
-          "across from the greet hub" % SPOT_GLASS_M,
+    check("the spot: 0.8 m across, %.2f m out from the glass (where a guest stands to be seen whole), across "
+          "from the middle of the tool's reach (%+.1f m along from the greet hub's)" % (SPOT_GLASS_M, CENTER_ALONG_M),
           r == 0.4 and abs(glass_distance((gl["normal"], gl["offset"]), (spot[0], spot[1], 0.0)) - SPOT_GLASS_M) < 0.01
-          and abs(u_spot - u_tcp) < 0.05 and 1.0 < math.dist(spot, tcp[:2]) < 1.9,
+          and abs(u_spot - u_tcp - CENTER_ALONG_M) < 0.05 and 1.0 < math.dist(spot, tcp[:2]) < 1.9,
           ([round(x, 3) for x in spot], round(math.dist(spot, tcp[:2]), 2)))
     rig = G.Rig()
     axes = box_axes(cfg, hub, spot)
@@ -636,7 +649,7 @@ def self_test():
                         du = sign * k * 0.05
                         aim = (spot[0] + max(-FOLLOW_M[0], min(FOLLOW_M[0], du + lag)) * axes[0][0],
                                spot[1] + max(-FOLLOW_M[0], min(FOLLOW_M[0], du + lag)) * axes[0][1], hz)
-                        qq = en_r._reach((du, ou, 0.03), aim)
+                        qq = en_r._reach((CENTER_ALONG_M + du, ou, 0.03), aim)
                         n += 1
                         if qq is None:
                             bad.append(("none", round(du, 2), ou, lag, hz))
@@ -651,10 +664,12 @@ def self_test():
                         ends[key] = min(ends.get(key, 9.0), along) if sign < 0 else max(ends.get(key, -9.0), along)
     check("the reach: %d poses as a person walks out to the zone's ends, the tool after them -- each reachable, "
           "clear by %.0f mm more than the room's margins" % (n, 1000 * BOX_ROOM_M), not bad, bad[:3])
-    check("... on one branch (no joint turns more than 25 deg a 5 cm step)", jump < 25.0, round(jump, 1))
-    at0 = (ends[(0.0, -1)], ends[(0.0, 1)])
-    check("... at the hub's height the tool goes %.2f m left and %.2f m right with them" % (-at0[0], at0[1]),
-          at0[0] < -0.85 and at0[1] > 0.45, {k: round(v, 2) for k, v in ends.items()})
+    check("... on one branch: no joint turns more than 30 deg a 5 cm step (a flip is 90+ and refused; the most: "
+          "26 at the left end, the tool stopped there turning to a child's head)", jump < 30.0, round(jump, 1))
+    at0 = (ends[(0.0, -1)] - CENTER_ALONG_M, ends[(0.0, 1)] - CENTER_ALONG_M)
+    check("... at the hub's height the tool goes %.2f m left and %.2f m right with them from the spot's middle: "
+          "about as far either way" % (-at0[0], at0[1]), at0[0] < -0.65 and at0[1] > 0.65,
+          {k: round(v, 2) for k, v in ends.items()})
 
     # --- the state machine, the clip at rest at the hub, people at 30 Hz -------------------
     env0 = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
@@ -735,7 +750,8 @@ def self_test():
     check("B: they walk 0.7 m left and right of the spot (inside the follow zone, %.1f x %.1f m): still engaged; "
           "the tool goes along the wall with them, one to one, as far as the room lets it (%+.1f..%+.1f m)"
           % (2 * FOLLOW_M[0], 2 * FOLLOW_M[1], BOX_M[0][0], BOX_M[0][1]),
-          en.engagements == 1 and first(log, "BYE") is None and max(along) > 0.25 and min(along) < -0.5
+          en.engagements == 1 and first(log, "BYE") is None and max(along) - CENTER_ALONG_M > 0.6
+          and CENTER_ALONG_M - min(along) > 0.6
           and max(abs(y) for y in yaw) <= AIM_YAW_DEG + 1.0,
           (round(min(along), 3), round(max(along), 3), round(min(yaw), 1), round(max(yaw), 1)))
     far = lambda t: (0.0 if t < 5.0 else min(1.2, 0.3 * (t - 5.0)), 0.0, 1.62)
