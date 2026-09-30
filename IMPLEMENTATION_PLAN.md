@@ -641,6 +641,14 @@ see that the mode began): scripts/engage.py.
   (engage.py, run_tracking --live --engage), apart from the party show; the user
   looks at it in Isaac, then decides on a real-arm test of it alone. Not started
   until then: TD's light for TRACK, show_stream's Runner, the OAK-D process.
+  Real people (2026-09-29): CMU mocap scenes (mocap_cmu.py, mocap_scenes.py,
+  the `mc_` scenarios) with the Femto Mega's noise and latency. A person
+  waiting reads 0.7 m/s over 0.6 s (sway), so the walking speed is taken
+  over 1.2 s (0.6 s while someone is new); the glass band keeps whoever is
+  in it until 0.15 m beyond (depth noise at the edge). All 22 pass. Next,
+  the user's go: TD people_track (the Femto's sim CSVs -> /track/people,
+  /track/hands) -> Isaac (run_tracking --osc-in) and SimMachine
+  (track_test.py), apart from the party show.
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a

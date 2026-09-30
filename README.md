@@ -695,6 +695,13 @@ C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start      
   clips one after the other with a card (`--no-sequence` to skip).
   `--segments` / `--graph` / `--still`: a new scan's preview, or one
   picture a camera.
+- **Tracking offline** (no Isaac): `python scripts/track_eval.py` runs
+  every scenario of `track_sim.py` through the tracking layer and checks
+  it; the `mc_` ones are real people (CMU mocap, `mocap_cmu.py` reads
+  `geo/mocap/cmu/`, `mocap_scenes.py` stages them: walking by, waving to
+  call it, a crowd ...). `python scripts/mocap_scenes.py --write-all
+  geo/tracking` writes them as the Femto would see them (camera frame
+  CSVs, the extrinsic and a top-down layout) for TD's `people_track`.
 
 Ports: 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in, 6455
 Isaac's LEDs (Art-Net; not 6454, TD and a real node may hold it), 6457

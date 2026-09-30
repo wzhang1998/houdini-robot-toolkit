@@ -75,9 +75,11 @@ def run(name, graph, env, model, hub="greet", seed=1):
     events, truth, dur = TS.scenario(name, seed=seed)
     base, clips = base_motion(graph, hub, dur, seed)
     ti = TR.TargetInput()
-    att = TR.Attention()
+    g = next((o for o in env["objects"] if o["name"] == "partition_left"), None)       # the glass
+    att = TR.Attention(glass=(g["normal"], g["offset"]) if g else None)
     gz = TR.Gaze(anchor=graph.hubs[hub], dt=DT, env=env, model=model)
     ts, qs, qb, offs, tgt, who = [], [], [], [], [], []
+    pending_hands = []
     k, n = 0, int(dur / DT)
     for i in range(n):
         now = i * DT
@@ -86,9 +88,12 @@ def run(name, graph, env, model, hub="greet", seed=1):
             if e["addr"] == "/track/target":
                 x, y, z, conf, tm, pid = e["args"]
                 ti.target(x, y, z, conf, tm, pid, now=now)
+            elif e["addr"] == "/track/hands":
+                pending_hands = [p + (e["args"][0],) for p in TS.people_of(e["args"])]
             elif e["addr"] == "/track/people":
                 tm = e["args"][0]
-                att.update([p + (tm,) for p in TS.people_of(e["args"])], now)
+                att.update([p + (tm,) for p in TS.people_of(e["args"])], now, pending_hands)
+                pending_hands = []
                 ch = att.choose(now)
                 if ch is not None:
                     ti.target(ch[0][0], ch[0][1], ch[0][2], 0.9, tm, ch[1], now=now)
@@ -195,6 +200,12 @@ def measure(r, rig, env, model):
             if nearest not in looked or furthest in late:
                 ok = False
                 why.append("not the nearest first (nearest %s, furthest %s, looked at %s)" % (nearest, furthest, looked))
+        if r["name"] == "mc_walk_by" and looked:
+            ok = False
+            why.append("looked at someone walking by")
+        if r["name"] == "mc_wave_call" and 2 not in looked:
+            ok = False
+            why.append("the waver was not looked at")
         if r["name"] == "passer_by" and 2 in looked:
             ok = False
             why.append("looked at the passer-by")

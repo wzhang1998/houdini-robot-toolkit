@@ -352,6 +352,7 @@ class Gaze:
 
 
 BAND_M = 1.2                  # only people within this of the glass count -- looked at, or waving (the user)
+BAND_KEEP_M = 0.15            # ... and, once in, until this beyond it (the depth noise at the edge: no flicker)
 ACT_WINDOW_S = 1.5            # activity: a hand's movement about the head over this long ...
 ACT_BIN_S = 0.25
 ACT_FLOOR_MPS = 0.1           # ... less this (the noise of a still hand) ...
@@ -368,18 +369,22 @@ DWELL_S = 1.0                 # in view this long before being looked at
 PASSER_MPS = 0.6              # moving faster than this (smoothed): walking by, not looked at
 GROUP_M = 0.6                 # people this close to the one looked at: one group, its middle is the target
 FORGET_S = 0.5                # a person not seen this long is gone
-SPEED_WINDOW_S = 0.6          # walking speed: over this long (frame to frame, the depth noise alone reads ~1 m/s)
+SPEED_WINDOW_S = 1.2          # walking speed: over this long -- frame to frame the depth noise alone reads ~1 m/s,
+                              # and over 0.6 s a real person waiting (shifting, looking round) reads 0.7 (CMU 141_20)
+SPEED_FIRST_S = 0.6           # ... over as long as there is, this long at least, while someone is new
 
 
 def _walking_speed(hist, t):
     """How fast a person moves along the floor (m/s): the middle of their
-    last few points against that of the points SPEED_WINDOW_S before --
+    last few points against that of the points SPEED_WINDOW_S before (as
+    far back as there is, SPEED_FIRST_S at least, while they are new) --
     frame to frame, a standing person's depth noise reads as walking. None
-    until the window is there."""
-    old = [p for tm, p in hist if tm <= t - SPEED_WINDOW_S]
+    until SPEED_FIRST_S is there."""
+    old = [tm for tm, _ in hist if tm <= t - SPEED_FIRST_S]
     if not old:
         return None
-    t_old = max(tm for tm, _ in hist if tm <= t - SPEED_WINDOW_S)
+    within = [tm for tm in old if tm >= t - SPEED_WINDOW_S]
+    t_old = min(within) if within else max(old)
     a = [p for tm, p in hist if t_old - 0.1 <= tm <= t_old]
     b = [p for tm, p in hist if tm >= t - 0.1]
     ma = [sum(q[i] for q in a) / len(a) for i in range(2)]
@@ -476,6 +481,9 @@ class Attention:
             while h and h[0][0] < t - 2.0 * SPEED_WINDOW_S:
                 del h[0]
             tr["speed"] = _walking_speed(h, t)
+            if self.glass is not None:
+                d = glass_distance(self.glass, p)
+                tr["in_band"] = -0.2 <= d <= BAND_M + (BAND_KEEP_M if tr.get("in_band") else 0.0)
         for pid, x, y, z, conf, t in hands:
             tr = self.tracks.get(pid)
             if conf < self.min_conf or tr is None:
@@ -502,7 +510,7 @@ class Attention:
         return [pid for pid, tr in self.tracks.items()
                 if now - tr["first"] >= DWELL_S and tr["speed"] is not None and tr["speed"] <= PASSER_MPS
                 and (self.inside is None or self.inside(tr["pos"]))
-                and (self.glass is None or -0.2 <= glass_distance(self.glass, tr["pos"]) <= BAND_M)]
+                and (self.glass is None or tr.get("in_band"))]
 
     def _waited(self, pid, now):
         return now - max(self.tracks[pid]["first"], self.last_end.get(pid, -1e9))
@@ -666,6 +674,12 @@ def self_test():
     seq = feed(Attention(glass=glass), beyond, 0.0, 8.0, hands_at=lambda t: [wave(3, 0.0, -2.6, t)])
     check("someone waving %.1f m from the glass (beyond %.1f m): not looked at" % (1.4, BAND_M),
           all(pid is None for _, pid, _ in seq))
+    rng3 = random.Random(5)
+    edge = lambda t: [(1, 0.0, -2.35 + rng3.gauss(0, 0.04), 1.6, 0.9)]
+    seq = feed(Attention(glass=glass), edge, 0.0, 10.0)
+    runs = [r for r in spans(seq) if r[0] is not None]
+    check("someone standing at the band's edge (1.15 m from the glass, 4 cm depth noise): looked at without a break",
+          len(runs) == 1 and runs[0][1] > 8.5, runs)
     kid = lambda t: [(1, 0.4, -1.7, 1.6, 0.9), (4, -0.9 + 1.5 * (abs((t % 2.4) - 1.2)), -1.5, 1.2, 0.9)]
     seq = feed(Attention(glass=glass), kid, 0.0, 16.0,
                hands_at=lambda t: [wave(1, 0.4, -1.7, t, 1e9), wave(4, -0.9 + 1.5 * abs((t % 2.4) - 1.2), -1.5, t,

@@ -177,11 +177,28 @@ SCENARIOS = {
 }
 
 
+def _mocap():
+    """mocap_scenes (real people, CMU): their scenes join SCENARIOS when the clips are there."""
+    try:
+        import mocap_scenes as MS
+        import mocap_cmu as MC
+    except ImportError:
+        return None
+    if not os.path.exists(os.path.join(MC.CMU_DIR, "07_01.amc")):
+        return None
+    for k, (dur, specs) in MS.SCENES.items():
+        SCENARIOS.setdefault(k, (None, dur, {}, "real people (CMU mocap): " + ", ".join(sp[1] for sp in specs)))
+        PEOPLE.add(k)
+    return MS
+
+
 def scenario(name, seed=1, cfg=None):
     """(events, truth, duration): events sorted by arrival, each
     {"t": arrival s, "addr": "/track/target" | "/track/lost", "args": [...]};
     truth(t) -> (x, y, z) in the robot base frame, or None. A crowd scenario
     (PEOPLE): /track/people events and truth(t) -> {person id: (x, y, z)}."""
+    if name.startswith("mc_"):
+        return _mocap().scenario(name, seed, cfg)
     if name in PEOPLE:
         return _people_scenario(name, seed, cfg)
     fn, dur, opt, _ = SCENARIOS[name]
@@ -315,6 +332,9 @@ def self_test():
     check("noisy: 40 % dropped", 15 < len(tg) / 12.0 < 21, "%.1f Hz" % (len(tg) / 12.0))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
+
+
+_MS = _mocap()
 
 
 def main(argv):

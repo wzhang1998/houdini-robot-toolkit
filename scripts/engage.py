@@ -595,7 +595,7 @@ def self_test():
     check("C: a hand at chest height (1.3 m) is up already", modes == {"C"}, modes)
     en, log = run(stay, 12.0, hand=lambda t: 2.0 if t >= 6.0 else 0.9)
     modes = {m for t, s, q, r, m in log if s == "TRACK" and t > 8.0}
-    up_b = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and 4.0 < t < 6.0]
+    up_b = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and 5.0 < t < 6.0]     # B settled
     up_c = [S.tool_pose(q)[2][2] for t, s, q, *_ in log if s == "TRACK" and t > 9.0]
     check("C: a hand raised to 2 m: the tool rises and tilts up to it", modes == {"C"} and up_c and up_b
           and min(up_c) > max(up_b) + 0.1, (modes, round(max(up_b), 2) if up_b else None,
