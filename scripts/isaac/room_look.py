@@ -45,6 +45,8 @@ SURFACES = {"floor": ((0.17, 0.1, 0.06), 0.5, 1.0),        # dark worn planks
 WOOD = (0.74, 0.52, 0.32)
 
 
+CEILING_INTENSITY = 55000.0        # each LED frame bar's rect light (was 90000: the user, 2026-09-30, a bit darker)
+
 def _material(stage, name, rgb, roughness=0.7, emissive=None):
     path = Sdf.Path("%s/Materials/%s" % (ROOT_PATH, name))
     mat = UsdShade.Material.Define(stage, path)
@@ -161,7 +163,7 @@ def apply(stage, env, room="/World/Room", guides=False):
         lt.CreateWidthAttr(size[0])
         lt.CreateHeightAttr(size[1])
         lt.CreateColorAttr(Gf.Vec3f(*COOL))
-        lt.CreateIntensityAttr(90000.0)
+        lt.CreateIntensityAttr(CEILING_INTENSITY)
         x = UsdGeom.Xformable(lt)
         x.AddTranslateOp().Set(Gf.Vec3d(c[0], c[1], c[2] - f["bar_m"] / 2 - 0.005))
         x.AddRotateZOp().Set(YAW_DEG)                   # a rect light shines down its -Z: already down
