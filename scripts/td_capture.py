@@ -5,10 +5,10 @@ and replay_render.py renders it at leisure: TD ran in real time, as in the
 show, and the video need not.
 
     <dir>/capture.json    the show, the seed, when
-    <dir>/frames.csv      t, state, clip, scan, scan_u, j1..j6, led0..led59     (30 a second)
+    <dir>/frames.csv      t, state, clip, scan, scan_u, j1..j6, led0..led59, ceiling     (30 a second)
     <dir>/canvas.bin      records: t f64 | w u16 | h u16 | n u32 | zlib(RGB8, rows top first)
 
-    w = Writer(dir, meta); w.frame(t, status, q, leds); w.canvas(t, w, h, rgb); w.close()
+    w = Writer(dir, meta); w.frame(t, status, q, leds, ceiling); w.canvas(t, w, h, rgb); w.close()
     r = Reader(dir); r.frames; r.canvas_at(t)
 
     python scripts/td_capture.py --self-test
@@ -35,16 +35,18 @@ class Writer:
         self.f = open(os.path.join(path, "frames.csv"), "w", newline="")
         self.w = csv.writer(self.f)
         self.w.writerow(["t", "state", "clip", "scan", "scan_u"] + ["j%d" % i for i in range(1, 7)]
-                        + ["led%d" % i for i in range(LEDS)])
+                        + ["led%d" % i for i in range(LEDS)] + ["ceiling"])
         self.c = open(os.path.join(path, "canvas.bin"), "wb")
         self.frames = self.images = 0
 
-    def frame(self, t, status, q, leds):
+    def frame(self, t, status, q, leds, ceiling=None):
         """One moment: the show's status (Runner.status), the joints (deg), the
-        strip's levels (None: nothing from TD yet -> dark)."""
+        strip's levels (None: nothing from TD yet -> dark), the ceiling's level
+        (TD ceiling_light; None: nothing from TD -> full, the room as lit)."""
         lv = list(leds or [])[:LEDS] + [0.0] * (LEDS - len(leds or []))
         self.w.writerow(["%.4f" % t, status["state"], status["clip"], "%.4f" % status["scan"],
-                         "%.4f" % status["scan_u"]] + ["%.4f" % x for x in q] + ["%.4f" % x for x in lv])
+                         "%.4f" % status["scan_u"]] + ["%.4f" % x for x in q] + ["%.4f" % x for x in lv]
+                        + ["%.4f" % (1.0 if ceiling is None else ceiling)])
         self.frames += 1
 
     def canvas(self, t, w, h, rgb):
@@ -67,7 +69,8 @@ class Reader:
                 self.frames.append({"t": float(row["t"]), "state": row["state"], "clip": row["clip"],
                                     "scan": float(row["scan"]), "scan_u": float(row["scan_u"]),
                                     "q": [float(row["j%d" % i]) for i in range(1, 7)],
-                                    "leds": [float(row["led%d" % i]) for i in range(LEDS)]})
+                                    "leds": [float(row["led%d" % i]) for i in range(LEDS)],
+                                    "ceiling": float(row.get("ceiling") or 1.0)})    # older captures: full
         self.times = [fr["t"] for fr in self.frames]
         self.canvas_t, self._canvas = [], []
         p = os.path.join(path, "canvas.bin")
@@ -132,7 +135,8 @@ def self_test():
     w = Writer(d, {"config": "shows/party.json", "seed": 1})
     st = {"state": "IDLE", "clip": "greet_01_wave", "scan": -1.0, "scan_u": -1.0}
     w.frame(0.0, st, [0, -90, 90, -90, -90, 0], None)
-    w.frame(1 / 30.0, dict(st, state="SCAN", clip="scan", scan=0.5, scan_u=0.5), [1, 2, 3, 4, 5, 6], [0.5] * 60)
+    w.frame(1 / 30.0, dict(st, state="SCAN", clip="scan", scan=0.5, scan_u=0.5), [1, 2, 3, 4, 5, 6], [0.5] * 60,
+            ceiling=0.25)
     img = bytes([200, 100, 50]) * (4 * 3)
     w.canvas(0.02, 4, 3, img)
     w.canvas(0.5, 4, 3, bytes(36))
@@ -154,6 +158,13 @@ def self_test():
     with open(os.path.join(d, "canvas.bin"), "ab") as f:
         f.write(HEAD.pack(1.0, 4, 3, 999) + b"xx")                   # a run stopped mid-record
     check("a record cut short at the end is left out", len(Reader(d).canvas_t) == 2)
+    check("the ceiling's level kept (none from TD: full, the room as lit)",
+          r.frames[0]["ceiling"] == 1.0 and r.frames[1]["ceiling"] == 0.25, [f["ceiling"] for f in r.frames])
+    old = os.path.join(d, "frames.csv")
+    rows = open(old).read().splitlines()
+    cut = lambda line: ",".join(line.split(",")[:-1])  # noqa: E731
+    open(old, "w").write("\n".join(cut(x) for x in rows) + "\n")
+    check("... a capture from before it: full", Reader(d).frames[1]["ceiling"] == 1.0)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

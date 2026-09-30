@@ -37,10 +37,11 @@ the modules' logic.
 
 ```bash
 C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json                       # the show in the lab room, a window
-C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live             # + TD live: its LEDs and canvas drawn
+C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live             # + TD live: its LEDs, canvas, ceiling drawn
 C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo        # the 5 min demo (paper simulated)
 C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo --td-live
 C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera audience
+C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera interact --size 3840x2160   # 4K
 C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless                       # the library review grid (v9)
 ```
 

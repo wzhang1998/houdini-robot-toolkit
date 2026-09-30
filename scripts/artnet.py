@@ -24,6 +24,7 @@ from udp_latest import LatestReceiver
 ID = b"Art-Net\x00"
 OP_DMX = 0x5000
 PREVIEW_PORT = 6455                  # not Art-Net's 6454: TD and a real node may hold that one
+CEILING_PORT = 6458                  # TD ceiling_light's preview: one dimmer, 16 bit on channels 1-2
 LEDS = 60
 
 
@@ -54,6 +55,26 @@ def levels(data, n=LEDS, start=0, per_led=3):
         ch = data[start + i * per_led:start + (i + 1) * per_led]
         out.append(max(ch) / 255.0 if ch else 0.0)
     return out
+
+
+def dimmer(data):
+    """A dimmer's level 0..1 from channel bytes: 16 bit (coarse, fine) on channels 1-2, 8 bit if only one
+    arrived; None for none."""
+    if len(data) >= 2:
+        return (data[0] * 256 + data[1]) / 65535.0
+    return data[0] / 255.0 if data else None
+
+
+class DimmerReceiver(LatestReceiver):
+    """The ceiling's level as TD ceiling_light previews it (ArtDmx, one universe, never blocking)."""
+
+    def __init__(self, port=CEILING_PORT, universe=0, host="127.0.0.1"):
+        self.universe = universe
+        super().__init__(port, self._level, host, bufsize=1024)
+
+    def _level(self, packet):
+        got = parse(packet)
+        return dimmer(got[1]) if got and got[0] == self.universe else None
 
 
 class Receiver(LatestReceiver):
@@ -110,6 +131,17 @@ def self_test():
           got is not None and len(got) == 60 and got[0] == 1.0 and got[1] == 0.0 and rx.packets == 2,
           (got[:3] if got else None, rx.packets))
     check("... and knows how old it is", rx.age() is not None and rx.age() < 1.0)
+    check("the ceiling's dimmer: 16 bit, coarse then fine, 0..1; one byte 8 bit; none: None",
+          dimmer(bytes([128, 0])) == 32768 / 65535.0 and dimmer(bytes([255, 255, 7])) == 1.0
+          and dimmer(bytes([51])) == 0.2 and dimmer(b"") is None)
+    drx = DimmerReceiver(port=0)
+    tx.sendto(artdmx(0, bytes([64, 0])), ("127.0.0.1", drx.sock.getsockname()[1]))
+    for _ in range(50):
+        if drx.poll() is not None:
+            break
+        time.sleep(0.01)
+    check("... its receiver keeps the newest level", drx.poll() == 64 * 256 / 65535.0, drx.poll())
+    drx.close()
     tp = test_pattern(1.0)
     check("the test pattern: a comet 20 LEDs in after 1 s, LED 0's end marked", tp[20] == 1.0 and tp[0] == 0.15
           and tp[30] == 0.0, (tp[0], tp[20], tp[30]))

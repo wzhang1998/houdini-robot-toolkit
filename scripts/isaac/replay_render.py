@@ -1,12 +1,13 @@
-"""A recorded run rendered at leisure: the arm, TouchDesigner's LEDs and its
-canvas preview as they played live (run_show --record, td_capture.py), 30
+"""A recorded run rendered at leisure: the arm, TouchDesigner's LEDs, its
+canvas preview and the ceiling's level (ceiling_light) as they played live (run_show --record, td_capture.py), 30
 frames a second from any camera, the state and clip in the corner -- TD ran
 in real time as in the show; the render takes as long as it takes.
 
     C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp>
     C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera room --start 40 --end 70
+    C:/isaacsim6/python.bat scripts/isaac/replay_render.py geo/isaac/td_capture_<stamp> --camera interact --size 3840x2160
 
-Writes <capture>/replay_<camera>.mp4. The room as every Isaac view (isaac_stage.load_room), guides hidden.
+Writes <capture>/replay_<camera>[_<size>].mp4. The room as every Isaac view (isaac_stage.load_room), guides hidden.
 """
 
 import argparse
@@ -30,11 +31,13 @@ ap.add_argument("--look", default="room", choices=("room", "plain"))
 ap.add_argument("--guides", action="store_true", help="draw the safety guides")
 ap.add_argument("--led0", choices=("minus", "plus"), default="minus", help="the strip's end LED 0 is at (flange y)")
 ap.add_argument("--led-gain", type=float, default=1.0, help="brighten the drawn LEDs")
+ap.add_argument("--size", default="1600x900", help="the video's resolution, WxH (3840x2160: 4K)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True, "width": 1600, "height": 900, "renderer": "RaytracedLighting"})
+W, H = (int(x) for x in args.size.lower().split("x"))
+app = SimulationApp({"headless": True, "width": W, "height": H, "renderer": "RaytracedLighting"})
 
 import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
@@ -44,6 +47,7 @@ from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport  # noqa: E402
 
 import overlay  # noqa: E402
+import room_look  # noqa: E402
 import td_capture  # noqa: E402
 from canvas_viz import CanvasViz  # noqa: E402
 from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, encode_video, import_robot, load_room,  # noqa: E402
@@ -80,7 +84,7 @@ def main():
     render_settings()
     use_camera(stage, "/World/ReplayCam", *camera_spec(args.camera, cfg, env))
 
-    tag = args.camera if " " not in args.camera.strip() else "custom"
+    tag = (args.camera if " " not in args.camera.strip() else "custom") + ("" if args.size == "1600x900" else "_" + args.size)
     frames = os.path.join(os.path.abspath(args.capture), "_frames_%s" % tag)
     os.makedirs(frames, exist_ok=True)
     for f in os.listdir(frames):
@@ -89,7 +93,7 @@ def main():
     for _ in range(int(1.0 / PHYSICS_DT)):                              # settle at the first pose
         robot.apply_action(ArticulationAction(joint_positions=np.radians(first["q"]), joint_indices=idx))
         world.step(render=False)
-    corner, shown, shots = [], None, 0
+    corner, shown, shots, ceiling = [], None, 0, None
     n = int((end - args.start) * FPS)
     for k in range(n):
         t = args.start + k / float(FPS)
@@ -99,6 +103,9 @@ def main():
             robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
             world.step(render=s == steps - 1)
         leds.update(fr["leds"], q)
+        if ceiling is None or abs(fr["ceiling"] - ceiling) > 1e-3:          # TD ceiling_light's level
+            room_look.set_ceiling(stage, fr["ceiling"])
+            ceiling = fr["ceiling"]
         if scan is not None:
             scan.update(-1.0, False, q)
         if canvas is not None:
