@@ -262,6 +262,8 @@ def live():
     if not args.headless:
         import omni.ui as ui
         win = ui.Window("Tracking", width=400, height=180 + 28 * n)
+        if rx is not None:                               # OSC: nothing to click, out of the viewport's way
+            win.position_x, win.position_y, win.height = 20, 680, 150
         with win.frame:
             with ui.VStack(spacing=6):
                 label = ui.Label("", height=110, word_wrap=True)
