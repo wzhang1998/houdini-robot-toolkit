@@ -96,11 +96,18 @@ def bodies_of(values):
 
 
 def read(path):
-    """[(frame, t, bodies)] of a recording."""
+    """[(frame, t, bodies)] of a recording. t in s: its timestamps, unless they do not run at about the
+    camera's rate -- then from its frame numbers at FPS (the real Femto over Ethernet: TD's timestamp
+    channel stays 0, 2026-09-30)."""
     out = []
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
             out.append((int(float(r["frame"])), float(r["timestamp"]), bodies_of(r)))
+    if len(out) > 1 and out[-1][0] > out[0][0]:
+        per_frame = (out[-1][1] - out[0][1]) / (out[-1][0] - out[0][0])
+        if not 0.5 / FPS <= per_frame <= 2.0 / FPS:
+            f0 = out[0][0]
+            out = [(fr, (fr - f0) / FPS, b) for fr, _, b in out]
     return out
 
 
@@ -230,6 +237,10 @@ def self_test():
     check("a recording read back: the bodies in their slots, their ids, an empty slot left out",
           [[b[0] for b in f[2]] for f in back] == [[7, 3], [3]] and back[0][2][0][1]["head"] == (0.1, 0.4, 0.8, MEDIUM),
           [[b[0] for b in f[2]] for f in back])
+    write(path, [(4357 + k, 0.0, f[2]) for k, f in enumerate(frames)] + [(4360, 0.0, [])], players=3)
+    check("... the real camera's (timestamps all 0): the times from its frame numbers at 30 fps, a gap kept",
+          [round(f[1], 4) for f in read(path)] == [0.0, 0.0333, 0.1], [f[1] for f in read(path)])
+    write(path, frames, players=3)
     people, hands = messages(back[0][2], R, P)
     check("messages: the heads in the robot frame, conf by the level",
           people == [(7, -0.1, -1.8, 1.6, 0.9), (3, 0.5, -2.2, 1.6, 0.9)], people)
