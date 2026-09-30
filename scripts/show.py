@@ -76,6 +76,7 @@ class Segment:
         self.name, self.kind, self.t, self.q = name, kind, list(t), [list(x) for x in q]
         self.start, self.end, self.labels = start, end, labels or {}
         self._path = None                              # built on first use by at()
+        self._cues = None                              # motion_cues(), built on first use
 
     @property
     def duration(self):
@@ -121,6 +122,29 @@ class Graph:
 
     def idle_hubs(self):
         return sorted(set(s.start for s in self.idle()))
+
+    def gaps(self):
+        """What a trigger or the idling could ask for that the graph cannot do: the routes missing between
+        idle hubs, from each to the scan's hub and back, and a sequence's hub without idle clips -- ["a -> b",
+        ...]; [] when every one is there (safety audit 2026-09-29, 8)."""
+        idle, out = self.idle_hubs(), []
+        for a in idle:
+            for b in idle:
+                if a != b and self.route(a, b) is None:
+                    out.append("%s -> %s" % (a, b))
+        to_scan = [x for x in self.segments if x.kind == "to_scan"]
+        from_scan = [x for x in self.segments if x.kind == "from_scan"]
+        if to_scan:
+            h = to_scan[0].start
+            out += ["%s -> scan (%s)" % (a, h) for a in idle if a != h and self.route(a, h) is None]
+        if from_scan:
+            h = from_scan[0].end
+            out += ["scan (%s) -> %s" % (h, b) for b in idle if b != h and self.route(h, b) is None]
+        for name, seq in sorted((self.info.get("sequences") or {}).items()):
+            h = seq.get("hub")
+            if h is not None and h not in idle:
+                out.append("sequence %s: its hub %s has no idle clips" % (name, h))
+        return out
 
     def route(self, a, b):
         """Hub-to-hub moves from a to b (breadth first), [] when a == b, None if none."""
@@ -448,6 +472,7 @@ def build(cfg_path, log=print, scan_only=False):
     import collision as C
     import robot_profile as RP
     import safe_move
+    inputs = input_digests(cfg_path)          # first: an edit during the build is then seen as one (audit, 9)
     cfg = json.load(open(cfg_path))
     prof = RP.load("fr20")
     vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
@@ -551,7 +576,7 @@ def build(cfg_path, log=print, scan_only=False):
     add_energy(segs)
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
-                           "inputs": input_digests(cfg_path), "scan_only": scan_only,
+                           "inputs": inputs, "scan_only": scan_only,
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     bad = g.check_joins()
@@ -563,7 +588,59 @@ def build(cfg_path, log=print, scan_only=False):
     unreachable = [] if scan_only else [h for h in g.idle_hubs() if g.route(cfg["start_hub"], h) is None]
     if unreachable:
         raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
+    if not scan_only:
+        require_connected(g)
+    warn = tool_zone_report(segs, idle_env, model)
+    g.info["warnings"] = ["%s: %s" % w for w in warn]
+    for w in g.info["warnings"]:
+        log("  WARNING %s" % w)
     return g
+
+
+def require_connected(g):
+    """SystemExit when the graph has gaps (Graph.gaps): a trigger could crash the player or jump."""
+    gaps = g.gaps()
+    if gaps:
+        raise SystemExit("routes missing (every hub must reach every other, the scan and each sequence's hub): %s"
+                         % "; ".join(gaps))
+
+
+def tool_zone_report(segs, env, model, prof=None):
+    """What the build's checks at the tool point (the flange face) do not see, as warnings: the LED strip's
+    ends faster than a slow zone allows inside it, and the LED tool point outside a work zone (by more than
+    safe_move's WORK_INSET_M) -- [(segment, text)]. A report, not a refusal: whether they matter depends on
+    where the operator stands and which point the controller watches (safety audit 2026-09-29, 5, 10)."""
+    import collision as C
+    import safe_move
+    slow = [o for o in env["objects"] if o["role"] == "slow"]
+    work = [o for o in env["objects"] if o["role"] == "work"]
+    out = []
+    for seg in segs:
+        worst_slow, worst_work = (0.0, None), (0.0, None)
+        prev = None
+        for k, q in enumerate(seg.q):
+            caps, tcp = C.capsules(model, q)
+            pts = [p for c in caps if c[0] == "tool_strip" for p in (c[1], c[2])]
+            if prev is not None and k > 0:
+                dt = seg.t[k] - seg.t[k - 1]
+                for a, b in zip(pts, prev):
+                    for o in slow:
+                        if dt > 0 and C.sdf(o, a) < 0:
+                            r = math.dist(a, b) / dt / o["tcp_speed_mps"]
+                            if r > worst_slow[0]:
+                                worst_slow = (r, o["name"])
+            prev = pts
+            led = tool_pose(q)[1]
+            for o in work:
+                d = C.sdf(o, led) + safe_move.WORK_INSET_M
+                if d > worst_work[0]:
+                    worst_work = (d, o["name"])
+        if worst_slow[0] > 1.0:
+            out.append((seg.name, "the LED strip's end %.1f x the speed %s allows" % worst_slow))
+        if worst_work[1]:
+            out.append((seg.name, "the LED tool point %.3f m outside %s (inset %.2f m)"
+                        % (worst_work[0], worst_work[1], safe_move.WORK_INSET_M)))
+    return out
 
 
 def limit_breaches(segments, limits):
@@ -816,9 +893,20 @@ def input_digests(cfg_path, root=ROOT):
     prof_path = os.path.join(root, "profiles", "fr20.json")
     prof = json.load(open(prof_path, encoding="utf8"))
     tool = (prof.get("tool") or {}).get("urdf")
+    urdf = (prof.get("rig") or {}).get("urdf")
+
+    def of_robot():                             # its URDF and meshes: the capsules and the kinematics
+        if not urdf:
+            return None
+        path = os.path.join(root, urdf)
+        mesh_dir = os.path.join(os.path.dirname(os.path.dirname(path)), "meshes")
+        parts = [of_file(path) or ""]
+        for d, _, files in sorted(os.walk(mesh_dir)):
+            parts += [f + ":" + (of_file(os.path.join(d, f)) or "") for f in sorted(files)]
+        return h("|".join(parts).encode())
     return {"config": of_json(cfg_path), "profile": of_json(prof_path),
             "tool": of_file(os.path.join(root, tool) if tool else None),
-            "env": of_file(os.path.join(root, cfg["env"]))}
+            "env": of_file(os.path.join(root, cfg["env"])), "robot": of_robot()}
 
 
 def stale_inputs(info, cfg_path, root=ROOT):
@@ -827,8 +915,13 @@ def stale_inputs(info, cfg_path, root=ROOT):
     was = (info or {}).get("inputs")
     if not was:
         return ["inputs not recorded"]
-    now = input_digests(cfg_path, root)
-    return [k for k in sorted(now) if now[k] != was.get(k)]
+    return _stale(was, input_digests(cfg_path, root))
+
+
+def _stale(was, now):
+    """The inputs changed: those the graph recorded (an input added to the digests since it was built is
+    not held against it -- its next build records it)."""
+    return [k for k in sorted(now) if k in was and now[k] != was[k]]
 
 
 def require_fresh(graph, cfg_path):
@@ -973,6 +1066,96 @@ def strip_face(robot="fr20"):
         box = C.strip_box(C.tool_def(RP.load(robot)))
         _STRIP[robot] = (box["xyz"][2] + box["size"][2] / 2.0, box["size"][1]) if box else (0.0, 0.0)
     return _STRIP[robot]
+
+
+# --------------------------------------------------------------------------
+# the LEDs' cues from the motion ahead (TouchDesigner's idle_leds; the user, 2026-09-30: "预备动作")
+# --------------------------------------------------------------------------
+CUE_WINDUP_S = 0.8                  # the wind-up grows over this long before a motion's accent
+CUE_RELEASE_S = 0.35                # the release dies away with this time constant after it
+CUE_FULL_MPS = 1.5                  # a rise of the strip's speed this big is a full-size accent
+CUE_MIN_RISE_MPS = 0.25             # smaller rises are not accents
+_CUE_MODEL = []
+
+
+def motion_cues(seg):
+    """The segment's motion as the LEDs want it, from its samples (cached on it): the strip's two ends'
+    speeds (m/s; end a at the strip's -y, LED 0's side) and its accents [(onset s, size 0..1)] -- where
+    the faster end's speed surges (a rise of at least CUE_MIN_RISE_MPS from the last low to the next
+    peak), the onset where it has risen a fifth of the way."""
+    if seg._cues is not None:
+        return seg._cues
+    import collision as C
+    if not _CUE_MODEL:
+        _CUE_MODEL.append(C.load_model("fr20"))
+    model = _CUE_MODEL[0]
+    ends = []
+    for q in seg.q:
+        caps, _ = C.capsules(model, q)
+        c = next((c for c in caps if c[0] == "tool_strip"), None)
+        ends.append((c[1], c[2]) if c else ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    ts, n = seg.t, len(seg.t)
+    va, vb = [0.0] * n, [0.0] * n
+    for k in range(n):
+        i, j = max(0, k - 1), min(n - 1, k + 1)
+        dt = ts[j] - ts[i]
+        if dt > 0:
+            va[k] = math.dist(ends[j][0], ends[i][0]) / dt
+            vb[k] = math.dist(ends[j][1], ends[i][1]) / dt
+    v = [max(a, b) for a, b in zip(va, vb)]
+    accents, k = [], 0
+    while k < n - 1:
+        while k < n - 1 and v[k + 1] <= v[k]:              # down to a low
+            k += 1
+        lo, k_lo = v[k], k
+        while k < n - 1 and v[k + 1] >= v[k]:              # up to a peak
+            k += 1
+        rise = v[k] - lo
+        if rise >= CUE_MIN_RISE_MPS:
+            on = next(i for i in range(k_lo, k + 1) if v[i] >= lo + 0.2 * rise)
+            accents.append((round(ts[on], 4), round(min(1.0, rise / CUE_FULL_MPS), 4)))
+        if k == k_lo:
+            k += 1
+    seg._cues = {"t": list(ts), "speed_a": va, "speed_b": vb, "accents": accents}
+    return seg._cues
+
+
+def _smooth(x):
+    x = min(1.0, max(0.0, x))
+    return x * x * (3.0 - 2.0 * x)
+
+
+def cue_values(seg, s, nxt=None):
+    """The cues at time s of the segment (the next one's too, when known -- its accents wound up for across
+    the join): {anticipate 0..1 (the wind-up to the coming accent, its size), release 0..1 (at an accent,
+    dying away), accent_in (s; -1 none within 3 s), led_speed_a / _b (m/s)}."""
+    cu = motion_cues(seg)
+    accents = list(cu["accents"])
+    if nxt is not None and getattr(nxt, "q", None):
+        accents += [(t + seg.duration, z) for t, z in motion_cues(nxt)["accents"]]
+    ant = rel = 0.0
+    ahead = None
+    for t_on, z in accents:
+        d = t_on - s
+        if 0.0 < d <= CUE_WINDUP_S:
+            ant = max(ant, z * _smooth(1.0 - d / CUE_WINDUP_S))
+        if -4.0 * CUE_RELEASE_S < d <= 0.0:
+            rel = max(rel, z * math.exp(d / CUE_RELEASE_S))
+        if 0.0 < d <= 3.0 and (ahead is None or d < ahead):
+            ahead = d
+    ts = cu["t"]
+    x = min(max(s, ts[0]), ts[-1])
+    i = min(max(bisect.bisect_right(ts, x) - 1, 0), max(len(ts) - 2, 0))
+    f = (x - ts[i]) / (ts[i + 1] - ts[i]) if len(ts) > 1 and ts[i + 1] > ts[i] else 0.0
+    lerp = lambda a: a[i] + f * (a[i + 1] - a[i]) if len(a) > 1 else (a[0] if a else 0.0)  # noqa: E731
+    return {"anticipate": round(ant, 4), "release": round(rel, 4), "accent_in": round(ahead, 3) if ahead else -1.0,
+            "led_speed_a": round(lerp(cu["speed_a"]), 4), "led_speed_b": round(lerp(cu["speed_b"]), 4)}
+
+
+def warm_cues(graph):
+    """Every segment's cues computed now (before a stream: none is computed while it runs)."""
+    for sg in graph.segments:
+        motion_cues(sg)
 
 
 SCAN_GAP_M = 0.06                   # the scan's LEDs to the paper: paper_light's 1
@@ -1166,6 +1349,12 @@ class Runner:
 
     # events (from OSC, a keyboard, a test script)
     def trigger(self, name="scan"):
+        if getattr(self, "ended", False):
+            self.log("%.2f trigger %s ignored: the run is ending" % (self.clock, name))
+            return
+        if name == "scan" and (self.sequence == "scan" or "scan" in self.pending):
+            self.log("%.2f scan ignored: one is running or waiting (the paper is exposed once)" % self.clock)
+            return
         if name != "scan" and name not in self.sequences and name not in self.showpieces:
             self.log("%.2f unknown trigger %r" % (self.clock, name))
             return
@@ -1177,7 +1366,14 @@ class Runner:
         self.paused = True
 
     def resume(self):
+        if getattr(self, "ended", False):
+            return                                      # the end of a run is not cancelled
         self.paused = False
+
+    def end(self):
+        """The run's end, latched: finish at a hub, nothing new (triggers dropped, resume ignored)."""
+        self.ended, self.paused = True, True
+        self.pending.clear()
 
     def fault(self, reason):
         self.state, self.fault_reason = "FAULT", reason
@@ -1191,23 +1387,33 @@ class Runner:
         """Fill the queue with what comes next, from self.hub."""
         if self.pending:
             name = self.pending.pop(0)
+            # never a clip from another hub than the arm's, nor a crash: no route, the trigger is refused
+            # (the build refuses such a graph; this is the player's own guard -- audit 2026-09-29, 8)
             if name == "scan":
-                via = self.g.route(self.hub, self.g.one("to_scan").start)
+                target = self.g.one("to_scan").start
+            elif name in self.showpieces:
+                piece = next(x for x in self.g.idle() if x.name == name)
+                target = piece.start
+            else:
+                seq = self.sequences[name]
+                target = seq.get("hub", self.hub)
+            via = self.g.route(self.hub, target)
+            if via is None or (name not in ("scan",) and name not in self.showpieces and not self.g.idle(target)):
+                self.log("%.2f trigger %s refused: no route from %s to %s" % (self.clock, name, self.hub, target))
+            elif name == "scan":
                 self.queue += via + [self.g.one("to_scan"), self.g.one("scan"), self.g.one("from_scan")]
                 self.sequence = "scan"
                 return
-            if name in self.showpieces:
-                piece = next(x for x in self.g.idle() if x.name == name)
-                self.queue += (self.g.route(self.hub, piece.start) or []) + [piece]
+            elif name in self.showpieces:
+                self.queue += via + [piece]
                 self.sel.recent.append(name)                   # not picked again at once
                 self.sequence = name
                 return
-            seq = self.sequences[name]
-            via = self.g.route(self.hub, seq.get("hub", self.hub)) or []
-            self.queue += via
-            self.queue += [("seq", name, seq.get("hub", self.hub), seq.get("mood"))] * int(seq.get("count", 2))
-            self.sequence = name
-            return
+            else:
+                self.queue += via
+                self.queue += [("seq", name, target, seq.get("mood"))] * int(seq.get("count", 2))
+                self.sequence = name
+                return
         self.sequence = None
         hubs = self.g.idle_hubs()
         self.stay -= 1
@@ -1320,7 +1526,14 @@ class Runner:
                 "next": self.next_up(), "queue": [self._label(x) for x in self.queue[:6]],
                 "pending": list(self.pending), "fault": self.fault_reason,
                 "energy": round(self.sel.target_energy(self.clock) or 0.0, 3),
-                "clip_energy": round(float((self.seg.labels or {}).get("energy") or 0.0), 3)}
+                "clip_energy": round(float((self.seg.labels or {}).get("energy") or 0.0), 3),
+                **self.cues(lag_s, rate)}
+
+    def cues(self, lag_s=0.0, rate=1.0):
+        """The LEDs' cues (cue_values) where the arm is: lag_s of wall time behind the commands; the next
+        segment's accents too when it is queued already."""
+        nxt = self.queue[0] if self.queue and isinstance(self.queue[0], Segment) else None
+        return cue_values(self.seg, max(0.0, self.seg_t - lag_s * rate), nxt)
 
 
 def demo_triggers(showpieces, scans=3):
@@ -1360,6 +1573,10 @@ def osc_messages(s, q, eyes=None, canvas=None):
             ("/robot/family", s.get("family") or ""), ("/robot/action", s.get("action") or ""),
             ("/robot/clip_t", float(s.get("clip_t", 0.0))), ("/robot/clip_len", float(s.get("clip_len", 0.0))),
             ("/robot/beat", float(s.get("beat", 0.0))), ("/robot/bpm_now", float(s.get("bpm_now", 0.0))),
+            ("/robot/anticipate", float(s.get("anticipate", 0.0))), ("/robot/release", float(s.get("release", 0.0))),
+            ("/robot/accent_in", float(s.get("accent_in", -1.0))),
+            ("/robot/led_speed_a", float(s.get("led_speed_a", 0.0))),
+            ("/robot/led_speed_b", float(s.get("led_speed_b", 0.0))),
             ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0),
             ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)]
 
@@ -1382,6 +1599,9 @@ class OscBridge:
         where the arm is, for the LEDs). cfg: the show, for where the
         audience is (/robot/facing) and the paper (/robot/paper)."""
         self.lag_s = lag_s
+        g = getattr(getattr(runner, "runner", runner), "g", None)
+        if g is not None:
+            warm_cues(g)                                # the LEDs' cues: all now, none while streaming
         self.eyes = audience_eyes(cfg) if cfg else None
         self.canvas = (cfg or {}).get("canvas")
         from pythonosc import dispatcher, osc_server, udp_client
@@ -1553,6 +1773,90 @@ def self_test():
           "it, then idling there; an ordinary clip is not",
           seen[1:3] == ["move_a_b", "b_wipe_rows"] and seen[3] in ("b1", "b2") and r.showpieces == ["b_wipe_rows"],
           seen[:5])
+    was = {"config": "x", "profile": "y"}
+    check("stale_inputs: an input a graph did not record (built before it was) is not held against it",
+          _stale(was, {"config": "x", "profile": "y", "robot": "z"}) == [] and _stale(was, {"config": "q",
+                                                                                         "profile": "y"}) == ["config"])
+    dg = input_digests(os.path.join(ROOT, "shows", "party.json"))
+    check("the digests include the robot (its URDF and meshes)", dg.get("robot") is not None, sorted(dg))
+    # every hub reaches every other, the scan and each trigger's hub (audit 2026-09-29, 8)
+    check("a graph with every route: no gaps", g.gaps() == [], g.gaps())
+    C3 = [60.0] + A[1:]
+    segs3 = [x for x in segs if x.name != "move_b_a"] + [seg("c1", "idle", C3, C3, "c", "c", 3.0),
+                                                         seg("move_a_c", "move", A, C3, "a", "c"),
+                                                         seg("move_c_a", "move", C3, A, "c", "a")]
+    g3 = Graph(dict(g.hubs, c=C3), segs3, {"start_hub": "a", "sequences": {"greet": {"hub": "b"},
+                                                                           "calm": {"hub": "d"}}})
+    gaps = g3.gaps()
+    check("gaps: the routes missing between hubs, to the scan's hub, to a sequence's hub (and one without clips)",
+          "b -> a" in gaps and "b -> c" in gaps and "b -> scan (a)" in gaps and any("d" in x for x in gaps)
+          and "a -> b" not in gaps, gaps)
+    try:
+        require_connected(g3)
+        refused = False
+    except SystemExit:
+        refused = True
+    check("... and the build refuses such a graph", refused)
+    r = Runner(g3, Selector(g3.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, start_hub="b")
+    r.seg, r.hub = g3.idle("b")[0], "b"
+    logs = []
+    r.log = logs.append
+    r.trigger("scan")
+    prev, jump = r.step(0.0), 0.0
+    for _ in range(200):
+        q = r.step(0.05)
+        jump = max(jump, max(abs(x - y) for x, y in zip(q, prev)))
+        prev = q
+    check("at run time a trigger with no route is refused (logged), never a crash or a jump",
+          any("no route" in x for x in logs) and jump < 20.0 * 0.05 * 2 and r.state != "FAULT", logs[-2:])
+
+    # the scan once at a time; the run's end latched (audit 2026-09-29, 6)
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0)
+    r.trigger("scan")
+    for _ in range(80):
+        r.step(0.05)
+        if r.sequence == "scan" and r.seg.kind in ("to_scan", "scan"):
+            break
+    r.trigger("scan")
+    check("a scan asked while one runs is ignored (the paper exposed once)", r.pending == [], r.pending)
+    r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0)
+    r.step(0.5)
+    r.end()
+    r.resume()
+    r.trigger("greet")
+    for _ in range(200):
+        r.step(0.05)
+    check("the end of a run is latched: a resume or a trigger after it does not cancel it", r.state == "PAUSED"
+          and not r.pending, (r.state, r.pending))
+    # the LEDs' cues from the motion ahead: a wind-up before an accent, a release at it (the user, 2026-09-30)
+    Q0 = [-60.0, -90.0, 90.0, -90.0, -90.0, -15.0]
+    ts_ = [k / 24.0 for k in range(int(4.0 * 24) + 1)]
+
+    def j1(t):                                              # still, then a fast swing 2.0-2.6 s, then still
+        u = min(1.0, max(0.0, (t - 2.0) / 0.6))
+        return Q0[0] + 60.0 * (3 * u * u - 2 * u * u * u)
+    swing = Segment("swing", "idle", ts_, [[j1(t)] + Q0[1:] for t in ts_], "a", "a")
+    acc = motion_cues(swing)["accents"]
+    t_on = acc[0][0] if acc else None
+    check("cues: one accent, at the swing's start (%s s), its size by how fast the strip gets" % t_on,
+          len(acc) == 1 and 1.9 <= t_on <= 2.3 and 0.2 < acc[0][1] <= 1.0, acc)
+    a_far, a_near = cue_values(swing, t_on - 1.2), cue_values(swing, t_on - 0.1)
+    check("... the wind-up: nothing 1.2 s before, most of it just before",
+          a_far["anticipate"] == 0.0 and a_near["anticipate"] > 0.6 * acc[0][1] and a_near["release"] == 0.0,
+          (a_far, a_near))
+    r1, r2 = cue_values(swing, t_on + 0.05), cue_values(swing, t_on + 2.0)
+    check("... the release at the accent, gone 2 s later; the wind-up over", r1["release"] > 0.7 * acc[0][1]
+          and r1["anticipate"] == 0.0 and r2["release"] < 0.01, (r1, r2))
+    check("... the time to the accent", abs(cue_values(swing, t_on - 0.5)["accent_in"] - 0.5) < 0.05
+          and cue_values(swing, t_on + 1.0)["accent_in"] == -1.0)
+    mid = cue_values(swing, 2.3)
+    check("... the strip's ends' speeds (m/s), the moving one fast", max(mid["led_speed_a"], mid["led_speed_b"]) > 0.5,
+          mid)
+    still = Segment("still", "idle", ts_, [Q0] * len(ts_), "a", "a")
+    lead = cue_values(still, 3.7, nxt=swing)
+    check("... the next segment's accent is wound up for at the end of this one", lead["anticipate"] == 0.0
+          and cue_values(still, 3.9, nxt=Segment("swing2", "idle", ts_, [[j1(t + 1.9)] + Q0[1:] for t in ts_], "a", "a"))
+          ["anticipate"] > 0.0, lead)
     # where the strip is over the paper, for the LEDs (TouchDesigner)
     us = scan_positions([0.0, 0.1, 0.5, 1.5, 1.6], {"exposed_m": 1.0, "ramp_m": 0.08}, 0.02, 0.0)
     check("the scan's position across the opening: 0 at its left edge, 1 at its right, beyond on the ramps",

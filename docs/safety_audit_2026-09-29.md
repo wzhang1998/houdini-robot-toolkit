@@ -27,7 +27,24 @@ target; --sim only on 192.168.116.x, in show_stream, show_ui, track_*),
 4 (the start move in the show's room with the paper at the scan's margin:
 from a stopped scan it now detours -- unchecked it passed 2.0-2.7 cm
 from the paper), and 7 (OSC commands only from this PC and the status's
-hosts; one datagram at a time). 5, 6, 8-10: not yet.
+hosts; one datagram at a time).
+
+Then (2026-09-30): 8 (the build refuses a graph with gaps -- Graph.gaps:
+every idle hub to every other, to and from the scan's hub, each
+sequence's hub with clips; the Runner refuses a trigger with no route,
+logged, never a crash or a jump), 6 (a scan asked while one runs or waits
+is ignored; the run's end is latched -- Runner.end(): resume and triggers
+after it do nothing; a trigger during an ordinary pause still plays, as
+TD's Play relies on), 9 (the inputs hashed before the build reads them;
+the robot's URDF and meshes hashed too -- a graph built before is not
+held to an input it did not record). 5 and 10 are reported by the build
+(WARNING lines, info["warnings"]), not refused: the v9 library plays on
+the real arm; 11 greet clips' strip ends cross operator_slow at 1.8-5.4
+x its 0.25 m/s, and the scan's LED point is 2 mm outside controller_zone
+-- for the user to weigh (where the operator stands; which point the
+controller watches). Rebuilt in memory, both shows pass the new checks --
+but a rebuild does not reproduce the compiled v9 (up to 27 deg apart), so
+v9 was left as it is; find out why before the next build.
 
 ## Fix before the next real-arm run
 

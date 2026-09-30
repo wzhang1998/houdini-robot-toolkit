@@ -519,7 +519,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             commands.apply()
             if not ending and now - start >= end_at:
                 ending = True
-                runner.pause()
+                getattr(runner, "end", runner.pause)()        # latched where the runner can (show.Runner)
                 events.append("%.2f end of the run: finishing the clip at a hub" % runner.clock)
             # A late tick never becomes a jump: every point is one tick of the show after the one before
             # (it is played in one cmdT). What is owed beyond what is sent is not skipped ahead in the show:
