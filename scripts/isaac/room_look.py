@@ -46,6 +46,8 @@ WOOD = (0.74, 0.52, 0.32)
 
 
 CEILING_INTENSITY = 55000.0        # each LED frame bar's rect light (was 90000: the user, 2026-09-30, a bit darker)
+WAREHOUSE_INTENSITY = 40.0        # the warm fill beyond the glass (was 260: the ceiling the room's main light, its dark
+                                  # moments dark -- the user, 2026-09-30)
 
 def _material(stage, name, rgb, roughness=0.7, emissive=None):
     path = Sdf.Path("%s/Materials/%s" % (ROOT_PATH, name))
@@ -169,7 +171,7 @@ def apply(stage, env, room="/World/Room", guides=False):
         x.AddRotateZOp().Set(YAW_DEG)                   # a rect light shines down its -Z: already down
     # the warehouse beyond the glass: a warm fill from everywhere
     dome = UsdLux.DomeLight.Define(stage, Sdf.Path(ROOT_PATH + "/Warehouse"))
-    dome.CreateIntensityAttr(260.0)
+    dome.CreateIntensityAttr(WAREHOUSE_INTENSITY)
     dome.CreateColorAttr(Gf.Vec3f(*WARM))
     return ["the LED frame at %s, %s m, long side along the audience wall, %.2f m under the ceiling: "
             "estimated from the photo"
