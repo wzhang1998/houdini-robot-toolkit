@@ -195,12 +195,14 @@ def _mocap():
 def recording(path, seed=1):
     """A recording of the Femto (TD's people_track Record, or a simulation: femto_format's CSV) as a crowd
     scenario ("rec:<path>"): its frames through femto_format, as TD sends them, 70-110 ms late; the
-    extrinsic: femto_extrinsic.json beside it (people_track's Calibrate), else the simulation's; truth(t):
+    extrinsic: femto_extrinsic.json beside it (people_track's Calibrate), else the simulation's -- a simulation
+    (femto_sim_*) always its own; truth(t):
     the recording's own heads (the camera is all there is)."""
     import femto_format as FF
     folder = os.path.dirname(os.path.abspath(path))
-    ext = next(p for p in (os.path.join(folder, "femto_extrinsic.json"), os.path.join(folder, "femto_sim_extrinsic.json"))
-               if os.path.exists(p))
+    names = ("femto_sim_extrinsic.json",) if os.path.basename(path).startswith("femto_sim_") else \
+        ("femto_extrinsic.json", "femto_sim_extrinsic.json")          # a simulation: its own camera, always
+    ext = next(p for p in (os.path.join(folder, n) for n in names) if os.path.exists(p))
     e = json.load(open(ext))
     frames = FF.read(path)
     t0 = frames[0][1] if frames else 0.0

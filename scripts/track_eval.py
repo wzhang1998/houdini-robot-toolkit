@@ -212,9 +212,9 @@ def measure(r, rig, env, model):
         if r["name"] == "handover":
             nxt = next((t for t, p in zip(ts, r["who"]) if t >= 8.0 and p == 2), None)
             out["attention"]["next_s"] = round(nxt - 8.0, 2) if nxt is not None else None
-            if nxt is None or nxt - 8.0 > TR.FORGET_S + 0.5:
+            if nxt is None or nxt - 8.0 > TR.DROPOUT_S + 0.5:
                 ok = False
-                why.append("B not looked at within %.1f s of A leaving" % (TR.FORGET_S + 0.5))
+                why.append("B not looked at within %.1f s of A leaving" % (TR.DROPOUT_S + 0.5))
         if r["name"] == "group":
             mid = [sum(c) / 3.0 for c in zip(*r["truth"](10.0).values())]
             far = max(math.dist(p, mid) for t, p in zip(ts, r["target"]) if p is not None and t >= 3.0)  # settled

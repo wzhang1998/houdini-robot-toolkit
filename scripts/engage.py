@@ -24,6 +24,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import tracking as TR  # noqa: E402
 
 SPOT_R_M = 0.3                     # the spot: 0.6 m across (the user, 2026-09-29)
 BOX_M = ((-0.15, 0.10), (-0.12, 0.03), (0.0, 0.06))   # along the wall (left -), up, towards the person: what
@@ -103,11 +104,12 @@ WAVE_S = 1.0                       # waving this long (tracking.is_waving), with
 DWELL_S = 1.0                      # on the spot this long (not walking) before the arm turns to them
 FOLLOW_M = (0.8, 0.5)              # once engaged, followed while within this of the spot (along, across): the
                                    # spot says "me"; then they may move -- and the edge does not flap
-LEAVE_S = 0.7                      # off the spot or unseen this long: goodbye
-LOST_CROWD_S = 1.5                 # ... unseen this long when others are near them (hidden behind someone)
+LEAVE_S = 0.7                      # off the spot this long: goodbye
+UNSEEN_S = TR.DROPOUT_S            # unseen this long: goodbye (shorter: the camera lost them, they are still there)
+LOST_CROWD_S = 2.5                 # ... unseen this long when others are near them (hidden behind someone)
 CROWD_NEAR_M = 1.0
-REID_M, REID_S = 0.3, 0.5          # the tracker gives the one followed a new id: a new id this near where they were,
-                                   # this soon after, is them
+REID_M, REID_S = 0.3, TR.DROPOUT_S  # the tracker gives the one followed a new id: a new id this near where they
+                                    # were, this soon after, is them
 JUMP_MPS = 3.0                     # the one followed "moving" faster than this: the tracker swapped two ids
 MAX_S = 30.0                       # at most this long for one person (the user)
 REST_S = 3.0                       # after a goodbye, nobody new for this long
@@ -133,7 +135,7 @@ class Engage:
     pose and speed (every PLAN_STEP_S of it checked first; not clear: no
     engagement) to the perk-up pose -- PERK (held) -- TRACK (B: the tool
     along the wall with them; C: up with a raised hand, facing it) -- off the
-    spot or unseen LEAVE_S, or MAX_S: BYE (a nod) -- RETURN (planned, checked)
+    spot LEAVE_S or unseen UNSEEN_S, or MAX_S: BYE (a nod) -- RETURN (planned, checked)
     to the hub -- OFF with `resume` set once: the caller starts the clips
     again from the hub. Every pose sent is checked; not clear: the arm stops
     where it is. Near a slow zone the speed limit is SLOW_SHARE."""
@@ -342,7 +344,7 @@ class Engage:
         if self.state in ("PERK", "TRACK"):
             if not off:
                 self.t_gone = now
-            if (off and now - self.t_gone >= LEAVE_S) or unseen >= (LOST_CROWD_S if crowd else LEAVE_S):
+            if (off and now - self.t_gone >= LEAVE_S) or unseen >= (LOST_CROWD_S if crowd else UNSEEN_S):
                 self._goodbye(now)
         if self.state == "TRACK" and now - self.t_engaged >= MAX_S:
             self._goodbye(now)
@@ -684,9 +686,15 @@ def self_test():
     en, log = run_many(hidden, 14.0)
     check("hidden behind someone for 1.2 s: still followed (%.1f s allowed with people near)" % LOST_CROWD_S,
           first(log, "BYE") is None and log[-1][3] == 1, first(log, "BYE"))
-    alone = lambda t: [] if 8.0 <= t < 9.2 else [(1, 0.0, 0.0, 1.62)]
+    alone = lambda t: [] if 8.0 <= t < 9.5 else [(1, 0.0, 0.0, 1.62)]
     en, log = run_many(alone, 14.0)
-    check("... unseen 1.2 s with nobody near: goodbye (%.1f s)" % LEAVE_S, first(log, "BYE") is not None)
+    check("... unseen 1.5 s with nobody near (the camera lost them): still followed (%.1f s allowed)" % UNSEEN_S,
+          first(log, "BYE") is None and log[-1][3] == 1, first(log, "BYE"))
+    alone = lambda t: [] if 8.0 <= t < 11.0 else [(1, 0.0, 0.0, 1.62)]
+    en, log = run_many(alone, 14.0)
+    t_bye = first(log, "BYE")
+    check("... unseen 3 s: goodbye after %.1f s" % UNSEEN_S,
+          t_bye is not None and 8.0 + UNSEEN_S - 0.1 <= t_bye <= 8.0 + UNSEEN_S + 0.3, t_bye)
     hover = lambda t: (0.28 + 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.5)), 0.0, 1.62)
     en, log = run(hover, 15.0)
     check("hovering at the spot's edge (0.28-0.40 m out): engaged once, no goodbye from the edge",

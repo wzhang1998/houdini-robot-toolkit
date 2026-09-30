@@ -375,7 +375,10 @@ ATTEND_MAX_S = 12.0           # ... and at most this long while somebody else wa
 DWELL_S = 1.0                 # in view this long before being looked at
 PASSER_MPS = 0.6              # moving faster than this (smoothed): walking by, not looked at
 GROUP_M = 0.6                 # people this close to the one looked at: one group, its middle is the target
-FORGET_S = 0.5                # a person not seen this long is gone
+FORGET_S = 0.5                # a person not seen this long is gone ...
+DROPOUT_S = 2.0               # ... but the one looked at only after this: the camera lost them, they are still
+                              # there (the real Femto from above loses a walker for 0.5-3 s, 2026-09-30) -- held
+                              # at their last point, and back within it, looked at again at once (no new dwell)
 SPEED_WINDOW_S = 1.2          # walking speed: over this long -- frame to frame the depth noise alone reads ~1 m/s,
                               # and over 0.6 s a real person waiting (shifting, looking round) reads 0.7 (CMU 141_20)
 SPEED_FIRST_S = 0.6           # ... over as long as there is, this long at least, while someone is new
@@ -475,12 +478,13 @@ class Attention:
     def update(self, people, now, hands=()):
         """people: [(pid, x, y, z, conf, t measured)] -- one frame's detections; hands likewise, a hand
         a person (its height and swing: activity, waving)."""
+        keep = lambda pid: DROPOUT_S if pid == self.current else FORGET_S          # noqa: E731
         for pid, x, y, z, conf, t in people:
             if conf < self.min_conf:
                 continue
             p = (x, y, z)
             tr = self.tracks.get(pid)
-            if tr is None or now - tr["last"] > FORGET_S:
+            if tr is None or now - tr["last"] > keep(pid):
                 tr = self.tracks[pid] = {"pos": p, "t": t, "first": now, "last": now, "speed": None, "hist": []}
             tr.update(pos=p, t=t, last=now)
             h = tr["hist"]
@@ -499,7 +503,7 @@ class Attention:
             hs.append((t, (x - tr["pos"][0], y - tr["pos"][1], z - tr["pos"][2])))
             while hs and hs[0][0] < t - ACT_WINDOW_S:
                 del hs[0]
-        for pid in [k for k, tr in self.tracks.items() if now - tr["last"] > FORGET_S]:
+        for pid in [k for k, tr in self.tracks.items() if now - tr["last"] > keep(k)]:
             del self.tracks[pid]
 
     def activity(self, pid, now):
@@ -649,8 +653,22 @@ def self_test():
     seq = feed(att, leaver, 2.0, 8.0)
     held = all(pid == 1 for t, pid, _ in seq if t < 5.0)
     after = [t for t, pid, _ in seq if t >= 5.0 and pid == 2]
-    check("the one looked at leaves before their turn is up: the next one within %.1f s" % (FORGET_S + 0.2),
-          held and after and after[0] - 5.0 <= FORGET_S + 0.2, after[:1])
+    check("the one looked at leaves before their turn is up: the next one within %.1f s (held as a dropout first)"
+          % (DROPOUT_S + 0.2), held and after and after[0] - 5.0 <= DROPOUT_S + 0.2, after[:1])
+
+    def dropout(gap):
+        return lambda t: [] if 5.0 <= t < 5.0 + gap else [(1, -0.2 + 0.05 * t, -1.8, 1.6, 0.9)]
+    seq = feed(Attention(), dropout(1.5), 0.0, 9.0)
+    during = [(pid, pt) for t, pid, pt in seq if 5.0 <= t < 6.5]
+    last = next(pt for t, pid, pt in reversed(seq) if t < 5.0)
+    check("the one looked at, unseen 1.5 s (the camera lost them): still looked at, at their last point",
+          during and all(pid == 1 and pt == last for pid, pt in during), during[-1:])
+    check("... back: looked at again at once (no new dwell)",
+          all(pid == 1 for t, pid, _ in seq if 6.5 <= t < 9.0), [(round(t, 2), pid) for t, pid, _ in seq if pid != 1][-3:])
+    seq = feed(Attention(), dropout(3.0), 0.0, 9.0)
+    gone = [t for t, pid, _ in seq if t >= 5.0 and pid is None]
+    check("... unseen %.1f s: let go (gone)" % DROPOUT_S,
+          gone and 5.0 + DROPOUT_S - 0.05 <= gone[0] <= 5.0 + DROPOUT_S + 0.1, gone[:1])
 
     near_far = lambda t: [(1, 0.0, -2.6, 1.6, 0.9), (2, 0.3, -1.6, 1.6, 0.9)]
     seq = feed(Attention(), near_far, 0.0, 40.0)
