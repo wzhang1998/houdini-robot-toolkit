@@ -42,9 +42,15 @@ held to an input it did not record). 5 and 10 are reported by the build
 the real arm; 11 greet clips' strip ends cross operator_slow at 1.8-5.4
 x its 0.25 m/s, and the scan's LED point is 2 mm outside controller_zone
 -- for the user to weigh (where the operator stands; which point the
-controller watches). Rebuilt in memory, both shows pass the new checks --
-but a rebuild does not reproduce the compiled v9 (up to 27 deg apart), so
-v9 was left as it is; find out why before the next build.
+controller watches). Rebuilt in memory, both shows pass the new checks.
+
+Why a rebuild first differed from v9 (found 2026-09-30): the build is
+deterministic (two rebuilds identical); one segment differed, from_scan
+(5.61 s against v9's 5.83 s). Fix 4 had let safe_move keep the paper's
+own margin everywhere, so the build's route back from the scan kept 3 cm
+from the paper instead of the move margin's 10 cm. Now only the start move
+marks the paper keep_margin (show_stream.start_env); the build is as
+before, and a rebuild reproduces v9 exactly (85 of 85 segments identical).
 
 ## Fix before the next real-arm run
 

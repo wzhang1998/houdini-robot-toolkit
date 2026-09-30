@@ -38,8 +38,9 @@ import collision as C  # noqa: E402
 MOVE_MARGIN_M = 0.10
 CEILING_MARGIN_M = 0.30
 STEP_DEG = 2.0                      # joint-space sampling of a move
-KEEP_OWN = ("floor", "base_plate",   # contact-close by design: their own margins
-            "canvas")                   # the paper: the show's own (show_env; the scan's at the start move)
+KEEP_OWN = ("floor", "base_plate")  # contact-close by design: their own margins
+# an object marked keep_margin keeps its own too: the paper in show_stream's start move (after a stopped
+# scan the arm may be right at it). Nowhere else: the build's routes keep the move margin from it.
 WORK_INSET_M = 0.03
 SEARCH_STEP_DEG = 6.0               # coarse sampling while searching a detour; the winner is re-checked at STEP_DEG
 
@@ -52,7 +53,7 @@ def move_env(env):
         if o["role"] not in ("obstacle", "keep_out", "work"):
             continue
         o = dict(o)
-        if o["role"] == "obstacle" and o["name"] not in KEEP_OWN:
+        if o["role"] == "obstacle" and o["name"] not in KEEP_OWN and not o.get("keep_margin"):
             if o["type"] == "halfspace" and C.U._normalize(o["normal"])[2] < -0.9:
                 o["margin_m"] = max(o.get("margin_m", base), CEILING_MARGIN_M)
             else:
@@ -201,6 +202,11 @@ def self_test():
     check("the ceiling gets the ceiling margin", ceil["margin_m"] == CEILING_MARGIN_M, ceil["margin_m"])
     plate = [o for o in menv["objects"] if o["name"] == "base_plate"][0]
     check("the base plate keeps its own margin", plate.get("margin_m") == [o for o in env["objects"] if o["name"] == "base_plate"][0].get("margin_m"))
+    paper = {"name": "canvas", "type": "box", "role": "obstacle", "center": [0, 1, 1], "size": [2, 0.02, 2],
+             "margin_m": 0.03}
+    moved = move_env({"objects": [paper, dict(paper, name="canvas2", keep_margin=True)]})["objects"]
+    check("the paper gets the move margin (the build's routes) unless marked keep_margin (the start move)",
+          moved[0]["margin_m"] == MOVE_MARGIN_M and moved[1]["margin_m"] == 0.03, [o["margin_m"] for o in moved])
     check("slow zones are not move obstacles; work zones are kept", all(o["role"] != "slow" for o in menv["objects"])
           and any(o["role"] == "work" for o in menv["objects"]))
     zone = [o for o in env["objects"] if o["name"] == "controller_zone"]

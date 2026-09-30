@@ -424,7 +424,8 @@ def start_env(cfg):
     (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4)."""
     import collision as C
     import show as S
-    return S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["scan_canvas_m"])
+    env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["scan_canvas_m"])
+    return dict(env, objects=[dict(o, keep_margin=True) if o["name"] == "canvas" else o for o in env["objects"]])
 
 
 def confirm(text, stdin=None, stdout=None):

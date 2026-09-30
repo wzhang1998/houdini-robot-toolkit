@@ -302,9 +302,8 @@ def main(argv=None):
         threading.Thread(target=SS.read_stdin, args=(sys.stdin, cmds, answers, a.ip, {"end": cmds.pause}),
                          daemon=True).start()
     ask = (lambda text: SS.confirm(text, stdin=answers)) if a.hardware else (lambda text: True)
-    import collision as C
     cfg = json.load(open(a.config))
-    move_env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["scan_canvas_m"])     # the room + the paper
+    move_env = SS.start_env(cfg)                         # the room + the paper (show_stream's start move's)
     S.require_fresh(graph, os.path.abspath(a.config))
     ctrl = P.Controller(a.ip)
     model = ctrl.model()
