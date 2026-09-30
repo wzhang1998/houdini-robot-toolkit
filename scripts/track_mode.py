@@ -248,9 +248,12 @@ class TrackMode:
 
     def robot_status(self, lag_s=0.0, rate=1.0):
         """What TouchDesigner hears (show.osc_messages; show_stream.Commands.status asks for it): the Runner's
-        status while a clip plays -- the idle LEDs as in the show, cues and all -- and, at greet (WAIT,
+        status while a clip plays -- the idle LEDs as in the show, cues and all -- noticed (CALL) the look
+        family at once (the eyes; the clip's cues kept), and, at greet (WAIT,
         ENGAGE), an IDLE of the look family (the LEDs' eyes on) with no clip cues."""
         s = self.r.status(lag_s, rate * self.clip_speed)
+        if self.mode == "CALL" and s["state"] in ("IDLE", "MOVE"):
+            s.update(state="IDLE", family="look", action="noticed")    # seen: the eyes at once, on the way to greet
         if self.mode in ("WAIT", "ENGAGE"):
             t = round(self.clock - self.t_wait, 3)
             s.update(state="IDLE", clip="interactive", hub=GREET, family="look",
@@ -497,6 +500,10 @@ def self_test():
     check("the LEDs' status (TouchDesigner, as the show's): the idle clips as they play -- their state, family, "
           "cues", idle and len(lit) >= 0.9 * len(idle) and all("anticipate" in s for s in idle),
           "%d of %d idle seconds lit" % (len(lit), len(idle)))
+    called = [s for md, s, _ in m.told if md == "CALL"]
+    check("... noticed (CALL: the arm still on its way to greet): the LEDs at once -- IDLE, the look family (the "
+          "eyes), the clip's cues kept", called and all(s["state"] == "IDLE" and s["family"] == "look"
+                                                        and s["action"] == "noticed" for s in called), called[:1])
     engaged = [s for md, s, _ in m.told if md == "ENGAGE"]
     check("... engaged: IDLE, the look family (the eyes), no clip cues", engaged and all(
         s["state"] == "IDLE" and s["family"] == "look" and s["anticipate"] == 0.0 and s["clip_len"] > s["clip_t"]

@@ -7,7 +7,7 @@ lost, or 30 s pass: a nod goodbye, back to the hub, the clips go on. Once
 engaged they may move within FOLLOW_M of the spot (1.6 m along the wall,
 1 m across); a hand from about the chest up is followed.
 
-    spot         SPOT_R_M around the point of the audience zone's middle line
+    spot         SPOT_R_M around the point SPOT_GLASS_M out from the glass,
                  straight across from the greet hub's tool point (track_spot)
     the box      BOX_M (along the wall, up, towards the person) around the hub's
                  tool point, 25 x 15 x 6 cm: what the room leaves the upright
@@ -26,7 +26,9 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import tracking as TR  # noqa: E402
 
-SPOT_R_M = 0.3                     # the spot: 0.6 m across (the user, 2026-09-29)
+SPOT_R_M = 0.4                     # the spot: 0.8 m across (the user, 2026-09-30; was 0.6) ...
+SPOT_GLASS_M = 0.95                # ... this far out from the glass: where a guest stands for the Femto to see them
+                                   # whole (the real recordings: 0.85-1.1 m; the zone's middle line was 0.73)
 BOX_M = ((-0.15, 0.10), (-0.12, 0.03), (0.0, 0.06))   # along the wall (left -), up, towards the person: what
                                    # the room leaves -- right of +0.1 the strip meets the wall, above +0.03 (the tool tilted down at a child) the
                                    # ceiling's margin (the 1 m strip stands upright), left of -0.15 the partition
@@ -49,14 +51,19 @@ def _dot(a, b):
 
 
 def track_spot(cfg, hub_q):
-    """(centre (x, y), radius): the point of the audience zone's middle line
-    straight across from the hub's tool point."""
+    """(centre (x, y), radius): straight across from the hub's tool point
+    along the audience zone, SPOT_GLASS_M out from the glass."""
+    import collision as C
     import show as S
     import track_sim as TS
     c, along, _ = TS.zone_frame(cfg)
     tcp = S.tool_pose(hub_q)[1]
     u = (tcp[0] - c[0]) * along[0] + (tcp[1] - c[1]) * along[1]
-    return (c[0] + u * along[0], c[1] + u * along[1]), SPOT_R_M
+    p = (c[0] + u * along[0], c[1] + u * along[1])
+    g = next(o for o in C.load_env(cfg["env"])["objects"] if o["name"] == GLASS)
+    n, off = g["normal"], g["offset"]
+    k = SPOT_GLASS_M - (off - n[0] * p[0] - n[1] * p[1])             # out along -normal (the guests' side)
+    return (p[0] - k * n[0], p[1] - k * n[1]), SPOT_R_M
 
 
 def box_axes(cfg, hub_q, spot):
@@ -468,8 +475,15 @@ def self_test():
     spot, r = track_spot(cfg, hub)
     tcp = S.tool_pose(hub)[1]
     a = cfg["zones"]["audience"]
-    check("the spot: 0.6 m across, straight in front of the greet hub, on the audience zone's middle line",
-          r == 0.3 and math.dist(spot, a["center"][:2]) < a["size"][0] / 2 and 1.0 < math.dist(spot, tcp[:2]) < 1.6,
+    import track_sim as TS
+    gl = next(o for o in C.load_env(cfg["env"])["objects"] if o["name"] == GLASS)
+    c0, along0, _ = TS.zone_frame(cfg)
+    u_spot = (spot[0] - c0[0]) * along0[0] + (spot[1] - c0[1]) * along0[1]
+    u_tcp = (tcp[0] - c0[0]) * along0[0] + (tcp[1] - c0[1]) * along0[1]
+    check("the spot: 0.8 m across, %.2f m out from the glass (where a guest stands to be seen whole), straight "
+          "across from the greet hub" % SPOT_GLASS_M,
+          r == 0.4 and abs(glass_distance((gl["normal"], gl["offset"]), (spot[0], spot[1], 0.0)) - SPOT_GLASS_M) < 0.01
+          and abs(u_spot - u_tcp) < 0.05 and 1.0 < math.dist(spot, tcp[:2]) < 1.9,
           ([round(x, 3) for x in spot], round(math.dist(spot, tcp[:2]), 2)))
     rig = G.Rig()
     axes = box_axes(cfg, hub, spot)

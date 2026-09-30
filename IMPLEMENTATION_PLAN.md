@@ -620,7 +620,9 @@ Isaac: crowd replays and --live --people 3 (the one looked at green), 0 unsafe,
 0 contacts. Next: 4 (modes B / C); the OAK-D process sending /track/people.
 4 (2026-09-29, the user: the spot straight in front of greet, 0.6 m across; the clip
 stops and the arm attends; C on simulated hands first; 30 s at most; the audience must
-see that the mode began): scripts/engage.py.
+see that the mode began): scripts/engage.py. 2026-09-30, the real Femto: the spot 0.8 m
+across, 0.95 m out from the glass (where a guest stands to be seen whole); noticed, the
+LEDs' look (the eyes) at once while the arm comes to greet.
   4a geometry: the spot, a box around the greet hub's tool point, 25 x 15 x 6 cm
      (along -0.15..+0.10, up -0.12..+0.03, towards 0..0.06: what the room leaves the
      upright 1 m strip), the aim within 30 deg of straight and -20..+25 deg of level;
