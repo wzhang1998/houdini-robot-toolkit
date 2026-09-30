@@ -645,10 +645,17 @@ see that the mode began): scripts/engage.py.
   the `mc_` scenarios) with the Femto Mega's noise and latency. A person
   waiting reads 0.7 m/s over 0.6 s (sway), so the walking speed is taken
   over 1.2 s (0.6 s while someone is new); the glass band keeps whoever is
-  in it until 0.15 m beyond (depth noise at the edge). All 22 pass. Next,
-  the user's go: TD people_track (the Femto's sim CSVs -> /track/people,
-  /track/hands) -> Isaac (run_tracking --osc-in) and SimMachine
-  (track_test.py), apart from the party show.
+  in it until 0.15 m beyond (depth noise at the edge). All 22 pass.
+  TD -> Isaac / SimMachine (2026-09-29): TD's people_track (TD-ROBOT-UVSCAN)
+  plays the Femto sim CSVs as /track/hands + /track/people to 9010 (Isaac,
+  run_tracking --live --osc-in) and 9011 (SimMachine, track_test.py: the
+  show_stream loop and guard). Both run track_runner.Runner, the one live
+  loop (clips, gaze, interactive mode); its self-test runs the mocap scenes
+  through it. It found what neither test alone had: the slow zone's hold
+  undid the gaze's retreat 3 ticks in 4, so a clip after an engagement
+  took the strip 47 mm from the glass (margin 50) -- the retreat now wins
+  (a `trouble` flag; the speed still governed). Isaac's summary counts
+  every gaze (it is renewed after each engagement).
 
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a

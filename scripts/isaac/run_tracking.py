@@ -17,6 +17,10 @@ the room reported, and a video from the audience's side.
         the interactive mode: drag the head onto the ring in front of greet -- the arm stops, perks up, turns to
         you and follows you (B: walk up to 0.8 m either way); drag the pink hand up to the chest or higher (C);
         walk away: a nod, back
+    C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 [--engage]
+        the people from OSC (/track/people, /track/hands: TouchDesigner's people_track, TD-ROBOT-UVSCAN)
+        instead of dragged heads -- up to 6 at once (--people more), each with its hand; real time also
+        headless (the data comes in real time)
 
 Per scenario: geo/tracking/<name>.json in, geo/tracking/<name>_isaac.json out
 (tracking error of the simulated arm against the commands, contacts between
@@ -49,6 +53,8 @@ ap.add_argument("--engage", action="store_true",
                 help="--live: the interactive mode (engage.py): stand on the spot in front of greet (the ring on "
                      "the floor), the arm stops its clip and follows you (B); drag the pink hand up (C)")
 ap.add_argument("--people", type=int, default=1, help="--live: this many heads to drag (several: Attention picks one)")
+ap.add_argument("--osc-in", type=int, default=0,
+                help="--live: the people from OSC on this port (/track/people, /track/hands; TD's people_track: 9010)")
 ap.add_argument("--all", action="store_true")
 ap.add_argument("--config", default=os.path.join(ROOT, "shows", "party.json"))
 ap.add_argument("--dir", default=os.path.join(ROOT, "geo", "tracking"))
@@ -173,35 +179,31 @@ def engage_walker(en, now):
 
 
 def live():
-    """The tracking layer live: the greet clips back to back (track_eval's
-    base motion), --people heads to drag (each its own prim; a body follows
-    each), fed at ~30 Hz -- one person straight to TargetInput, several
-    through Attention (whom to look at; the one looked at turns green) --
-    TargetInput + Gaze each physics tick, in real time."""
+    """The tracking layer live (track_runner.Runner, as the SimMachine test
+    runs it): the greet clips back to back, --people heads to drag (each its
+    own prim; a body follows each) or the people from OSC (--osc-in), fed at
+    ~30 Hz -- one dragged person straight to TargetInput, several through
+    Attention (whom to look at; the one looked at turns green) -- the gaze
+    (and --engage's interactive mode) each physics tick, in real time."""
     import time
     import collision as C
     import show as S
-    import track_eval as TE
+    import track_runner as TRN
     import track_sim as TS
-    import tracking as TR
     cfg = json.load(open(args.config))
     env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["idle_canvas_m"])
     graph = S.Graph.load(S.compiled_path(os.path.abspath(args.config)))
     model = C.load_model("fr20")
-    base, clips = TE.base_motion(graph, "greet", 4 * 3600.0, seed=args.seed)
-    g_obj = next((o for o in env["objects"] if o["name"] == "partition_left"), None)       # the glass
-    ti, att = TR.TargetInput(), TR.Attention(glass=(g_obj["normal"], g_obj["offset"]) if g_obj else None)
-    new_gaze = lambda: TR.Gaze(anchor=graph.hubs["greet"], dt=PHYSICS_DT, env=env, model=model)  # noqa: E731
-    gz = new_gaze()
-    en = player = None
-    if args.engage:
-        import engage as EN
-        player = EN.ClipPlayer(graph, "greet", args.seed)
-        base = player.at
-        en = EN.Engage(cfg, graph.hubs["greet"], env, model, dt=PHYSICS_DT)
+    rn = TRN.Runner(cfg, graph, env, model, PHYSICS_DT, engage=args.engage, seed=args.seed)
+    en = rn.en
     eyes = S.audience_eyes(cfg)
     _, along, _ = TS.zone_frame(cfg)
-    n = max(1, args.people)
+    rx = slots = None
+    if args.osc_in:                                      # the people from TD (track_osc.py), on slots of prims
+        import track_osc as TO
+        rx, slots = TO.TrackIn(args.osc_in), TO.Slots(max(6, args.people))
+        print("[track] live: people from OSC on port %d" % args.osc_in, flush=True)
+    n = slots.n if slots else max(1, args.people)
     homes = [tuple(eyes[i] + along[i] * (k - (n - 1) / 2.0) * 0.7 for i in range(2)) + (eyes[2] + 0.03 * k,)
              for k in range(n)]
 
@@ -230,11 +232,13 @@ def live():
     hand, hand_op = marker(stage, "/World/LiveHand1", 0.06, (1.0, 0.45, 0.7))     # person 1's hand (mode C, waving)
     hand_home = tuple(homes[0][i] + along[i] * 0.25 for i in range(2)) + (homes[0][2] - 0.5,)
     hand_op.Set(Gf.Vec3d(*hand_home))
+    hand_ms = [(hand, hand_op)] + ([marker(stage, "/World/LiveHand%d" % (k + 1), 0.06, (1.0, 0.45, 0.7))
+                                    for k in range(1, n)] if rx else [])       # OSC: a hand a person
     wave_until = [-1.0]
     world.reset()
     dof = list(robot.dof_names)
     idx = np.array([dof.index("j%d" % i) for i in range(1, 7)])
-    robot.set_joint_positions(np.radians(base(0.0)), joint_indices=idx)
+    robot.set_joint_positions(np.radians(rn.player.at(0.0)), joint_indices=idx)
 
     contacts = []
     try:
@@ -261,7 +265,7 @@ def live():
         with win.frame:
             with ui.VStack(spacing=6):
                 label = ui.Label("", height=110, word_wrap=True)
-                for k in range(n):
+                for k in range(n if rx is None else 0):
                     with ui.HStack(height=24):
                         box = ui.CheckBox(width=24)
                         box.model.set_value(True)
@@ -271,24 +275,41 @@ def live():
                 def home_all():
                     for k in range(n):
                         heads[k][1].Set(Gf.Vec3d(*homes[k]))
-                ui.Button("Heads back to the audience", clicked_fn=home_all)
-                ui.Button("Person 1 waves (3 s)", clicked_fn=lambda: wave_until.__setitem__(0, ticks_now[0] + 3.0))
-        print("[track] live: select a head, W, drag it; the 'Tracking' panel says who is there%s"
-              % ("; the one looked at turns green" if n > 1 else ""))
+                if rx is None:
+                    ui.Button("Heads back to the audience", clicked_fn=home_all)
+                    ui.Button("Person 1 waves (3 s)", clicked_fn=lambda: wave_until.__setitem__(0, ticks_now[0] + 3.0))
+        if rx is None:
+            print("[track] live: select a head, W, drag it; the 'Tracking' panel says who is there%s"
+                  % ("; the one looked at turns green" if n > 1 else ""))
 
     ticks_now = [0.0]
     wall0, end = time.monotonic(), (args.minutes * 60.0 if args.minutes else None)
     worst, ticks, feed = 0.0, 0, int(round(1.0 / (30.0 * PHYSICS_DT)))
     tracked_ticks, looked, green, looked_at = 0, None, None, set()
-    states, lit, vel_ratio, prev_q = {}, None, 0.0, None
+    lit, vel_ratio, prev_q = None, 0.0, None
     import robot_profile as RP
     vlim = RP.velocity_limits(RP.load("fr20"))
+    osc_people, osc_hands, osc_frames, osc_ids, last_render = [], [], 0, set(), [0.0]
     while app.is_running():
         now = ticks * PHYSICS_DT
-        if player is not None:
-            player.advance(now)
-        pos = []
-        for k, (h, h_op) in enumerate(heads):
+        pos, pids, fresh = [], [k + 1 for k in range(n)], ticks % feed == 0
+        if rx is not None:                                   # OSC: the newest frame, its people on their slots
+            got = rx.poll()
+            fresh = got is not None
+            if got is not None:
+                where = slots.update([q[0] for q in got[0]], now)
+                osc_people = [q for q in got[0] if q[0] in where]
+                osc_hands = [q for q in got[1] if q[0] in where]
+                osc_frames += 1
+                osc_ids.update(where)
+            by_slot = {slots.pid.index(q[0]): q for q in osc_people if q[0] in slots.pid}
+            pids = list(slots.pid)
+            for k in range(n):
+                q = by_slot.get(k)
+                there[k] = q is not None
+                pos.append(tuple(q[1:4]) if q else homes[k])
+                heads[k][1].Set(Gf.Vec3d(*pos[k]))
+        for k, (h, h_op) in enumerate(heads if rx is None else []):
             if args.headless and en is not None and k == 0:
                 p, there[k] = engage_walker(en, now), True
                 h_op.Set(Gf.Vec3d(*p))
@@ -301,13 +322,20 @@ def live():
             pos.append(p)
         ticks_now[0] = now
         hand_p = None
-        if args.headless and en is None and 6.0 <= now < 9.0:
+        if rx is not None:                                   # OSC: each person's hand, from the frame
+            hd = {q[0]: q for q in osc_hands}
+            for k in range(n):
+                h = hd.get(pids[k]) if there[k] else None
+                show_or_hide(hand_ms[k][0].GetPrim(), h is not None)
+                if h is not None:
+                    hand_ms[k][1].Set(Gf.Vec3d(*h[1:4]))
+        elif args.headless and en is None and 6.0 <= now < 9.0:
             wave_until[0] = 9.0                              # the headless check: person 1 waves 6-9 s
-        if now < wave_until[0]:                              # waving: the hand swings above the head
+        if rx is None and now < wave_until[0]:               # waving: the hand swings above the head
             sw = 0.15 * math.sin(2.0 * math.pi * 1.2 * now)
             hand_p = (pos[0][0] + sw * along[0], pos[0][1] + sw * along[1], pos[0][2] + 0.15)
             hand_op.Set(Gf.Vec3d(*hand_p))
-        elif hand is not None:
+        elif hand is not None and rx is None:
             if args.headless:
                 hand_p = (pos[0][0] + 0.2 * along[0], pos[0][1] + 0.2 * along[1],
                           2.0 if 16.0 <= now < 21.0 else pos[0][2] - 0.5)          # raised 16-21 s
@@ -315,31 +343,17 @@ def live():
             else:
                 hand_p = tuple(UsdGeom.Xformable(hand.GetPrim()).ComputeLocalToWorldTransform(
                     Usd.TimeCode.Default()).ExtractTranslation())
-        if en is not None and ticks % feed == 0:
-            en.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now,
-                      [(1,) + hand_p + (1.0, now)] if hand_p and there[0] else [])
-        if ticks % feed == 0:
-            if n == 1:
-                if there[0]:
-                    ti.target(pos[0][0], pos[0][1], pos[0][2], 1.0, now, 0, now=now)
-            else:
-                att.update([(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]], now,
-                           [(1,) + hand_p + (1.0, now)] if hand_p and there[0] else [])
-                ch = att.choose(now)
-                looked = ch[1] if ch else None
-                if ch is not None:
-                    ti.target(ch[0][0], ch[0][1], ch[0][2], 0.9, now, ch[1], now=now)
-                elif ti.seen is not None:
-                    ti.lost()
-        tgt = ti.now(now)
-        if en is None or en.state == "OFF":
-            q = gz.step(base(now), tgt, now, [base(now + d) for d in TR.AHEAD_S])
+        if rx is not None:                                   # stamped on arrival (TD's clock is not ours)
+            people_in = [q[:4] + (q[4], now) for q in osc_people]
+            hands_in = [q[:4] + (q[4], now) for q in osc_hands]
+        else:
+            people_in = [(k + 1,) + pos[k] + (1.0, now) for k in range(n) if there[k]]
+            hands_in = [(1,) + hand_p + (1.0, now)] if hand_p and there[0] else []
+        if fresh:
+            rn.feed(people_in, hands_in, now, direct=n == 1)
+        q = rn.step(now)
+        tgt, looked = rn.tgt, rn.looked
         if en is not None:
-            q = en.step(q, now)
-            states[en.state] = states.get(en.state, 0) + 1
-            if en.resume:                                    # back at the hub: the clips go on, no gaze left over
-                player.restart(now)
-                gz = new_gaze()
             if en.state != lit:                              # the spot lights up while it is on
                 spot_curve.GetDisplayColorAttr().Set([Gf.Vec3f(*((0.25, 1.0, 0.4) if en.state != "OFF"
                                                                  else (0.9, 0.85, 0.3)))])
@@ -351,12 +365,11 @@ def live():
         for k in range(n):
             bodies[k][1].Set(Gf.Vec3d(pos[k][0], pos[k][1], pos[k][2] - 0.9))    # the body under the head
             show_or_hide(bodies[k][0].GetPrim(), there[k])
-            show_or_hide(heads[k][0].GetPrim(), there[k] or not args.headless)  # a head stays draggable
-        engaged = en is not None and en.state != "OFF"
-        shown = en.who if engaged else looked               # green: whom the arm is on -- the engaged one, else the gaze's
+            show_or_hide(heads[k][0].GetPrim(), there[k] or (not args.headless and rx is None))  # draggable
+        engaged, shown = rn.engaged, rn.shown               # green: whom the arm is on -- the engaged one, else the gaze's
         if (n > 1 or engaged or green is not None) and shown != green:
             for k in range(n):
-                heads[k][0].GetDisplayColorAttr().Set([Gf.Vec3f(*(LOOKED if k + 1 == shown else SKIN))])
+                heads[k][0].GetDisplayColorAttr().Set([Gf.Vec3f(*(LOOKED if pids[k] == shown else SKIN))])
             green = shown
         if engaged:
             head_e = en.people.get(en.who, {}).get("pos")
@@ -370,17 +383,23 @@ def live():
         R, tcp, _ = S.tool_pose(q)
         ax = (R[0][2], R[1][2], R[2][2])
         gaze.GetPointsAttr().Set([Gf.Vec3f(*tcp), Gf.Vec3f(*[tcp[j] + 1.5 * ax[j] for j in range(3)])])
-        world.step(render=not args.headless and ticks % 2 == 0)
+        render = not args.headless and ticks % 2 == 0
+        if rx is not None and render:                    # OSC: the data's clock first -- 30 Hz on time, 10 behind
+            wall = time.monotonic()
+            render = (ticks % 4 == 0 and wall - wall0 - now < 0.03) or wall - last_render[0] > 0.1
+            if render:
+                last_render[0] = wall
+        world.step(render=render)
         if now > 0.5:
             sim = np.degrees(robot.get_joint_positions(joint_indices=idx))
             worst = max(worst, max(abs(float(sim[j]) - q[j]) for j in range(6)))
         if label is not None and ticks % 15 == 0:
-            off = gz.offsets
+            off, st = rn.gz.offsets, rn.stats()
             who = ("person %d" % looked if looked else "no one") if n > 1 else ("TRACKED" if tgt is not None else "no one")
             label.text = ("%s%s   offsets J1 %+.1f  J5 %+.1f deg\nunsafe %d   shrunk %d   held (slow zone) %d   "
                           "contacts %d\ntracking error %.2f deg   %.0f s" % (
-                              "looking at " if n > 1 else "", who, off[0], off[1], gz.unsafe, gz.shrunk,
-                              getattr(gz, "held_slow", 0), len(contacts), worst, now))
+                              "looking at " if n > 1 else "", who, off[0], off[1], st["unsafe"], st["shrunk"],
+                              st["held_slow"], len(contacts), worst, now))
             if en is not None:
                 waiting = [pid for pid, pr in en.people.items() if pid != en.who and pr["in_since"] is not None
                            and en._on_spot(pr["pos"], en.r)]
@@ -389,21 +408,23 @@ def live():
                     ("   waiting on the ring: %s" % ", ".join(map(str, waiting))) if waiting else "")
                     if en.state != "OFF" else "clips (stand on the ring to start)\n") + label.text
         ticks += 1
-        if not args.headless:
+        if not args.headless or rx is not None:             # real time (OSC: the data comes in real time)
             ahead = now - (time.monotonic() - wall0)
             if ahead > 0.0:
                 time.sleep(ahead)
         if end is not None and now >= end:
             break
+    st = rn.stats()                                      # over every gaze (renewed after each engagement)
     out = {"people": n, "live_seconds": round(ticks * PHYSICS_DT, 1),
            "tracked_share": round(tracked_ticks / max(1, ticks), 2), "looked_at": sorted(looked_at),
-           "turns": att.turns, "unsafe_ticks": gz.unsafe, "shrunk_ticks": gz.shrunk,
-           "held_slow_ticks": getattr(gz, "held_slow", 0), "arm_room_contacts": len(contacts),
+           "turns": st["turns"], "unsafe_ticks": st["unsafe"], "shrunk_ticks": st["shrunk"],
+           "held_slow_ticks": st["held_slow"], "arm_room_contacts": len(contacts),
            "tracking_max_deg": round(worst, 3), "wall_s": round(time.monotonic() - wall0, 1),
            "joint_speed_of_limit": round(vel_ratio, 3)}
+    if rx is not None:
+        out["osc"] = {"port": args.osc_in, "frames": osc_frames, "ids": sorted(osc_ids)}
     if en is not None:
-        out["engage"] = {"engagements": en.engagements, "refused": en.refused, "unsafe_ticks": en.unsafe,
-                         "seconds_in": {k: round(v * PHYSICS_DT, 1) for k, v in states.items()}}
+        out["engage"] = st["engage"]
     print("[track] live %s" % json.dumps(out), flush=True)
 
 

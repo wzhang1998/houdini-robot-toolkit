@@ -238,6 +238,8 @@ class Gaze:
         self.unsafe = 0                # ticks whose commanded pose was not clear (should stay 0)
         self.shrunk = 0                # ticks whose aim was shrunk to stay clear
         self.governed = 0              # ticks with the speed limit lowered in a slow zone
+        self.trouble = False           # the offsets must go back (trouble ahead, or a pose not clear): every tick,
+                                       # over the slow zone's hold, until a look-ahead check finds none
 
     def _clear(self, q, env=None, self_room=0.0):
         if self.env is None:
@@ -319,13 +321,17 @@ class Gaze:
         if self.slow and any(self._near_slow(p) for p in poses):
             self.want = list(self.offsets)             # no turning in or on the way into a slow zone
             self.held_slow = getattr(self, "held_slow", 0) + 1
-        if heavy and ahead and any(abs(x) > 1e-6 for x in self.offsets):
-            if self.slow and any(self._near_slow(self._with(p, self.offsets)) and not self._near_slow(p) for p in ahead):
-                self.want = [0.0] * len(GAZE_JOINTS)       # the offsets would turn a fast part of the clip into
-                self.retreats = getattr(self, "retreats", 0) + 1   # a slow zone: take them back first
-            if not all(self._clear(self._with(p, self.offsets), None, 0.0) for p in ahead):
-                self.want = [0.0] * len(GAZE_JOINTS)       # trouble ahead: take them back now
-                self.retreats = getattr(self, "retreats", 0) + 1
+        if heavy:
+            self.trouble = False
+            if ahead and any(abs(x) > 1e-6 for x in self.offsets):
+                # the offsets would turn a fast part of the clip into a slow zone, or the clip ahead with them is
+                # not clear: take them back now -- over the hold (the retreat's speed governed in a slow zone)
+                self.trouble = ((self.slow and any(self._near_slow(self._with(p, self.offsets))
+                                                   and not self._near_slow(p) for p in ahead))
+                                or not all(self._clear(self._with(p, self.offsets), None, 0.0) for p in ahead))
+                self.retreats = getattr(self, "retreats", 0) + self.trouble
+        if self.trouble:
+            self.want = [0.0] * len(GAZE_JOINTS)
         self.inp.target_position = list(self.want)
         self.inp.target_velocity = [0.0] * len(GAZE_JOINTS)
         if all(abs(t - c) < 1e-6 and abs(v) < 1e-6 and abs(a) < 1e-6 for t, c, v, a in
@@ -343,6 +349,7 @@ class Gaze:
         if self.env is not None and not self._clear(q):
             self.unsafe += 1
             self.want = [0.0] * len(GAZE_JOINTS)           # back towards the clip at once
+            self.trouble = True
         self._govern(q)
         return q
 
@@ -744,6 +751,18 @@ def self_test():
           max(abs(a - b) for a, b in zip(held, qs[299])) < 0.05 and max(abs(x) for x in gz.offsets) < 1e-6
           and derivs(qs, gz.dt)[1] <= SHARE * 600 * 1.01, [round(x, 2) for x in gz.offsets])
     check("every commanded pose clear of the room", gz.unsafe == 0)
+    gz = Gaze(anchor=hub, env=env)
+    for k in range(400):                                   # turned to the person
+        gz.step(hub, person, k * gz.dt, [hub] * len(AHEAD_S))
+    turned = max(abs(x) for x in gz.offsets)
+    gz._near_slow = lambda q: True                         # near a slow zone (the offsets would hold) ...
+    real_clear = gz._clear
+    gz._clear = lambda q, env=None, self_room=0.0: (env is not None or self_room > 0.0) and real_clear(q, env, self_room)
+    for k in range(400, 700):                              # ... and the clip ahead, with them, not clear
+        gz.step(hub, person, k * gz.dt, [hub] * len(AHEAD_S))
+    check("trouble ahead near a slow zone: the offsets still go back (clearance before the hold; the speed "
+          "governed)", turned > 3.0 and max(abs(x) for x in gz.offsets) < 0.2 * turned,
+          (round(turned, 1), [round(x, 2) for x in gz.offsets]))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 

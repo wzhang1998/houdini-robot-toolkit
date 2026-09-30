@@ -266,9 +266,7 @@ def self_test():
           (round(moved, 2), ps[0].at(7.9)))
     dur, ps = people("mc_wave_call")
     w = ps[1].at(5.0)
-    to_arm = (-w["head"][0], -w["head"][1])
-    fwd = (w["rwrist"][0] + w["lwrist"][0] - 2 * w["head"][0], w["rwrist"][1] + w["lwrist"][1] - 2 * w["head"][1])
-    check("the waver faces the arm, head %.2f m up; not there before 3 s" % HEAD_Z[2],
+    check("the waver: head %.2f m up; not there before 3 s" % HEAD_Z[2],
           abs(w["head"][2] - HEAD_Z[2]) < 0.2 and ps[1].at(2.0) is None, round(w["head"][2], 2))
     ev, truth, dur = scenario("mc_crowd")
     kinds = {e["addr"] for e in ev}

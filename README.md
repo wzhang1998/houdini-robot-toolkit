@@ -669,6 +669,7 @@ C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --all --headless          
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live                             # drag the person's head, the arm looks
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --people 3                  # a crowd: whom it looks at (green)
 C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --engage                    # the interactive mode: stand on the ring, or wave (the panel's button)
+C:/isaacsim6/python.bat scripts/isaac/run_tracking.py --live --osc-in 9010 --engage      # the people from TD's people_track
 C:/isaacsim6/python.bat scripts/isaac/cable_sim.py --headless --extra 0.2,0,0,0,0.5 --video   # the LED strip's cable
 C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start              # a pose as USD, for other tools
 ```
@@ -702,8 +703,18 @@ C:/isaacsim6/python.bat scripts/isaac/export_pose_usd.py --pose scan_start      
   call it, a crowd ...). `python scripts/mocap_scenes.py --write-all
   geo/tracking` writes them as the Femto would see them (camera frame
   CSVs, the extrinsic and a top-down layout) for TD's `people_track`.
+  `python scripts/track_runner.py` runs them through the live loop
+  itself (clips, gaze, interactive mode) and checks every pose.
+- **Tracking from TD** (a test, apart from the party show): TD's
+  `people_track` (TD-ROBOT-UVSCAN) plays those CSVs and sends
+  `/track/hands` + `/track/people` (robot frame) to 9010 (Isaac:
+  `run_tracking.py --live --osc-in 9010`) and 9011 (SimMachine: `python
+  scripts/track_test.py --sim --ip 192.168.116.128 --minutes 2 --engage`,
+  streamed as show_stream streams the show; SimMachine only). Both run
+  `track_runner.Runner`.
 
-Ports: 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in, 6455
+Ports: 9000 the player's OSC in, 9001 show_ui, 9002 TD's status in, 9010 / 9011
+the tracking test's people (Isaac / SimMachine), 6455
 Isaac's LEDs (Art-Net; not 6454, TD and a real node may hold it), 6457
 Isaac's canvas, 7000 TD's agent bridge.
 
