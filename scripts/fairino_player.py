@@ -302,6 +302,15 @@ class Stopped(RuntimeError):
     """The operator's stop, during a MoveJ route."""
 
 
+# MoveJ's codes seen on the FR20, what they meant (FAIRINO's SDK error codes, the WebUI's log)
+MOVE_ERRORS = {
+    14: "interface execution failed -- the controller refused the move; its WebUI's alarm log says why (the arm or "
+        "the target outside a safety / work zone with the tool applied, a protective stop not reset, a program "
+        "running, drag mode)",
+    154: "joint command point error (MoveJ's Cartesian pose not in the frames applied: _current_frames)",
+}
+
+
 class Controller:
     def __init__(self, ip, port=20003, timeout_s=None):
         """timeout_s: calls fail after it (RPC_TIMEOUT_S for the feedback, a STOP); None: blocking, as the
@@ -341,10 +350,35 @@ class Controller:
 
     def move_to(self, q, vel_pct, tool=0, wobj=0):
         """MoveJ to joints q; tool / wobj: the frames applied now, which
-        GetForwardKin's pose is in (_current_frames)."""
+        GetForwardKin's pose is in (_current_frames). Refused: an error that
+        says what the code means and what the controller reported then."""
         desc = self._ok(self.rpc.GetForwardKin([float(x) for x in q]), "GetForwardKin")[1:7]
-        self._ok(self.rpc_move.MoveJ([float(x) for x in q], list(desc), int(tool), int(wobj), float(vel_pct), 0.0,
-                                     100.0, [0.0] * 4, -1.0, 0, [0.0] * 6), "MoveJ")
+        ret = self.rpc_move.MoveJ([float(x) for x in q], list(desc), int(tool), int(wobj), float(vel_pct), 0.0,
+                                  100.0, [0.0] * 4, -1.0, 0, [0.0] * 6)
+        code = ret[0] if isinstance(ret, (list, tuple)) else ret
+        if code != 0:
+            raise RuntimeError("MoveJ returned error %s: %s\n  the controller then: %s" % (
+                ret, MOVE_ERRORS.get(code, "see the FAIRINO SDK's error codes and the WebUI's alarm log"),
+                self.diagnose(desc, tool, wobj)))
+
+    def diagnose(self, target_desc=None, tool=None, wobj=None):
+        """What the controller reports now, for an error message (reads only): its error code, the tool and
+        workpiece applied and the tool's offset, its TCP (mm, deg: in those frames) where it is and, given, at
+        the MoveJ's target."""
+        parts = []
+        for label, fn in (("error code", lambda: list(self.rpc.GetRobotErrorCode())),
+                          ("tool %s, workpiece %s" % (tool, wobj) if tool is not None else "frames",
+                           lambda: "applied %s" % (self.frames(),)),
+                          ("tool offset", lambda: [round(float(x), 1) for x in self.rpc.GetTCPOffset(0)[1:7]]),
+                          ("TCP now", lambda: [round(float(x), 1) for x in self.rpc.GetActualTCPPose(1)[1:7]]),
+                          ("joints now", lambda: [round(x, 1) for x in self.joints()])):
+            try:
+                parts.append("%s %s" % (label, fn()))
+            except Exception as e:                     # a read that fails is said, the rest still told
+                parts.append("%s n/a (%s)" % (label, type(e).__name__))
+        if target_desc is not None:
+            parts.append("TCP at the target %s" % [round(float(x), 1) for x in target_desc])
+        return "; ".join(parts)
 
     def servo_start(self):
         self._ok(self.rpc.ServoMoveStart(), "ServoMoveStart")
@@ -855,6 +889,41 @@ def self_test():
           hung and took < 1.5, "%.2f s" % took)
     check("... a MoveJ (it blocks until the arm arrives) has its own, longer timeout",
           MOVE_TIMEOUT_S >= 60.0 and RPC_TIMEOUT_S <= 3.0)
+
+    class _Rpc:                                              # a controller that refuses the MoveJ (the real arm, 2026-09-30)
+        def GetForwardKin(self, q):
+            return [0, 100.0, 200.0, 1500.0, 0.0, 0.0, 0.0]
+
+        def MoveJ(self, *a):
+            return 14
+
+        def GetRobotErrorCode(self):
+            return [0, 0, 0]
+
+        def GetActualTCPNum(self, f):
+            return [0, 1]
+
+        def GetActualWObjNum(self, f):
+            return [0, 0]
+
+        def GetTCPOffset(self, f):
+            return [0, 0.0, 0.0, 180.0, 0.0, 0.0, 0.0]
+
+        def GetActualTCPPose(self, f):
+            return [0, -835.0, 6.0, 1227.0, 0.0, 0.0, 0.0]
+
+        def GetActualJointPosDegree(self, f):
+            return [0, -12.5, -92.2, 82.7, -86.0, -85.6, 71.6]
+    c = Controller.__new__(Controller)
+    c.rpc = c.rpc_move = _Rpc()
+    try:
+        c.move_to([-60.0, -90.0, 90.0, -90.0, -90.0, -15.0], 10.0, 1, 0)
+        why = ""
+    except RuntimeError as e:
+        why = str(e)
+    check("MoveJ refused (14): the error says what it means and what the controller reported then -- its tool, "
+          "its TCP where it is and at the target, its error code (nothing moves)",
+          "refused" in why and "WebUI" in why and "1227" in why and "1500" in why and "tool 1" in why, why[:300])
 
     class _Path(_Frames):
         """Moves at once; the stop is pressed when the arm reaches the first waypoint."""
