@@ -138,12 +138,15 @@ def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, targ
         raise ValueError("target is sim or hardware, not %r" % target)
     if not ip:
         raise ValueError("no IP")
+    import fairino_player as P
+    if target == "sim" and not ip.startswith(P.SIM_NET):
+        raise ValueError("SimMachine is on %sx; %s may be the real arm -- pick Real FR20 for it" % (P.SIM_NET, ip))
     if target == "hardware" and speed > HARDWARE_MAX + 1e-9:
         raise ValueError("speed %.2f: the window allows at most %.1f on the real arm" % (speed, HARDWARE_MAX))
     move_vel = MOVE_VEL_DEFAULT[target] if move_vel is None else move_vel
     if not MOVE_VEL[0] <= move_vel <= MOVE_VEL[1]:
         raise ValueError("move speed %g %%: %g..%g %%" % (move_vel, MOVE_VEL[0], MOVE_VEL[1]))
-    argv = [python, STREAM, config, "--" + target, "--ip", ip, "--move-vel", "%g" % move_vel]
+    argv = [python, STREAM, config, "--" + target, "--ip", ip, "--move-vel", "%g" % move_vel, "--stdin-control"]
     if goto_start:
         return argv + ["--goto-start"]
     argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed, "--scan-speed", "%g" % scan_speed]
@@ -252,6 +255,11 @@ class ShowLink:
         if not self.running:
             return
         self.send("/robot/stop", 1)
+        try:                                            # also down its stdin: heard during the MoveJ too
+            self.proc.stdin.write("stop\n")
+            self.proc.stdin.flush()
+        except OSError:
+            pass
         if self.ip:
             threading.Thread(target=self._stop_motion, args=(self.ip,), daemon=True).start()
         if wait_s is None:
@@ -267,7 +275,7 @@ class ShowLink:
     def _stop_motion(self, ip):
         try:
             import fairino_player as P
-            ret = P.Controller(ip).stop()
+            ret = P.Controller(ip, timeout_s=P.RPC_TIMEOUT_S).stop()
             self.log.put("StopMotion sent to %s: %s" % (ip, ret))
         except Exception as e:                       # the show's own stop (OSC) still went
             self.log.put("StopMotion to %s failed: %s" % (ip, e))
@@ -616,6 +624,14 @@ def self_test():
         check("no IP is refused", False)
     except ValueError:
         check("no IP is refused", True)
+    check("the stream is told to take stop / answers on stdin and to stop when the window goes (--stdin-control)",
+          "--stdin-control" in argv and "--stdin-control" in stream_argv(DEFAULT_CONFIG, "192.168.116.128", 5, 0.3,
+                                                                          goto_start=True))
+    try:
+        stream_argv(DEFAULT_CONFIG, "192.168.58.2", 5, 0.3)
+        check("SimMachine with an IP off its network (maybe the real arm) is refused", False)
+    except ValueError:
+        check("SimMachine with an IP off its network (maybe the real arm) is refused", True)
     hw = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware")
     check("the real arm: --hardware (never --sim), its slow move to the start hub (10 %)",
           "--hardware" in hw and "--sim" not in hw and hw[hw.index("--move-vel") + 1] == "10", hw)

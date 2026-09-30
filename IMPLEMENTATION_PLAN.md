@@ -707,6 +707,22 @@ at a hub, back to the start pose. Also: docs/safety_audit_2026-09-29.md
 (the party show's gaps; its fixes wait for the user's go).
 **Status**: Complete on SimMachine; the real arm is the user's run.
 
+## Stage 13: The party show's safety fixes 1-4 (+ OSC by source) (2026-09-30, the user's go)
+**Goal**: docs/safety_audit_2026-09-29.md items 1-4, each with a test, and
+OSC commands taken only from the hosts given.
+1. A late tick never a jump: one tick a point; the Guard checks one tick.
+2. A stop on every path: any exception -> StopMotion + report; the window's
+   end (stdin, --stdin-control) stops; STOP between MoveJ waypoints holds;
+   XML-RPC timeouts (short calls; MoveJ its own longer) and a stale
+   feedback is a fault.
+3. `--sim` never reaches the real arm: playback.toml's IP by its target;
+   --sim only on SimMachine's network.
+4. The start move checked with the paper (its own scan margin): from a
+   stopped scan it detours instead of passing 2 cm from the paper.
+5. OSC in from 127.0.0.1 and the hosts given only.
+**Status**: Complete (2026-09-30); see the audit's Status. SimMachine: the
+party show 1 min at a hub, 0 slips; stdin closed mid-run: stopped.
+
 ## Stage 12: The scan top to bottom, a floor-standing canvas (2026-09-29, the user's go)
 **Goal**: The scan runs down the paper, the 1 m strip laid level, over a
 canvas the fab team makes much larger than the scan, standing on the

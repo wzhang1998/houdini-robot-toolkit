@@ -10,6 +10,25 @@ timing, stopping, the start move, and a few checks that look at the wrong
 point. Nothing in the party code has been changed yet (below: what the
 tracking mode already does differently).
 
+## Status (2026-09-30)
+
+Fixed, each with a test, and run on SimMachine (1 min of the party show:
+at a hub, 0 slips, 1.2 ms late at most; stdin closed mid-run: stopped):
+1 (one tick a point, the clock slips; the Guard checks one tick), 2 (any
+exception takes the fault path; --stdin-control, which show_ui and
+scan_test_ui pass: `stop` and the window's end stop, during the MoveJ
+too; STOP between and during MoveJ waypoints, the robot enabled once;
+the feedback connection times out and a stale feedback is a fault; a
+hung send is caught by a watchdog on the feedback thread that sends
+StopMotion within 0.5 s -- the 125 Hz sender itself keeps a blocking
+socket: a socket timeout there cost 20-30 ms stalls every ~35 calls on
+Windows, 198 slips in 44 s), 3 (playback.toml's IP only for its own
+target; --sim only on 192.168.116.x, in show_stream, show_ui, track_*),
+4 (the start move in the show's room with the paper at the scan's margin:
+from a stopped scan it now detours -- unchecked it passed 2.0-2.7 cm
+from the paper), and 7 (OSC commands only from this PC and the status's
+hosts; one datagram at a time). 5, 6, 8-10: not yet.
+
 ## Fix before the next real-arm run
 
 1. **A late tick becomes a jump the Guard lets through.**

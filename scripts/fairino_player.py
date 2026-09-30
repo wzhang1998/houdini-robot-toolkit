@@ -280,10 +280,38 @@ def condition(t, q, rate_hz, vel_limit, acc_limit, limits):
 # controller -- XML-RPC, port 20003
 # --------------------------------------------------------------------------
 
+SIM_NET = "192.168.116."            # SimMachine (VMware NAT): --sim only here; any other address may be a real arm
+RPC_TIMEOUT_S = 2.0                 # a call that has not come back by then fails -- on the connections that ask
+                                    # for it (the feedback, a STOP): not the 125 Hz sender's, where a socket
+                                    # timeout costs 20-30 ms stalls on Windows (measured 2026-09-30)
+MOVE_TIMEOUT_S = 180.0              # ... a MoveJ blocks until the arm arrives: its own connection, this long
+
+
+class _TimeoutTransport(xmlrpc.client.Transport):
+    def __init__(self, timeout_s):
+        super().__init__()
+        self.timeout_s = timeout_s
+
+    def make_connection(self, host):
+        conn = super().make_connection(host)
+        conn.timeout = self.timeout_s
+        return conn
+
+
+class Stopped(RuntimeError):
+    """The operator's stop, during a MoveJ route."""
+
+
 class Controller:
-    def __init__(self, ip):
+    def __init__(self, ip, port=20003, timeout_s=None):
+        """timeout_s: calls fail after it (RPC_TIMEOUT_S for the feedback, a STOP); None: blocking, as the
+        125 Hz sender wants (a hung send is caught by show_stream's watchdog on the feedback thread)."""
         self.ip = ip
-        self.rpc = xmlrpc.client.ServerProxy("http://%s:20003" % ip)
+        url = "http://%s:%d" % (ip, port)
+        t = _TimeoutTransport(timeout_s) if timeout_s else None
+        self.rpc = xmlrpc.client.ServerProxy(url, transport=t)
+        self.rpc_move = xmlrpc.client.ServerProxy(url, transport=_TimeoutTransport(max(timeout_s, MOVE_TIMEOUT_S))
+                                                  if timeout_s else None)
 
     @staticmethod
     def _ok(ret, what):
@@ -315,8 +343,8 @@ class Controller:
         """MoveJ to joints q; tool / wobj: the frames applied now, which
         GetForwardKin's pose is in (_current_frames)."""
         desc = self._ok(self.rpc.GetForwardKin([float(x) for x in q]), "GetForwardKin")[1:7]
-        self._ok(self.rpc.MoveJ([float(x) for x in q], list(desc), int(tool), int(wobj), float(vel_pct), 0.0, 100.0,
-                                [0.0] * 4, -1.0, 0, [0.0] * 6), "MoveJ")
+        self._ok(self.rpc_move.MoveJ([float(x) for x in q], list(desc), int(tool), int(wobj), float(vel_pct), 0.0,
+                                     100.0, [0.0] * 4, -1.0, 0, [0.0] * 6), "MoveJ")
 
     def servo_start(self):
         self._ok(self.rpc.ServoMoveStart(), "ServoMoveStart")
@@ -399,21 +427,45 @@ def _current_frames(ctrl):
     return tool or 0, wobj or 0
 
 
-def goto(ctrl, q, move_vel_pct, tol_deg=2.0, timeout_s=60.0):
+def goto(ctrl, q, move_vel_pct, tol_deg=2.0, timeout_s=60.0, stop=None, prepare=True):
     """Controller-planned MoveJ to q, then wait until the arm is within
-    tol_deg of it on every joint."""
+    tol_deg of it on every joint. stop (a threading.Event): the operator's
+    STOP -- raises Stopped, never starts or waits on a move after it.
+    prepare: enable the robot first (once per route: never again after a
+    stop)."""
+    if stop is not None and stop.is_set():
+        raise Stopped("stopped before the move")
     _require_no_error(ctrl, "before moving")
     tool, wobj = _current_frames(ctrl)
-    ctrl.prepare()
+    if prepare:
+        ctrl.prepare()
     ctrl.move_to(q, move_vel_pct, tool, wobj)
     t_end = time.time() + timeout_s
     while True:
+        if stop is not None and stop.is_set():
+            raise Stopped("stopped during the move")
         off = max(abs(a - b) for a, b in zip(ctrl.joints(), q))
         if off <= tol_deg:
             return off
         if time.time() > t_end:
             raise RuntimeError("did not reach the pose: %.2f deg off" % off)
         time.sleep(0.1)
+
+
+def run_path(ctrl, path, move_vel, report, stop=None):
+    """MoveJ through the waypoints, the robot enabled once (the first); a stop (the Event set) ends it
+    between or during them: report["aborted"] = "stopped", None."""
+    off = None
+    try:
+        for k, w in enumerate(path):
+            off = goto(ctrl, w, move_vel, stop=stop, prepare=k == 0)
+            if stop is not None and stop.is_set():
+                raise Stopped("stopped at a waypoint")
+    except Stopped:
+        report["aborted"] = "stopped"
+        print("STOPPED during the move")
+        return None
+    return off
 
 
 def play(ctrl, feedback_ip, samples, dt, start_tol_deg=2.0, move_vel_pct=20.0):
@@ -534,10 +586,11 @@ def robot_profile_limits(robot):
     return robot_profile.motion_limits(prof)
 
 
-def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label, env=None):
+def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, label, env=None, stop=None):
     """MoveJ to target through move_plan()'s waypoints. confirm(text) -> bool
-    asks on hardware. Returns the final offset (deg) or None when refused.
-    env: the room to check against in place of env_path's (move_plan)."""
+    asks on hardware. Returns the final offset (deg) or None when refused
+    or stopped. env: the room to check against in place of env_path's
+    (move_plan). stop: a threading.Event, the operator's STOP (run_path)."""
     cur = ctrl.joints()
     path, line = move_plan(cur, target, env_path, robot, env)
     report[key + "_path"] = line
@@ -555,10 +608,7 @@ def move_checked(ctrl, target, env_path, robot, move_vel, report, key, confirm, 
     if confirm and not confirm("\n".join(text)):
         report["aborted"] = "not confirmed"
         return None
-    off = None
-    for w in path:
-        off = goto(ctrl, w, move_vel)
-    return off
+    return run_path(ctrl, path, move_vel, report, stop)
 
 
 def wiggle_clip(q0, joint, amp_deg, period_s, cycles, limits, rate_hz=50.0):
@@ -788,6 +838,48 @@ def self_test():
     check("record_aligned: one row per source row, at source time",
           len(rows) == len(src_t) and [r[1] for r in rows] == src_t and err < 1e-9,
           "max error %.2e deg" % err)
+    import socket
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)                                            # a controller that takes the call and never answers
+    c = Controller("127.0.0.1", port=srv.getsockname()[1], timeout_s=0.3)
+    t0 = time.time()
+    try:
+        c.error_code()
+        hung = False
+    except Exception:
+        hung = True
+    took = time.time() - t0
+    srv.close()
+    check("a controller that does not answer: the call fails after its timeout, it does not hang",
+          hung and took < 1.5, "%.2f s" % took)
+    check("... a MoveJ (it blocks until the arm arrives) has its own, longer timeout",
+          MOVE_TIMEOUT_S >= 60.0 and RPC_TIMEOUT_S <= 3.0)
+
+    class _Path(_Frames):
+        """Moves at once; the stop is pressed when the arm reaches the first waypoint."""
+
+        def __init__(self, stop):
+            super().__init__(0, 0)
+            self.stop_evt, self.moves, self.prepared = stop, [], 0
+
+        def prepare(self):
+            self.prepared += 1
+
+        def move_to(self, q, vel_pct, tool=0, wobj=0):
+            self.moves.append(list(q))
+            self.q = list(q)
+            self.stop_evt.set()
+
+        def joints(self):
+            return self.q if self.q is not None else [0.0] * 6
+    ev = threading.Event()
+    cp = _Path(ev)
+    rep = {}
+    off = run_path(cp, [[1.0] * 6, [2.0] * 6, [3.0] * 6], 10.0, rep, stop=ev)
+    check("STOP during a MoveJ route: no further waypoint is started (nor the robot enabled again)",
+          off is None and len(cp.moves) == 1 and cp.prepared == 1 and rep.get("aborted") == "stopped",
+          "%d moves, %d enables, %s" % (len(cp.moves), cp.prepared, rep.get("aborted")))
     print()
     if failures:
         print("FAILED: %s" % "; ".join(failures))

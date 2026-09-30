@@ -70,7 +70,10 @@ ERROR_POLL_S = 0.1
 SLOW_READ_S = 0.02                 # a joint read slower than this has no trustworthy time: left out of tracking
 TRACKING_MAX_SAMPLES = 60000       # tracking of a long run is computed on evenly spaced feedback samples
 MAX_PPM = 3000.0                   # a playback rate further off than this is refused
-MAX_BURST = 4                      # points sent back to back after a late tick; more are skipped
+MAX_BURST = 4                      # points sent back to back after a late tick; beyond, the show clock slips
+FEEDBACK_STALE_S = 1.0             # no answer on the feedback connection this long (no error either): a fault
+SENDER_STALE_S = 0.5               # no point sent this long while streaming (a send hung): the feedback thread
+                                   # sends StopMotion on its own connection, and it is a fault
 QUEUE_POLL_S = 1.0                 # the controller's motion queue, read once a second for the report (a diagnostic)
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
@@ -164,11 +167,13 @@ class Link(threading.Thread):
 
     def __init__(self, ip=None, period_s=0.01, ctrl=None):
         super().__init__(daemon=True)
-        self.c = ctrl or P.Controller(ip)
+        self.c = ctrl or P.Controller(ip, timeout_s=P.RPC_TIMEOUT_S)    # its own connection, calls time out
         self.period = period_s
+        self.heartbeat = None                         # the stream's last send (perf_counter); None: not streaming
         self.rows = Rows()
         self.slow_reads = 0
         self.error = None
+        self.last_ok = time.perf_counter()            # the last read that came back
         self._last_poll = 0.0
         self._halt = threading.Event()
         self.queue_hist = array("i")                  # the controller's motion queue, every QUEUE_POLL_S
@@ -183,12 +188,25 @@ class Link(threading.Thread):
         self._halt.set()
         self.join(timeout=2.0)
 
+    def stale(self, now):
+        """No read has come back for FEEDBACK_STALE_S: the controller (or the link) stopped answering."""
+        return self.is_alive() and now - self.last_ok > FEEDBACK_STALE_S
+
     def run(self):
+        self.last_ok = time.perf_counter()
         while not self._halt.is_set():
             t0 = time.perf_counter()
+            hb = self.heartbeat
+            if hb is not None and t0 - hb > SENDER_STALE_S and self.error is None:
+                self.error = ["sender", "no point sent for %.2f s (a send hung): StopMotion sent" % (t0 - hb)]
+                try:
+                    self.c.stop()                     # the watchdog: the arm stops though the sender is stuck
+                except Exception:
+                    pass
             try:
                 q = self.c.joints()
                 t1 = time.perf_counter()
+                self.last_ok = t1
                 if t1 - t0 <= SLOW_READ_S:
                     self.rows.add((t0 + t1) / 2.0, q)
                 else:
@@ -203,6 +221,7 @@ class Link(threading.Thread):
                 if t0 - self._last_poll >= ERROR_POLL_S:
                     self._last_poll = t0
                     err = list(self.c.error_code())
+                    self.last_ok = time.perf_counter()
                     if err[:3] != [0, 0, 0] and self.error is None:
                         self.error = err
             except Exception as e:                  # a lost link is a fault too
@@ -359,6 +378,55 @@ def _scanning(runner):
 ASK = "[ask] "                       # a question to a window that started this process (show_ui)
 
 
+class Answers:
+    """The answers to confirm()'s questions when one reader takes all of stdin (read_stdin)."""
+
+    def __init__(self):
+        self.q = queue.Queue()
+
+    def isatty(self):
+        return False
+
+    def readline(self):
+        return self.q.get()
+
+
+def read_stdin(stream, commands, answers, ip=None, words=None):
+    """--stdin-control (a window started this process): `stop` stops at once (and StopMotion to ip, on its
+    own connection: a MoveJ may be running); a word of `words` ({word: fn}) calls it; any other line answers
+    a question; the input's end -- the window closed, or dead -- stops too, and answers no."""
+    for line in stream:
+        w = line.strip().lower()
+        if words and w in words:
+            words[w]()
+        elif w == "stop":
+            commands.stop()
+            if ip:
+                try:
+                    P.Controller(ip, timeout_s=P.RPC_TIMEOUT_S).stop()
+                except Exception:
+                    pass
+        else:
+            answers.q.put(line)
+    commands.stop()
+    answers.q.put("")
+
+
+def check_sim_ip(ip):
+    """--sim is SimMachine (VMware NAT, P.SIM_NET): any other address may be a real arm."""
+    if not str(ip).startswith(P.SIM_NET):
+        raise SystemExit("--sim to %s: SimMachine is on %sx; another address may be the real arm (use --hardware)"
+                         % (ip, P.SIM_NET))
+
+
+def start_env(cfg):
+    """The room the move to the start hub is checked in: the show's, with the paper at the scan's own margin
+    (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4)."""
+    import collision as C
+    import show as S
+    return S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["scan_canvas_m"])
+
+
 def confirm(text, stdin=None, stdout=None):
     """Ask before moving the real arm. At a terminal: type yes. Started by a
     window (stdin a pipe): one line `[ask] <text as JSON>` out, one answer
@@ -446,34 +514,38 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
                 break
             if link.error is not None:
                 raise StreamFault("controller error %s" % (link.error,))
+            if link.stale(now):
+                raise StreamFault("feedback: no answer from the controller for %.1f s" % (now - link.last_ok))
             commands.apply()
             if not ending and now - start >= end_at:
                 ending = True
                 runner.pause()
                 events.append("%.2f end of the run: finishing the clip at a hub" % runner.clock)
+            # A late tick never becomes a jump: every point is one tick of the show after the one before
+            # (it is played in one cmdT). What is owed beyond what is sent is not skipped ahead in the show:
+            # the show's clock slips (the lag correction takes it back at rests). Skipping ahead sent k
+            # ticks of motion in one point -- k times the clip's speed (safety audit 2026-09-29, 1).
             n, adv = 1, 1
             if owed > 1:
-                if clocked:                           # the controller buffers: send what is owed
+                if clocked:                           # the controller buffers: send what is owed, up to a burst
                     n = min(owed, MAX_BURST)
-                    adv = owed - n + 1                # beyond MAX_BURST the oldest are skipped
+                    adv = owed - n + 1                # the wall ticks the first point stands for
                     bursts += 1
-                    if adv > 1:
-                        skipped += adv - 1
-                        events.append("%.2f skipped %d point(s): %d owed after a %.1f ms send"
-                                      % (runner.clock, adv - 1, owed, sends_ms[-1] if len(sends_ms) else 0.0))
-                else:                                 # the PC's clock: skip, never burst
-                    adv = owed
-                    skipped += owed - 1
-                    events.append("%.2f skipped %d tick(s): woke %.1f ms after the tick was due; the send before "
-                                  "took %.1f ms" % (runner.clock, owed - 1, (now - next_t) * 1000.0,
-                                                    sends_ms[-1] if len(sends_ms) else 0.0))
+                if owed - n > 0:
+                    skipped += owed - n
+                    events.append("%.2f slipped %d tick(s): woke %.1f ms after the tick was due; the send before "
+                                  "took %.1f ms; %d point(s) sent, a tick of the show each"
+                                  % (runner.clock, owed - n, (now - next_t) * 1000.0,
+                                     sends_ms[-1] if len(sends_ms) else 0.0, n))
+                if not clocked:
+                    adv = owed                        # the point's place in wall time (the tracking's reference)
             next_t += owed * step
             commands.skipped = skipped
             for i in range(n):
                 a = adv if i == 0 else 1
                 tick += a
-                q = runner.step(dt * speed * a) if pid > 0 else prev
-                guard.check(prev, q, a)
+                q = runner.step(dt * speed) if pid > 0 else prev
+                guard.check(prev, q, 1)
                 same = _same(q, prev)
                 fix = 0
                 if corr is not None:
@@ -491,6 +563,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
                 for _ in range(2 if fix > 0 else 1):
                     t0 = time.perf_counter()
                     ret = ctrl.servo_j(q, dt, pid)
+                    link.heartbeat = time.perf_counter()
                     sends_ms.append((time.perf_counter() - t0) * 1000.0)
                     code = ret[0] if isinstance(ret, (list, tuple)) else ret
                     if code != 0:
@@ -512,7 +585,12 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
         fault = str(e)
     except KeyboardInterrupt:
         fault = "stopped by the operator (Ctrl+C)"
+    except Exception as e:                              # anything else stops the arm too (audit 2026-09-29, 2)
+        import traceback
+        fault = "error: %s: %s" % (type(e).__name__, e)
+        events.append("".join(traceback.format_exception(type(e), e, e.__traceback__))[-1500:])
     finally:
+        link.heartbeat = None                         # not streaming: the watchdog off
         if fault is not None:
             try:
                 ctrl.stop()
@@ -734,7 +812,6 @@ def self_test():
 
     c = FakeCtrl()
     rep, r = run(c, 3.0 / 60)
-    steps = [max(abs(x - y) for x, y in zip(a[1], b[1])) for a, b in zip(c.sent, c.sent[1:])]
     check("a run ends at a hub, at rest, without a fault", rep["ended"] == "at a hub" and r.state == "PAUSED"
           and c.sent[-1][1] in (A, B), (rep["ended"], r.state))
     check("one continuous stream: ServoMoveStart once, ServoMoveEnd once, no StopMotion",
@@ -769,14 +846,112 @@ def self_test():
           and "stop" in c.calls and rep["duration_s"] < 1.5, (rep["fault"], rep["duration_s"]))
     check("... and the run reads as stopped, not as a fault", rep["ended"] == "stopped", rep["ended"])
 
+    def biggest_step(ctrl):
+        return max(max(abs(x - y) for x, y in zip(a[1], b[1])) for a, b in zip(ctrl.sent, ctrl.sent[1:]))
+    c0 = FakeCtrl()
+    run(c0, 2.0 / 60)
     c = FakeCtrl(slow_every=40)
     rep, r = run(c, 2.0 / 60)
-    check("a slow send is caught up by skipping ticks, not bursting (and still no jump)",
-          rep["skipped"] > 0 and rep["worst_step_of_limit"] <= 1.0 and rep["ended"] == "at a hub",
-          (rep["skipped"], rep["worst_step_of_limit"]))
-    why = [e for e in rep["events"] if "skipped" in e]
-    check("... and each skip says why (how late the wake-up, how long the send before)",
+    check("a slow send: the show clock slips a tick a point -- never a jump (the biggest step between points "
+          "%.3f, on time %.3f deg)" % (biggest_step(c), biggest_step(c0)),
+          rep["skipped"] > 0 and biggest_step(c) <= biggest_step(c0) * 1.02 + 1e-9 and rep["ended"] == "at a hub",
+          rep["skipped"])
+    why = [e for e in rep["events"] if "slipped" in e]
+    check("... and each slip says why (how late the wake-up, how long the send before)",
           why and all("send before took" in e for e in why), why[:2])
+
+    class BadCtrl(FakeCtrl):
+        def servo_j(self, q, cmd_t, cmd_id):
+            if len(self.sent) == 80:
+                raise OSError("the socket is gone")
+            return super().servo_j(q, cmd_t, cmd_id)
+    c = BadCtrl()
+    rep, r = run(c, 3.0 / 60)
+    check("any error while streaming (a socket gone) stops: StopMotion, ServoMoveEnd, a fault in the report",
+          "stop" in c.calls and "end" in c.calls and rep["ended"] == "fault" and "socket is gone" in (rep["fault"] or ""),
+          (c.calls, rep["fault"]))
+
+    class HangCtrl(FakeCtrl):
+        def error_code(self):
+            time.sleep(5.0)                                  # a controller that stops answering
+            return [0, 0, 0]
+    c = HangCtrl()
+    t0 = time.time()
+    rep, r = run(c, 3.0 / 60)
+    check("feedback that stops answering (no error, no reply) is a fault within %.1f s" % FEEDBACK_STALE_S,
+          rep["ended"] == "fault" and "feedback" in (rep["fault"] or "") and time.time() - t0 < FEEDBACK_STALE_S + 3.0
+          and "stop" in c.calls, (rep["fault"], round(time.time() - t0, 1)))
+
+    class StallCtrl(FakeCtrl):
+        def servo_j(self, q, cmd_t, cmd_id):
+            if len(self.sent) == 80:
+                self.t_stall = time.perf_counter()
+                time.sleep(2.0)                              # a send that hangs (the controller not answering)
+            return super().servo_j(q, cmd_t, cmd_id)
+
+        def stop(self):
+            if not hasattr(self, "t_stop"):
+                self.t_stop = time.perf_counter()            # the first StopMotion: the watchdog's
+            super().stop()
+    c = StallCtrl()
+    rep, r = run(c, 3.0 / 60)
+    waited = getattr(c, "t_stop", 1e9) - getattr(c, "t_stall", 0.0)
+    check("a send that hangs: the feedback thread stops the arm (StopMotion on its own connection) within %.1f s, "
+          "and it is a fault" % (SENDER_STALE_S + 0.2), waited <= SENDER_STALE_S + 0.2 and rep["ended"] == "fault"
+          and "send" in (rep["fault"] or ""), (round(waited, 2), rep["fault"]))
+
+    import io
+    import tempfile
+    cm = Commands(S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0))
+    ans = Answers()
+    read_stdin(io.StringIO("yes\n"), cm, ans)
+    check("--stdin-control: a line answers a question; the input's end (the window gone) stops",
+          ans.readline() == "yes\n" and cm.stop_requested.is_set() and ans.readline() == "")
+    cm = Commands(S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0))
+    ans = Answers()
+    def held():                                              # a window still there after its STOP
+        yield "stop\n"
+        time.sleep(10.0)
+    threading.Thread(target=read_stdin, args=(held(), cm, ans), daemon=True).start()
+    time.sleep(0.2)
+    check("... and `stop` stops at once (the window's STOP)", cm.stop_requested.is_set())
+
+    toml = os.path.join(tempfile.mkdtemp(), "playback.toml")
+    with open(toml, "w") as f:
+        f.write('[robot]\ntarget = "hardware"\nip = "192.168.58.2"\n')
+    try:
+        _toml_ip("sim", toml)
+        took = True
+    except SystemExit:
+        took = False
+    check("playback.toml's IP is taken only for its own target (a hardware IP never for --sim)",
+          not took and _toml_ip("hardware", toml) == "192.168.58.2")
+    try:
+        check_sim_ip("192.168.58.2")
+        refused = False
+    except SystemExit:
+        refused = True
+    check("--sim refuses an IP off SimMachine's network (%sx)" % P.SIM_NET, refused and check_sim_ip("192.168.116.128")
+          is None)
+
+    party = os.path.join(ROOT, "shows", "party.json")
+    if os.path.exists(S.compiled_path(party)):
+        import collision as C
+        import safe_move as SM
+        pcfg = json.load(open(party))
+        pg = S.Graph.load(S.compiled_path(party))
+        env = start_env(pcfg)
+        cv = next((o for o in env["objects"] if o["name"] == "canvas"), None)
+        mid = pg.one("scan").q[len(pg.one("scan").q) // 2]
+        path, why = SM.route(mid, pg.hubs[pg.info["start_hub"]], env, C.load_model("fr20"), curobo=False)
+        check("the move to the start hub is checked with the paper (its scan margin): from a stopped scan it "
+              "detours rather than passing 2 cm from it", cv is not None and path is not None and "detour" in why,
+              why[:120])
+
+    ob = S.OscBridge.__new__(S.OscBridge)
+    ob.allow = S.osc_allow("127.0.0.1", [("10.0.0.5", 9002)])
+    check("OSC commands only from this PC and the hosts the status goes to",
+          ob.accepts("127.0.0.1") and ob.accepts("10.0.0.5") and not ob.accepts("10.0.0.9"))
     check("the stream runs at a high priority on Windows",
           any(e.startswith("priority: " + ("process high" if os.name == "nt" else "")) for e in rep["events"]),
           [e for e in rep["events"] if e.startswith("priority")])
@@ -1009,6 +1184,8 @@ def main(argv=None):
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "stream"), help="where the report and joints go")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--yes", action="store_true", help="skip the hardware confirmation")
+    ap.add_argument("--stdin-control", action="store_true",
+                    help="started by a window (show_ui): stdin carries `stop` and the answers; its end stops")
     ap.add_argument("--playback-ppm", "--clock-ppm", dest="playback_ppm", type=float, default=None,
                     help="how much slower (-) the controller plays ServoJ than cmdT says, ppm (a run's report "
                          "measures it: playback_ppm_suggested; default: playback.toml's [controller_playback_ppm] "
@@ -1031,7 +1208,9 @@ def main(argv=None):
         if not host or not port.isdigit():
             ap.error("--osc-out wants HOST:PORT, got %r" % t)
         also.append((host, int(port)))
-    ip = a.ip or _toml_ip()
+    ip = a.ip or _toml_ip("hardware" if a.hardware else "sim")
+    if a.sim:
+        check_sim_ip(ip)
     cfg_path = os.path.abspath(a.config)
     cfg = json.load(open(cfg_path))
     graph = S.Graph.load(S.compiled_path(cfg_path))
@@ -1047,17 +1226,24 @@ def main(argv=None):
         runner = S.runner_for(graph, seed=a.seed, scan_speed=a.scan_speed)
     start_q = runner.step(0.0)
 
+    cmds = Commands(runner, speed)
+    answers = None
+    if a.stdin_control:
+        answers = Answers()
+        threading.Thread(target=read_stdin, args=(sys.stdin, cmds, answers, ip), daemon=True).start()
+
     def ask(text):
         if not a.hardware or a.yes:
             return True
-        return confirm(text)
+        return confirm(text, stdin=answers)
 
     ctrl = P.Controller(ip)
     print("%s at %s: %s" % ("HARDWARE" if a.hardware else "SimMachine", ip, ctrl.model()))
     P._require_no_error(ctrl, "before starting")
     rep = {"target": "hardware" if a.hardware else "sim", "config": os.path.relpath(cfg_path, ROOT)}
     move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
-    off = P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, rep, "start", ask, "the start hub (%s)" % runner.hub)
+    off = P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, rep, "start", ask, "the start hub (%s)" % runner.hub,
+                         env=start_env(cfg), stop=cmds.stop_requested)
     if off is None:
         print(json.dumps(rep, indent=1))
         return 1
@@ -1077,7 +1263,6 @@ def main(argv=None):
               "run, put the report's playback_ppm_suggested in playback.toml [controller_playback_ppm] \"%s\"" % (ip, ip))
     lag_fix = a.lag_correction if a.lag_correction is not None else a.hardware
     print("lag correction: %s" % ("on (rest points left out / repeated to hold the lag)" if lag_fix else "off"))
-    cmds = Commands(runner, speed)
     osc = None
     if a.osc:
         o = cfg["osc"]
@@ -1149,13 +1334,20 @@ def suggest_playback_ppm(rep):
     return round((rep.get("playback_ppm") or 0.0) - grow * 1000.0, 1)
 
 
-def _toml_ip():
-    path = os.path.join(ROOT, "playback.toml")
+def _toml_ip(target, path=None):
+    """playback.toml's IP, only when its target is this run's ("sim" / "hardware"): its IP for the real arm
+    is never taken for --sim (audit 2026-09-29, 3)."""
+    path = path or os.path.join(ROOT, "playback.toml")
+    toml_target, ip = None, None
     for line in open(path):
         s = line.split("#")[0].strip()
+        if s.startswith("target") and "=" in s:
+            toml_target = s.split("=", 1)[1].strip().strip('"')
         if s.startswith("ip") and "=" in s:
-            return s.split("=", 1)[1].strip().strip('"')
-    raise SystemExit("no ip in playback.toml: pass --ip")
+            ip = s.split("=", 1)[1].strip().strip('"')
+    if not ip or toml_target != target:
+        raise SystemExit("playback.toml's ip is for target %r, not %r: pass --ip" % (toml_target, target))
+    return ip
 
 
 if __name__ == "__main__":

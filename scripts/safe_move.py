@@ -38,7 +38,8 @@ import collision as C  # noqa: E402
 MOVE_MARGIN_M = 0.10
 CEILING_MARGIN_M = 0.30
 STEP_DEG = 2.0                      # joint-space sampling of a move
-KEEP_OWN = ("floor", "base_plate")  # contact-close by design: their own margins
+KEEP_OWN = ("floor", "base_plate",   # contact-close by design: their own margins
+            "canvas")                   # the paper: the show's own (show_env; the scan's at the start move)
 WORK_INSET_M = 0.03
 SEARCH_STEP_DEG = 6.0               # coarse sampling while searching a detour; the winner is re-checked at STEP_DEG
 

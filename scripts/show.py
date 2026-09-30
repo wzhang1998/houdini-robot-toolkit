@@ -1364,10 +1364,18 @@ def osc_messages(s, q, eyes=None, canvas=None):
             ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)]
 
 
-class OscBridge:
-    """/robot/* in and out; python-osc (the usual TouchDesigner link)."""
+def osc_allow(send_host, also=()):
+    """Whose OSC commands are taken: this PC and the hosts the status goes to (TouchDesigner, a window) --
+    not anyone on the network (safety audit 2026-09-29, 7)."""
+    return {"127.0.0.1", "localhost", str(send_host)} | {str(h) for h, _ in also}
 
-    def __init__(self, runner, listen_port, send_host, send_port, also=(), lag_s=0.0, cfg=None):
+
+class OscBridge:
+    """/robot/* in and out; python-osc (the usual TouchDesigner link). Commands only from `allow` (osc_allow:
+    this PC and the status's hosts); others are dropped and logged once each."""
+
+    def __init__(self, runner, listen_port, send_host, send_port, also=(), lag_s=0.0, cfg=None, allow=None,
+                 log=print):
         """Status goes to send_host:send_port and to each (host, port) in
         `also` -- a control window and TouchDesigner can both listen. lag_s:
         how far the arm is behind the commands (the scan's position is sent
@@ -1379,20 +1387,37 @@ class OscBridge:
         from pythonosc import dispatcher, osc_server, udp_client
         import threading
         self.runner = runner
+        self.allow = set(allow) if allow is not None else osc_allow(send_host, also)
+        self._refused, self._log = set(), log
         d = dispatcher.Dispatcher()
-        d.map("/robot/trigger", lambda a, *v: runner.trigger(str(v[0]) if v else "scan"))
-        d.map("/robot/pause", lambda a, *v: runner.pause())
-        d.map("/robot/resume", lambda a, *v: runner.resume())
-        d.map("/robot/reset", lambda a, *v: runner.reset())
-        d.map("/robot/mood", lambda a, *v: setattr(runner.sel, "mood", str(v[0]) if v and v[0] else None))
-        d.map("/robot/energy", lambda a, *v: setattr(runner.sel, "energy",
-                                                     float(v[0]) if v and float(v[0]) >= 0.0 else None))
+
+        def only(fn):                                   # the sender checked before anything is done
+            def h(client, address, *v):
+                if self.accepts(client[0]):
+                    fn(*v)
+                elif client[0] not in self._refused:
+                    self._refused.add(client[0])
+                    self._log("OSC from %s refused (not this PC or a status host): %s" % (client[0], address))
+            return h
+        d.map("/robot/trigger", only(lambda *v: runner.trigger(str(v[0]) if v else "scan")), needs_reply_address=True)
+        d.map("/robot/pause", only(lambda *v: runner.pause()), needs_reply_address=True)
+        d.map("/robot/resume", only(lambda *v: runner.resume()), needs_reply_address=True)
+        d.map("/robot/reset", only(lambda *v: runner.reset()), needs_reply_address=True)
+        d.map("/robot/mood", only(lambda *v: setattr(runner.sel, "mood", str(v[0]) if v and v[0] else None)),
+              needs_reply_address=True)
+        d.map("/robot/energy", only(lambda *v: setattr(runner.sel, "energy",
+                                                        float(v[0]) if v and float(v[0]) >= 0.0 else None)),
+              needs_reply_address=True)
         if hasattr(runner, "stop"):                    # the streaming backend: a software stop
-            d.map("/robot/stop", lambda a, *v: runner.stop())
-        self.server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", listen_port), d)
+            d.map("/robot/stop", only(lambda *v: runner.stop()), needs_reply_address=True)
+        # one datagram at a time (not a thread each: a flood cannot crowd the stream's thread)
+        self.server = osc_server.BlockingOSCUDPServer(("0.0.0.0", listen_port), d)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.clients = [udp_client.SimpleUDPClient(h, p) for h, p in [(send_host, send_port)] + list(also)]
+
+    def accepts(self, ip):
+        return ip in self.allow
 
     def send(self, q):
         msgs = osc_messages(self.runner.status(lag_s=self.lag_s), q, self.eyes, self.canvas)

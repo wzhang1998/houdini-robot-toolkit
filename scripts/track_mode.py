@@ -248,35 +248,6 @@ class TrackMode:
 
 
 # ---------------------------------------------------------------------- the run
-class Answers:
-    """The answers to show_stream.confirm's questions, from the one stdin reader (a file-like readline)."""
-
-    def __init__(self):
-        import queue
-        self.q = queue.Queue()
-
-    def isatty(self):
-        return False
-
-    def readline(self):
-        return self.q.get()
-
-
-def read_stdin(stream, cmds, answers):
-    """track_ui's lines: `end` (finish, back to the start pose), `stop` (now); anything else answers a
-    question. Its end (the window gone): stop, and no to any question."""
-    for line in stream:
-        w = line.strip().lower()
-        if w == "end":
-            cmds.pause()
-        elif w == "stop":
-            cmds.stop()
-        else:
-            answers.q.put(line)
-    cmds.stop()
-    answers.q.put("")
-
-
 def build(cfg_path, dt, clip_speed=1.0, engage_share=None, rx=None, seed=None, out=print):
     """(TrackMode, graph, env): the Runner at the start hub, an Engage at greet."""
     import collision as C
@@ -312,6 +283,8 @@ def main(argv=None):
     ap.add_argument("--env", default=os.path.join(ROOT, "envs", "volvox_lab.usda"))
     ap.add_argument("--log", default=os.path.join(ROOT, "logs", "track_mode"))
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--stdin-control", action="store_true",
+                    help="started by track_ui: stdin carries end / stop / the answers; its end stops")
     a = ap.parse_args(argv)
     speed = a.speed if a.speed is not None else (0.3 if a.hardware else 1.0)
     if not 0.05 <= speed <= 1.0:
@@ -323,11 +296,12 @@ def main(argv=None):
     mode, graph, env = build(a.config, dt, speed, share, TO.TrackIn(a.osc_in), a.seed,
                              out=lambda s: print(s, flush=True))
     cmds = SS.Commands(mode)
-    answers = Answers()
-    if not sys.stdin.isatty():                           # started by track_ui: one reader for all of stdin
-        threading.Thread(target=read_stdin, args=(sys.stdin, cmds, answers), daemon=True).start()
-    ask = (lambda text: SS.confirm(text, stdin=answers if not sys.stdin.isatty() else None)) if a.hardware \
-        else (lambda text: True)
+    answers = None
+    if a.stdin_control:                                  # started by track_ui: one reader for all of stdin
+        answers = SS.Answers()
+        threading.Thread(target=SS.read_stdin, args=(sys.stdin, cmds, answers, a.ip, {"end": cmds.pause}),
+                         daemon=True).start()
+    ask = (lambda text: SS.confirm(text, stdin=answers)) if a.hardware else (lambda text: True)
     import collision as C
     cfg = json.load(open(a.config))
     move_env = S.show_env(C.load_env(cfg["env"]), cfg, cfg["margins"]["scan_canvas_m"])     # the room + the paper
@@ -335,16 +309,16 @@ def main(argv=None):
     ctrl = P.Controller(a.ip)
     model = ctrl.model()
     print("%s at %s: %s" % ("HARDWARE" if a.hardware else "SimMachine", a.ip, model), flush=True)
-    if a.sim and not str(a.ip).startswith("192.168.116."):
-        raise SystemExit("--sim to %s: SimMachine is on 192.168.116.x (VMware NAT); for the real arm use --hardware"
-                         % a.ip)
+    if a.sim:
+        SS.check_sim_ip(a.ip)
     P._require_no_error(ctrl, "before starting")
     rep = {"target": "hardware" if a.hardware else "sim", "mode": "track_mode", "speed": speed,
            "engage_share": share}
     move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
     start_q = list(mode.q)
     if P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, rep, "start", ask,
-                      "the start pose (%s)" % graph.info.get("start_hub"), env=move_env) is None:
+                      "the start pose (%s)" % graph.info.get("start_hub"), env=move_env,
+                      stop=cmds.stop_requested) is None:
         print(json.dumps(rep, indent=1))
         return 1
     plan = ("Interactive mode: clips at speed %.2f, the interactive mode at %.2f of the limits, the people from "
@@ -367,7 +341,8 @@ def main(argv=None):
     if ended == "at a hub":                               # back to the start pose, checked, as the start
         back = {}
         P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, back, "return", ask,
-                       "back to the start pose (%s)" % graph.info.get("start_hub"), env=move_env)
+                       "back to the start pose (%s)" % graph.info.get("start_hub"), env=move_env,
+                       stop=cmds.stop_requested)
         out["return"] = back
     with open(base + ".json", "w", newline="\n") as f:
         json.dump(out, f, indent=1)

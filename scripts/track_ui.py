@@ -38,7 +38,7 @@ REQUIRED = ("numpy", "ruckig", "pythonosc", "pxr")
 LIMITS = {"speed": (0.05, 1.0), "share": (0.05, 0.35), "move_vel": (3.0, 30.0)}
 DEFAULTS = {"sim": {"speed": 1.0, "share": 0.35, "move_vel": 20.0},
             "hardware": {"speed": 0.3, "share": 0.2, "move_vel": 10.0}}
-SIM_NET = "192.168.116."                     # SimMachine (VMware NAT)
+from fairino_player import SIM_NET  # noqa: E402  (SimMachine, VMware NAT: one place)
 
 
 def missing_packages(names=REQUIRED):
@@ -62,7 +62,7 @@ def mode_argv(target, ip, speed, share, move_vel, port=9011, python=sys.executab
         if not lo <= v <= hi:
             raise ValueError("%s %g: %g..%g" % (k, v, lo, hi))
     return [python, MODE, "--" + target, "--ip", ip, "--speed", "%g" % speed, "--engage-share", "%g" % share,
-            "--move-vel", "%g" % move_vel, "--osc-in", str(int(port))]
+            "--move-vel", "%g" % move_vel, "--osc-in", str(int(port)), "--stdin-control"]
 
 
 class ModeLink:
@@ -128,7 +128,7 @@ class ModeLink:
     def _stop_motion(self, ip):
         try:
             import fairino_player as P
-            self.log.put("StopMotion sent to %s: %s" % (ip, P.Controller(ip).stop()))
+            self.log.put("StopMotion sent to %s: %s" % (ip, P.Controller(ip, timeout_s=P.RPC_TIMEOUT_S).stop()))
         except Exception as e:
             self.log.put("StopMotion to %s failed: %s" % (ip, e))
 
@@ -250,7 +250,8 @@ def self_test():
             fails.append(label)
 
     a = mode_argv("sim", "192.168.116.128", 1.0, 0.35, 20.0)
-    check("SimMachine: the mode's command", a[1:4] == [MODE, "--sim", "--ip"] and "--engage-share" in a, a[1:])
+    check("SimMachine: the mode's command; its stdin carries end / stop / answers, its end stops it",
+          a[1:4] == [MODE, "--sim", "--ip"] and "--engage-share" in a and "--stdin-control" in a, a[1:])
 
     def refused(*args):
         try:
