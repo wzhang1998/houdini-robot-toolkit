@@ -41,6 +41,11 @@ REACH_SHRINK = (1.0, 0.8, 0.6, 0.4, 0.2, 0.0)       # an offset not reachable or
 AIM_YAW_DEG = 30.0                 # the tool turns at most this far left / right of straight at the spot ...
 AIM_PITCH_DEG = (-20.0, 25.0)      # ... and tilts down / up at most this far: a child, a hand up at the side
 BOX_ROOM_M = 0.02                  # every pose of the box keeps this much more than the room's margins
+LEAD_S = 0.2                       # the one followed is aimed at this far ahead of their last point (their
+LEAD_MAX_M = 0.3                   # velocity over LEAD_WINDOW_S): the camera, TD and the move lag behind them; at most
+LEAD_WINDOW_S = 0.3                # this far ahead
+CROUCH_DEAD_M = 0.08               # their head this much under the tallest seen while followed: nothing (a nod) ...
+CROUCH_FULL_M = 0.5                # ... this much and more: the tool at the box's bottom -- it goes down with them
 
 
 def _unit(v):
@@ -92,6 +97,60 @@ def _clamp_aim(d, towards):
     pitch = math.asin(max(-1.0, min(1.0, d[2])))
     pitch = max(math.radians(AIM_PITCH_DEG[0]), min(math.radians(AIM_PITCH_DEG[1]), pitch))
     return (math.cos(pitch) * math.cos(yaw0 + dy), math.cos(pitch) * math.sin(yaw0 + dy), math.sin(pitch))
+
+
+def lead_point(hist, t, lead_s=LEAD_S, window_s=LEAD_WINDOW_S):
+    """(x, y, z) of a person lead_s ahead of their last point in hist [(t, (x, y, z))]: along the floor at their
+    velocity over the last window_s (the newest 0.1 s against the oldest), at most LEAD_MAX_M ahead; where they
+    are when there is too little of them to say."""
+    if not hist:
+        return None
+    last = hist[-1][1]
+    win = [(tm, p) for tm, p in hist if tm >= t - window_s]
+    if len(win) < 4 or win[-1][0] - win[0][0] < 0.5 * window_s:
+        return tuple(last)
+    new = [(tm, p) for tm, p in win if tm >= win[-1][0] - 0.1]
+    old = [(tm, p) for tm, p in win if tm <= win[0][0] + 0.1]
+    mt = lambda xs: sum(tm for tm, _ in xs) / len(xs)                            # noqa: E731
+    mp = lambda xs, i: sum(p[i] for _, p in xs) / len(xs)                        # noqa: E731
+    dt = mt(new) - mt(old)
+    if dt <= 1e-3:
+        return tuple(last)
+    d = [(mp(new, i) - mp(old, i)) / dt * lead_s for i in range(2)]
+    n = math.hypot(*d)
+    if n > LEAD_MAX_M:
+        d = [x * LEAD_MAX_M / n for x in d]
+    return (last[0] + d[0], last[1] + d[1], last[2])
+
+
+def crouch_up(tallest, z):
+    """The box's height for a head at z, its tallest seen tallest: 0 standing, down to the box's bottom as they
+    crouch (CROUCH_DEAD_M .. CROUCH_FULL_M under it)."""
+    f = (tallest - z - CROUCH_DEAD_M) / (CROUCH_FULL_M - CROUCH_DEAD_M)
+    return BOX_M[1][0] * max(0.0, min(1.0, f))
+
+
+LOOK_NEAR_M, LOOK_FAR_M, LOOK_FAR_W = 0.6, 1.5, 0.35    # the look on the strip: full within 0.6 m of the glass,
+                                                          # LOOK_FAR_W at 1.5 m and beyond
+
+
+def look_on_strip(a, b, head):
+    """Where a head is along the strip a -> b (the strip's ends: a LED 0's), 0..1: at the head's height on an
+    upright strip (a guest 1.4 m away sees the light at their eye level, and it goes down as they crouch); on a
+    strip lying down, its point nearest the head."""
+    d = [y - x for x, y in zip(a, b)]
+    n2 = sum(x * x for x in d) or 1.0
+    if abs(d[2]) >= 0.7 * math.sqrt(n2):
+        u = (head[2] - a[2]) / d[2]
+    else:
+        u = sum((h - x) * y for h, x, y in zip(head, a, d)) / n2
+    return max(0.0, min(1.0, u))
+
+
+def look_weight(d_glass):
+    """The look's light: 1 within LOOK_NEAR_M of the glass, down to LOOK_FAR_W at LOOK_FAR_M."""
+    f = max(0.0, min(1.0, (d_glass - LOOK_NEAR_M) / (LOOK_FAR_M - LOOK_NEAR_M)))
+    return 1.0 - (1.0 - LOOK_FAR_W) * f
 
 
 def face_pose(rig, hub_q, axes, offset, aim, near=None):
@@ -337,10 +396,13 @@ class Engage:
         self.state, self.t_state = state, now
 
     def _track_target(self, now):
-        """TRACK's pose: B along with the person, C up with a raised hand."""
-        head = self._head()
-        if head is None:
+        """TRACK's pose: B along with the person (LEAD_S ahead of them) and down as they crouch, C up with a
+        raised hand."""
+        pr = self.people.get(self.who)
+        if pr is None:
             return None, "B"
+        head = lead_point(pr["hist"], pr["hist"][-1][0]) if pr.get("hist") else pr["pos"]
+        pr["tall"] = max(pr.get("tall", pr["pos"][2]), pr["pos"][2])
         du = (head[0] - self.spot[0]) * self.axes[0][0] + (head[1] - self.spot[1]) * self.axes[0][1]
         hand = self.hands.get(self.who)
         if hand is not None and now - hand[3] <= LEAVE_S and hand[2] > head[2] - HAND_UP_M:
@@ -348,7 +410,7 @@ class Engage:
             lo, hi = BOX_M[1]
             up = lo + (hi - lo) * max(0.0, min(1.0, f))
             return self._reach((du * B_GAIN, up, 0.03), hand[:3]), "C"
-        return self._reach((du * B_GAIN, 0.0, 0.03), head), "B"
+        return self._reach((du * B_GAIN, crouch_up(pr["tall"], pr["pos"][2]), 0.03), head), "B"
 
     def step(self, q_clip, now):
         """The pose to send now; self.state says which mode."""
@@ -431,6 +493,7 @@ class Engage:
             self.people[who]["done"] = True                # not now: they may step off and on again
             return
         self.who, self.t_engaged, self.t_gone, self.reached, self.mode = who, now, now, False, "B"
+        self.people[who].pop("tall", None)                 # their height: from now on
         self.people[who]["done"] = True                    # once per stay on the spot
         if self.people[who]["in_since"] is None:           # called by waving: followed in the zone from now
             self.people[who]["in_since"] = now
@@ -648,6 +711,24 @@ def self_test():
     check("C: a hand raised to 2 m: the tool rises and tilts up to it", modes == {"C"} and up_c and up_b
           and min(up_c) > max(up_b) + 0.1, (modes, round(max(up_b), 2) if up_b else None,
                                             round(min(up_c), 2) if up_c else None))
+    crouch = lambda t: (0.0, 0.0, 1.62 if t < 7.0 or t >= 11.0 else 1.12)             # noqa: E731
+    en, log = run(crouch, 14.0)
+    tz = lambda t0, t1: [S.tool_pose(q)[1][2] for t, s, q, *_ in log if s == "TRACK" and t0 < t < t1]  # noqa: E731
+    stand, low, back = tz(6.0, 7.0), tz(10.0, 11.0), tz(13.5, 14.0)
+    check("B: they crouch 0.5 m (7-11 s): the tool goes down with them (%.2f m of the box), and back up as they "
+          "stand" % -BOX_M[1][0], stand and low and back and min(stand) - max(low) > 0.15
+          and abs(back[-1] - stand[-1]) < 0.02, (round(stand[-1], 3) if stand else None,
+                                               round(low[-1], 3) if low else None, round(back[-1], 3) if back else None))
+    hist = [(k / 30.0, (0.3 * k / 30.0, -2.0, 1.6)) for k in range(30)]              # walking 0.3 m/s along x
+    up_strip = ((0.0, 0.0, 1.8), (0.0, 0.1, 0.8))
+    check("the look on an upright strip: at the head's height (LED 0 at the top: 1.6 m -> 0.2, 1.1 m -> 0.7), "
+          "however far the head", abs(look_on_strip(*up_strip, (0.0, -1.5, 1.6)) - 0.2) < 1e-6
+          and abs(look_on_strip(*up_strip, (0.3, -2.5, 1.1)) - 0.7) < 1e-6 and look_weight(0.5) == 1.0
+          and abs(look_weight(2.0) - LOOK_FAR_W) < 1e-9)
+    lp = lead_point(hist, hist[-1][0])
+    check("lead: a person walking 0.3 m/s is aimed at %.1f s ahead (%.2f m), still: where they are" % (
+        LEAD_S, 0.3 * LEAD_S), abs(lp[0] - (hist[-1][1][0] + 0.3 * LEAD_S)) < 0.01
+          and abs(lead_point([(k / 30.0, (0.2, -2.0, 1.6)) for k in range(30)], 29 / 30.0)[0] - 0.2) < 1e-9, lp)
     en, log = run(lambda t: (0.0, 0.0, 1.62), 45.0)
     t_in, t_bye = first(log, "ENTER"), first(log, "BYE")
     check("stays on: goodbye %.0f s after the arm turned to them, and not again while they stay" % MAX_S,

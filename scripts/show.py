@@ -1577,6 +1577,7 @@ def osc_messages(s, q, eyes=None, canvas=None):
             ("/robot/accent_in", float(s.get("accent_in", -1.0))),
             ("/robot/led_speed_a", float(s.get("led_speed_a", 0.0))),
             ("/robot/led_speed_b", float(s.get("led_speed_b", 0.0))),
+            ("/robot/look_u", float(s.get("look_u", -1.0))), ("/robot/look_w", float(s.get("look_w", 0.0))),
             ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0),
             ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)]
 

@@ -260,9 +260,28 @@ class TrackMode:
                      action="wait" if self.mode == "WAIT" else self.en.state.lower(), clip_t=t, clip_len=t + 10.0,
                      progress=0.0, beat=0.0, anticipate=0.0, release=0.0, accent_in=-1.0, led_speed_a=0.0,
                      led_speed_b=0.0)
+        s.update(self._look())
         if self.state == "FAULT":
             s["state"] = "FAULT"
         return s
+
+    def _look(self):
+        """The look on the strip while someone is engaged (perk, track): look_u where their head is along it (0..1
+        from LED 0's end, show.motion_cues' end a), look_w brighter the nearer the glass; else none."""
+        import collision as C
+        import engage as EN
+        import tracking as TR
+        en = self.en
+        pr = en.people.get(en.who) if en.state in ("PERK", "TRACK") else None
+        if pr is None:
+            return {"look_u": -1.0, "look_w": 0.0}
+        caps, _ = C.capsules(en.model, self.q)
+        strip = next((c for c in caps if c[0] == "tool_strip"), None)
+        if strip is None:
+            return {"look_u": -1.0, "look_w": 0.0}
+        d = TR.glass_distance(en.glass, pr["pos"]) if en.glass else 1.0
+        return {"look_u": round(EN.look_on_strip(strip[1], strip[2], pr["pos"]), 4),
+                "look_w": round(EN.look_weight(d), 4)}
 
     def status(self):
         en = self.en
@@ -505,6 +524,11 @@ def self_test():
           "eyes), the clip's cues kept", called and all(s["state"] == "IDLE" and s["family"] == "look"
                                                         and s["action"] == "noticed" for s in called), called[:1])
     engaged = [s for md, s, _ in m.told if md == "ENGAGE"]
+    looking = [s for s in engaged if s["action"] in ("perk", "track")]
+    check("... engaged: the look on the strip -- where their head is along it (0..1 from LED 0), brighter the "
+          "nearer the glass; nobody engaged: none", looking and all(0.0 <= s["look_u"] <= 1.0 and s["look_w"] >= 0.3
+                                                                   for s in looking)
+          and all(s.get("look_w", 0.0) == 0.0 for s in idle), [(s["look_u"], s["look_w"]) for s in looking[:3]])
     check("... engaged: IDLE, the look family (the eyes), no clip cues", engaged and all(
         s["state"] == "IDLE" and s["family"] == "look" and s["anticipate"] == 0.0 and s["clip_len"] > s["clip_t"]
         for s in engaged), engaged[:1])
