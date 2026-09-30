@@ -180,12 +180,15 @@ def apply(stage, env, room="/World/Room", guides=False):
 
 def set_ceiling(stage, level):
     """The LED frame dimmed as a whole, as TD ceiling_light dims the room's: each bar's light at level (0..1)
-    of CEILING_INTENSITY. The warehouse's fill beyond the glass stays."""
-    v = CEILING_INTENSITY * max(0.0, min(1.0, level))
+    of CEILING_INTENSITY, the bars' glow with it. The warehouse's fill beyond the glass stays."""
+    level = max(0.0, min(1.0, level))
     for key in "abcd":
         p = stage.GetPrimAtPath("%s/LEDFrame/light_%s" % (ROOT_PATH, key))
         if p.IsValid():
-            UsdLux.RectLight(p).GetIntensityAttr().Set(v)
+            UsdLux.RectLight(p).GetIntensityAttr().Set(CEILING_INTENSITY * level)
+    glow = stage.GetPrimAtPath("%s/Materials/led/Surface" % ROOT_PATH)
+    if glow.IsValid():
+        UsdShade.Shader(glow).GetInput("emissiveColor").Set(Gf.Vec3f(level, level, level))
 
 
 def _bound(stage, room, wall):
