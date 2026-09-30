@@ -393,7 +393,10 @@ def live():
                 last_render[0] = wall
         world.step(render=render)
         if now > 0.5:
-            sim = np.degrees(robot.get_joint_positions(joint_indices=idx))
+            js = robot.get_joint_positions(joint_indices=idx)
+            if js is None:                               # the simulation stopped (the window closed): the summary
+                break
+            sim = np.degrees(js)
             worst = max(worst, max(abs(float(sim[j]) - q[j]) for j in range(6)))
         if label is not None and ticks % 15 == 0:
             off, st = rn.gz.offsets, rn.stats()
