@@ -43,6 +43,7 @@ OSC in:  /robot/trigger [name] (default scan)   /robot/pause   /robot/resume   /
          /robot/mood <action>   /robot/energy <0..1> (below 0: back to the arc)
 OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
          /robot/run_elapsed f  /robot/run_left f (wall s: the run's time so far and left; streaming only)
+         /robot/strip_a f*3  /robot/strip_b f*3 (the strip's ends, the robot's frame: TD's guest light)
          /robot/scan f (0..1 of the scan's time)  /robot/joints f*6
          /robot/scan/u f (across the opening, 0..1: the LEDs' column)  /robot/scan/led i  /robot/scan/speed f
 
@@ -1159,6 +1160,16 @@ def warm_cues(graph):
         motion_cues(sg)
 
 
+def strip_ends(q, robot="fr20"):
+    """(a, b): the strip's ends at pose q, the robot's frame (m); a LED 0's end (motion_cues' end a, the
+    collision model's tool_strip capsule) -- where TouchDesigner's guest light puts a guest along it."""
+    import collision as C
+    if not _CUE_MODEL:
+        _CUE_MODEL.append(C.load_model(robot))
+    c = next((c for c in C.capsules(_CUE_MODEL[0], q)[0] if c[0] == "tool_strip"), None)
+    return (list(c[1]), list(c[2])) if c else ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+
+
 SCAN_GAP_M = 0.06                   # the scan's LEDs to the paper: paper_light's 1
 
 
@@ -1560,7 +1571,7 @@ def runner_for(graph, seed=None, log=None, scan_speed=1.0):
 
 def osc_messages(s, q, eyes=None, canvas=None):
     """[(address, value)] of a status s (Runner.status) at pose q: what
-    TouchDesigner hears. /robot/facing: facing(q, eyes), -1 with no eyes;
+    TouchDesigner hears. /robot/facing: facing(q, eyes), -1 with no eyes; /robot/strip_a, _b: strip_ends(q);
     /robot/paper: paper_light(q, canvas), -1 with no canvas."""
     return [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
             ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
@@ -1580,7 +1591,7 @@ def osc_messages(s, q, eyes=None, canvas=None):
             ("/robot/led_speed_b", float(s.get("led_speed_b", 0.0))),
             ("/robot/look_u", float(s.get("look_u", -1.0))), ("/robot/look_w", float(s.get("look_w", 0.0))),
             ("/robot/facing", round(facing(q, eyes), 4) if eyes else -1.0),
-            ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)]
+            ("/robot/paper", round(paper_light(q, canvas), 6) if canvas else -1.0)] +         [("/robot/strip_" + k, [round(x, 4) for x in e]) for k, e in zip("ab", strip_ends(q))]
 
 
 def osc_allow(send_host, also=()):
@@ -2109,6 +2120,15 @@ def self_test():
     check("... and -1 for facing when the room has no audience",
           dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0, None))["/robot/facing"]
           == -1.0)
+    import collision as C
+    cap = next(c for c in C.capsules(C.load_model("fr20"), q0)[0] if c[0] == "tool_strip")
+    a_, b_ = strip_ends(q0)
+    check("the strip's ends where the arm is: the collision model's strip (a: LED 0's end), a metre apart",
+          max(abs(x - y) for x, y in zip(a_ + b_, list(cap[1]) + list(cap[2]))) < 1e-6
+          and abs(math.dist(a_, b_) - 1.0) < 0.05, (a_, b_))
+    check("OSC carries them: /robot/strip_a, /robot/strip_b (x y z, the robot's frame; TD's guest light)",
+          msgs["/robot/strip_a"] == [round(x, 4) for x in a_] and msgs["/robot/strip_b"] == [round(x, 4) for x in b_],
+          (msgs["/robot/strip_a"], msgs["/robot/strip_b"]))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
