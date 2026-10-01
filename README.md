@@ -1,5 +1,7 @@
 # houdini-robot-toolkit
 
+Project page: https://www.wenyizhang.com/systems/houdini-robot-toolkit
+
 Houdini toolset for animating a 6-axis robot arm — FK and IK, motion
 analysis, and CSV export to a real controller — and the tools around it: a
 clip library, a room with collision and safety zones, playback on a Fairino
