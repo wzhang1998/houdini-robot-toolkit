@@ -33,9 +33,13 @@ Only **real FR20** rows describe something the arm has actually done.
 | 2026-09-28 | Stream paced by the motion queue (GetMotionQueueLength): 10 min at 1.0, 0 skips, queue steady at ~7, no error -- but the lag still grew 104 -> 656 ms (~0.95 ms per s): a buffer behind the queue fills. The controller's clock (GetSystemClock, `controller_clock.py`) is only -126 ppm against the PC; it plays ServoJ ~950 ppm slower than cmdT in all (the PC-paced runs agree once their skipped ticks are counted). Now: points paced at a calibrated playback rate per controller | 6ac1c88 -> see git log |
 | 2026-09-28 | Path shape, each 20 s window aligned by its own lag: max error 0.43-0.94 deg per joint, RMS <= 0.10 deg (0.6); max 1.3-3.7 deg, RMS <= 0.28 deg (1.0). One constant lag for the whole run showed up to 8 deg -- the drifting lag, not the arm | -- | -- |
 | 2026-09-28 | **Paced at the calibrated playback rate (-950 ppm), the lag holds**: the show (strip library) 10 min at 0.5 and 6 min at 1.0 on the real arm, 0 skips, no error, queue 0-3; per 30 s window the arm is 104-128 ms behind all run, path RMS 0.03-0.22 deg. The reports said the lag grew to 500 ms and suggested -1461 / -1628 ppm: their analysis put point k at k x dt, but a paced point leaves the PC at k x dt / rate -- the calibration read back as drift. Fixed (the log's times and the analysis on the PC time each point was sent at); -950 stays | the lag grew ~1 ms per s | see git log |
+| 2026-09-30 | **The interactive mode (track_mode) on the real arm**, guests tracked live by the Femto Mega through TD (logs `stream_20260930-*.json`, target hardware): 4 runs -- 121 s at speed 0.3 (interactive share 0.2; 2 engagements; 15,028 sends, 50 skipped), 194 s at 0.3 (0.2; no guest engaged; 24,201 sends, 63 skipped), 430 s at 0.5 (0.35; 4 engagements; 53,528 sends, 222 skipped), 290 s at 0.8 (0.35; 3 engagements; 35,455 sends, 801 skipped, worst step 77 % of the velocity limit). Every run: 0 unsafe ticks, 0 refused, no controller error, ended at a hub. The skips are the robot laptop's (it misses ticks, most at 0.8); the engage code then was before the wider follow, crouch, lead and the goodbye fix (all since in sim only) | first real run of the mode | logs from the robot laptop |
 
 Not yet run on the real arm: any dance clip, `--goto-home`, a clip refused by
-the cell check. Dance clips so far: dry-run and SimMachine only.
+the cell check. Dance clips so far: dry-run and SimMachine only. The UV strip
+lit on the arm, and a scan on real paper, are each to get their own row when
+they first happen (a real scan attempt on 2026-09-30 stopped at MoveJ error 14,
+a controller EtherCAT fault, before it began).
 
 ## SimMachine
 
@@ -127,9 +131,20 @@ the cell check. Dance clips so far: dry-run and SimMachine only.
 
 ## Media index
 
-Real-robot video: none recorded yet. Name files
+Name real-robot video files
 `YYYYMMDD_<clip>_speed<s>.mp4` (e.g. `20260925_d17_speed0.6.mp4`) with a
 matching Houdini viewport capture from the same angle, and list them here.
+
+**To film at the show recording** (asked by the portfolio session, 2026-09-30):
+
+1. A fixed, wide tripod shot of one full cycle in the dark room -- idle, the scan, the image appearing, its fade:
+   90 s or more, 4K, exposure locked.
+2. A close-up of the strip passing over the paper, and a still of the finished violet image.
+3. The interactive mode: someone steps onto the spot, the arm turns, follows, crouches, nods goodbye; two people if
+   possible (attention choosing between them).
+4. Isaac replays from the same camera poses as 1 and 3 (run_tracking / replay_render `--camera 'ex ey ez tx ty tz
+   focal'`; Isaac prints the viewport's as `[camera] --camera ...`), to cut real and sim side by side. Note the pose.
+5. A screen recording of TD (pixel_scan, idle_leds, the monitor) during the take.
 
 | File | Where | What |
 |---|---|---|
@@ -142,6 +157,9 @@ matching Houdini viewport capture from the same angle, and list them here.
 | docs/images/portfolio/review_contact_sheet_1600.jpg | Houdini (OpenGL, clean) | the review contact sheet, 1600 px: 98 clips, rejected framed red |
 | geo/review/contact_sheet.png | Houdini | every clip, one frame, rejected framed red |
 | geo/review/page_*.mp4, overview.mp4 | Houdini | clip review videos |
+| geo/isaac/td_capture_20260930-191550/replay_front_1920x1080.mp4 (local) | Isaac | the 5 min show with TD live (strip, canvas, ceiling look with the accent flash), the front camera; `--camera front` |
+| geo/isaac/td_capture_20260930-184751/replay_interact_1920x1080.mp4 (local) | Isaac | the same show, the interact camera, the ceiling look before the flash |
+| geo/isaac/td_capture_20260930-175134/replay_interact_3840x2160.mp4 (local) | Isaac | 4K, the first ceiling look (superseded) |
 
 Still to make (1600 px, clean -- the Karma previews are noisy): atlas, cell,
 dance sheet.
