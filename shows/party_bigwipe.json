@@ -214,10 +214,10 @@
  },
  "canvas": {
   "placeholder": true,
-  "center": [0.2242, 1.1398, 0.9],
+  "center": [0.2237, 1.1374, 0.9],
   "normal": [
-   0.193,
-   0.9812,
+   0.2032,
+   0.9791,
    0.0
   ],
   "size": [
@@ -225,7 +225,7 @@
    1.8
   ],
   "thickness": 0.02,
-  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall."
+  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall. Measured on the arm 2026-10-01: the bar laid flat on the wall by hand (joints -110.935 -72.548 50.41 -155.95 -80.795 89.134) -- its facing the wall's normal (0.6 deg off the earlier plane: 10 mm over the bar's 1 m), its front (the CAD's, the shade's rim) on the face, 2.5 mm nearer than before at 1.57 m high. Kept upright: the 37 mm face pressed by hand gives no trustworthy lean (it said 1.9 deg, which the 8 mm scan would have hit at the bottom)."
  },
  "scan": {
   "direction": "top_to_bottom",

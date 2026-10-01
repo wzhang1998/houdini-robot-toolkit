@@ -30,15 +30,23 @@ show's config (`scan.led_gap_m`), then a full build.
 Nearer than the show's margin to the paper (`margins.scan_canvas_m`, 3 cm)
 allows: `--scan-margin M` gives that variant its own margin (the show's own
 scan keeps the config's; show_stream's move to the start hub takes the
-variant's). Each build records its front -- the collision model's nearest to
-the paper, where a tape measures from, ~4.3 mm before the LEDs' face -- and
-the Distance list names it so ("front 0.8 cm (LEDs 1.2 cm)"):
+variant's). The gap is the bar's front to the paper: the shade's rim is the
+CAD's front, where a tape measures from. The collision model's capsules round
+its corners ~4.3 mm past it, so the margin must stay under the gap less that;
+each build records the collision model's clearance too, and the Distance list
+shows both ("front 0.8 cm (collision model 0.4 cm)"):
 
 ```bash
-uv run scripts/show.py build shows/party.json --scan-only --gap 0.0193 --scan-margin 0.01    # front 15 mm
-uv run scripts/show.py build shows/party.json --scan-only --gap 0.0123 --scan-margin 0.005   # front 8 mm
-uv run scripts/show.py build shows/party.json --scan-only --gap 0.0063 --scan-margin 0.001   # front 2 mm
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.015 --scan-margin 0.01     # front 15 mm
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.008 --scan-margin 0.003    # front 8 mm
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.0063 --scan-margin 0.001   # front 6.3 mm
 ```
+
+The wall (the canvas's centre and normal in the show configs) was measured by
+laying the bar flat on it by hand and reading the joints (2026-10-01): the
+bar's facing is the wall's normal, its rim on the face. Check a pose against
+the configs' wall with the gap printed by `show.py`'s `strip_face` and
+`tool_pose` (the shade's rim's distance along the canvas's normal).
 
 Faster than the show's scan (scan_test's speed only slows a build down):
 `--speed V --accel A` builds the variant at V m/s to `..._gap<mm>_v<cm/s>`,
@@ -49,7 +57,7 @@ limits) 0.4 m/s with 1.2 m/s2 is the most: the area 6.5 cm lower, J3 at
 by the floor at the bottom, and 1.0 m/s would ask J3 for ~95 % of its speed.
 
 ```bash
-uv run scripts/show.py build shows/party.json --scan-only --gap 0.0123 --scan-margin 0.005 --speed 0.4 --accel 1.2
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.008 --scan-margin 0.003 --speed 0.4 --accel 1.2
 ```
 
 

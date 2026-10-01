@@ -50,14 +50,15 @@ STEP_BUTTONS = (("to_scan", "3  To scan start"), ("back", "Back to start pos"), 
 def scan_distances(config, root=None):
     """[(label, dir or None)]: the show's own scan (None) and its scan-only builds at other distances
     (shows/scans/<show>_gap<mm>/compiled.json), nearest first; the gap read from each build -- named by its
-    front (the bar's nearest point to the paper, as a tape measures it) when the build knows it, else by the
-    LEDs' face (scan.led_gap_m, ~4 mm behind the front)."""
+    front: the bar's nearest point to the paper, the shade's rim (the CAD's front; scan.led_gap_m), as a tape
+    measures it; then, when the build knows it, the collision model's clearance (its capsules reach ~4 mm
+    past the rim, so it is the smaller)."""
     import glob
     root = root or UI.ROOT
     name = os.path.splitext(os.path.basename(config))[0]
     scan = json.load(open(config)).get("scan", {})
     own, own_mps = scan.get("led_gap_m"), scan.get("speed_mps")
-    out = [("LEDs %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
+    out = [("front %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
     found = []
     for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
         try:
@@ -71,8 +72,8 @@ def scan_distances(config, root=None):
     for gap, mps, front, d in sorted(found, key=lambda x: (x[0], x[1])):
         where = os.path.relpath(d, root).replace("\\", "/")
         fast = ", %.2f m/s" % mps if mps else ""
-        out.append(("front %.1f cm%s  (LEDs %.1f cm, %s)" % (100.0 * front, fast, 100.0 * gap, where)
-                    if front is not None else "LEDs %.1f cm%s  (%s)" % (100.0 * gap, fast, where), d))
+        out.append(("front %.1f cm%s  (collision model %.1f cm, %s)" % (100.0 * gap, fast, 100.0 * front, where)
+                    if front is not None else "front %.1f cm%s  (%s)" % (100.0 * gap, fast, where), d))
     return out
 
 
@@ -367,11 +368,13 @@ def self_test():
           and speeds == (0.2, 0.4, 0.2), ([l for l, _ in ds], speeds))
     ds = [x for x in ds if not x[1] or not x[1].endswith("s_gap12")]
     check("the distances: the show's own first, then its scan-only builds nearest first",
-          [l.split()[1] for l, _ in ds] == ["6.0", "1.5", "3.5", "4.5"] and ds[0][1] is None
+          [l.split()[1] for l, _ in ds] == ["6.0", "1.9", "3.5", "4.5"] and ds[0][1] is None
           and ds[2][1].endswith("gap35"), [l for l, _ in ds])
-    check("a build that knows its front (the bar's nearest point, as a tape measures it) is named by it, the LEDs' "
-          "gap after; one that does not, by the LEDs'", ds[1][0].startswith("front 1.5 cm") and "LEDs 1.9 cm" in ds[1][0]
-          and ds[2][0].startswith("LEDs 3.5 cm"), [l for l, _ in ds])
+    check("each named by its front -- the bar's nearest point to the paper, the shade's rim (the CAD's front, "
+          "scan.led_gap_m), as a tape measures it -- and, when the build knows it, the collision model's clearance "
+          "(its capsules reach ~4 mm past the rim)", ds[1][0].startswith("front 1.9 cm") and
+          "collision model 1.5 cm" in ds[1][0] and ds[2][0].startswith("front 3.5 cm") and "collision" not in ds[2][0]
+          and ds[0][0].startswith("front 6.0 cm"), [l for l, _ in ds])
     go = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, scan_test=True, goto_start=True)
     check("Move to start pos: only the checked MoveJ", "--goto-start" in go and "--scan-test" not in go, go)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")

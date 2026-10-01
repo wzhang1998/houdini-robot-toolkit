@@ -643,9 +643,9 @@ def require_connected(g):
 
 
 def front_gap(graph, cfg, model=None, every=4):
-    """How near the scan comes to the paper: the collision model's nearest to the canvas (its own parts, no
-    margin) over the scan segment, m -- the bar's front, where a tape measures from (the LEDs' face,
-    scan.led_gap_m, is ~4 mm behind it). None without a scan or a canvas."""
+    """How near the scan's collision model comes to the paper: its nearest to the canvas (its own parts, no
+    margin) over the scan segment, m -- ~4 mm less than the bar's real front (the shade's rim, the CAD's
+    front, scan.led_gap_m): the capsules round its corners out. None without a scan or a canvas."""
     import collision as C
     seg = next((x for x in graph.segments if x.kind == "scan"), None)
     if seg is None or not cfg.get("canvas"):
@@ -2120,8 +2120,8 @@ def self_test():
     near = os.path.join(ROOT, "shows", "scans", "party_gap35", "compiled.json")
     if os.path.exists(near):
         fg = front_gap(Graph.load(near), json.load(open(os.path.join(ROOT, "shows", "party.json"))))
-        check("the scan's front: the collision model's nearest to the paper -- 3.5 cm from the LEDs is 3.07 cm from "
-              "the bar's front (the tape's 3 cm, 2026-10-01)", fg is not None and abs(fg - 0.0307) < 0.001, fg)
+        check("the scan's collision model nearest the paper: 3.5 cm from the shade's rim is 3.07 cm from its capsules",
+              fg is not None and abs(fg - 0.0307) < 0.001, fg)
     party = os.path.join(ROOT, "shows", "party.json")
     refused = []
     for argv in (["build", party, "--scan-margin", "0.01"], ["build", party, "--scan-only", "--scan-margin", "0.01"],
@@ -2308,7 +2308,7 @@ def main(argv=None):
                else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC
         write_preview(g, out)
         g.save(os.path.join(out, "compiled.json"))
-        print("wrote %s: %s, the bar's front %.1f mm from the paper, %.0f s" % (os.path.relpath(out, ROOT),
+        print("wrote %s: %s, the collision model %.1f mm from the paper, %.0f s" % (os.path.relpath(out, ROOT),
                                         ", ".join("%s %.1f s" % (x.name, x.duration) for x in g.segments),
                                         1e3 * (g.info.get("front_gap_m") or 0.0), time.time() - t0))
         return 0
