@@ -48,7 +48,11 @@ bar's facing is the wall's normal, its rim on the face. Check a pose against
 the configs' wall with the gap printed by `show.py`'s `strip_face` and
 `tool_pose` (the shade's rim's distance along the canvas's normal).
 
-Faster than the show's scan (scan_test's speed only slows a build down):
+The scan plays at its built speed times the scan speed (show_ui / scan_test_ui's
+"Scan speed", `--scan-speed`), whatever the show's speed: the arm's 0.3 slows
+every other move, not the exposure (the party's scan: 0.2 m/s).
+
+Faster than the show's scan (the scan speed only slows a build down):
 `--speed V --accel A` builds the variant at V m/s to `..._gap<mm>_v<cm/s>`,
 its area lowered by its longer ramps so its top stays the show's (the
 controller's Z 1600 mm cap). At the show's safety (0.5 of each joint's

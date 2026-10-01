@@ -110,8 +110,9 @@ def plan(graph, start=None):
 
 
 def wall_s(seg, speed, scan_speed=1.0):
-    """A segment's wall seconds at the show speed (the scan also at its own)."""
-    return seg.duration / speed / (scan_speed if seg.kind == "scan" else 1.0)
+    """A segment's wall seconds at the show speed; the scan at its built speed times scan_speed, whatever the
+    show's (show_stream.clock_rate)."""
+    return seg.duration / scan_speed if seg.kind == "scan" else seg.duration / speed
 
 
 class Rehearsal:
@@ -268,8 +269,8 @@ def self_test():
     energies = [float(s.labels.get("energy") or 0.0) for s in hub_clips]
     check("a hub's clips calm first", energies == sorted(energies))
     _, total = table(items, 0.3)
-    check("its length at 0.3: every segment's time / 0.3", abs(total - sum(s.duration for s in items) / 0.3) < 1e-6,
-          mmss(total))
+    check("its length at 0.3: every segment's time / 0.3, the scan's at its own speed (show_stream.clock_rate)",
+          abs(total - sum(x.duration if x.kind == "scan" else x.duration / 0.3 for x in items)) < 1e-6, mmss(total))
 
     # unbalanced moves (a -> b -> c -> a, b -> a): greedy, still all of them, back home
     A, B, C = [0.0] * 6, [10.0] + [0.0] * 5, [20.0] + [0.0] * 5

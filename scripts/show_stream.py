@@ -28,7 +28,8 @@ so the stream is the Runner's joints, tick by tick:
      hub at rest, then the stream ends.
 
 --speed scales the show's clock: speed s runs every segment s times as fast
-(velocity x s, acceleration x s^2). Hardware defaults to 0.3.
+(velocity x s, acceleration x s^2). Hardware defaults to 0.3. Not the scan:
+it plays at its built speed (times --scan-speed) whatever the show's.
 
 Lag correction (on for --hardware; --no-lag-correction turns it off,
 --lag-correction turns it on for SimMachine): the arm's lag behind the
@@ -122,8 +123,9 @@ class Commands:
     def status(self, lag_s=0.0):
         """The Runner's status, time left in wall seconds (at this speed); the
         scan's position where the arm is, lag_s of wall time behind."""
-        s = getattr(self.runner, "robot_status", self.runner.status)(lag_s=lag_s, rate=self.speed_now)   # track_mode's
-        s["time_left"] = round(s["time_left"] / max(self.speed_now, 1e-6), 2)
+        rate = clock_rate(self.runner, self.speed_now)
+        s = getattr(self.runner, "robot_status", self.runner.status)(lag_s=lag_s, rate=rate)   # track_mode's
+        s["time_left"] = round(s["time_left"] / max(rate, 1e-6), 2)
         s.update(self.run_times(s.get("plan_left")))
         return s
 
@@ -254,11 +256,13 @@ class Guard:
         self.vel, self.limits, self.dt, self.speed = vel_limits, limits_deg, dt, speed
         self.worst_ratio = 0.0
 
-    def check(self, prev, q, ticks):
+    def check(self, prev, q, ticks, rate=None):
+        """rate: what the tick was played at (clock_rate), else the show's speed."""
+        r = self.speed if rate is None else rate
         for j, (a, b, v) in enumerate(zip(prev, q, self.vel)):
-            allowed = v * self.dt * self.speed * ticks * STEP_MARGIN
+            allowed = v * self.dt * r * ticks * STEP_MARGIN
             step = abs(b - a)
-            self.worst_ratio = max(self.worst_ratio, step / (v * self.dt * self.speed * ticks))
+            self.worst_ratio = max(self.worst_ratio, step / (v * self.dt * r * ticks))
             if step > allowed:
                 raise StreamFault("J%d steps %.3f deg in %d tick(s), allowed %.3f" % (j + 1, step, ticks, allowed))
         for j, (x, (lo, hi)) in enumerate(zip(q, self.limits)):
@@ -388,6 +392,13 @@ class LagCorrector:
 def _scanning(runner):
     seg = getattr(runner, "seg", None)
     return getattr(seg, "kind", None) == "scan"
+
+
+def clock_rate(runner, speed):
+    """How fast the runner's clock runs against the wall's: the show's speed (--speed, 0.3 on the arm by default),
+    but the scan at its own built speed -- its exposure is --scan-speed's alone, not slowed with the rest (the
+    user, 2026-10-01: the scan at 0.2 m/s whatever the show's speed). The guard holds each tick to this rate."""
+    return 1.0 if _scanning(runner) else speed
 
 
 ASK = "[ask] "                       # a question to a window that started this process (show_ui)
@@ -563,8 +574,9 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
             for i in range(n):
                 a = adv if i == 0 else 1
                 tick += a
-                q = runner.step(dt * speed) if pid > 0 else prev
-                guard.check(prev, q, 1)
+                rate = clock_rate(runner, speed)
+                q = runner.step(dt * rate) if pid > 0 else prev
+                guard.check(prev, q, 1, rate)
                 same = _same(q, prev)
                 fix = 0
                 if corr is not None:
@@ -1153,6 +1165,27 @@ def self_test():
     r = S.Runner(graph, S.Selector(graph.idle(), 1, seed=0), hub_stay=(2, 2), seed=0)
     check("the speed cannot be changed while streaming (no live speed command)",
           not hasattr(Commands(r), "set_speed"))
+
+    class _At:
+        def __init__(self, kind):
+            self.seg = S.Segment("x", kind, [0.0, 1.0], [A, A], "a", "a", {})
+    check("the scan plays at its own built speed whatever the show's clock (--speed slows the rest; the scan's "
+          "exposure is --scan-speed's alone)", clock_rate(_At("scan"), 0.3) == 1.0
+          and clock_rate(_At("idle"), 0.3) == 0.3 and clock_rate(_At("move"), 1.0) == 1.0)
+    gd = Guard(vel, lim, dt, 0.5)
+    fast = [A[0] + 0.9 * vel[0] * dt] + A[1:]          # 90 % of J1's limit in one tick: the built speed's room
+    try:
+        gd.check(A, fast, 1)
+        slow_ok = True
+    except StreamFault:
+        slow_ok = False
+    try:
+        gd.check(A, fast, 1, rate=1.0)
+        scan_ok = True
+    except StreamFault:
+        scan_ok = False
+    check("the guard holds each tick to the limits times the rate it was played at: the show's speed, the scan's "
+          "own 1.0", not slow_ok and scan_ok, (slow_ok, scan_ok))
 
     c = FakeCtrl()
     rep, r = run(c, 2.0 / 60, speed=0.5)
