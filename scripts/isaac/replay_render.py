@@ -32,6 +32,9 @@ ap.add_argument("--guides", action="store_true", help="draw the safety guides")
 ap.add_argument("--led0", choices=("minus", "plus"), default="minus", help="the strip's end LED 0 is at (flange y)")
 ap.add_argument("--led-gain", type=float, default=1.0, help="brighten the drawn LEDs")
 ap.add_argument("--size", default="1600x900", help="the video's resolution, WxH (3840x2160: 4K)")
+ap.add_argument("--no-label", action="store_true", help="no state / clip in the corner")
+ap.add_argument("--ceiling", type=float, default=-1.0, help="the ceiling's level, fixed (0..1; -1: as recorded)")
+ap.add_argument("--still", default="", help="render only --start, settled, to this PNG (no video)")
 args = ap.parse_args()
 
 from isaacsim import SimulationApp  # noqa: E402
@@ -95,17 +98,20 @@ def main():
         world.step(render=False)
     corner, shown, shots, ceiling = [], None, 0, None
     n = int((end - args.start) * FPS)
+    if args.still:
+        n = 24                                                            # one moment, the ray tracer settled
     for k in range(n):
-        t = args.start + k / float(FPS)
+        t = args.start + (0.0 if args.still else k / float(FPS))
         fr = cap.frame_at(t)
         for s in range(steps):                                            # the arm driven as it was, 120 Hz,
             q = cap.q_at(t - (steps - 1 - s) * PHYSICS_DT)                # between the frames: no stutter
             robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
             world.step(render=s == steps - 1)
         leds.update(fr["leds"], q)
-        if ceiling is None or abs(fr["ceiling"] - ceiling) > 1e-3:          # TD ceiling_light's level
-            room_look.set_ceiling(stage, fr["ceiling"])
-            ceiling = fr["ceiling"]
+        lit = fr["ceiling"] if args.ceiling < 0.0 else args.ceiling
+        if ceiling is None or abs(lit - ceiling) > 1e-3:                   # TD ceiling_light's level
+            room_look.set_ceiling(stage, lit)
+            ceiling = lit
         if scan is not None:
             scan.update(-1.0, False, q)
         if canvas is not None:
@@ -115,12 +121,21 @@ def main():
                 shown = i
         world.render()
         capture_viewport_to_file(get_active_viewport(), os.path.join(frames, "f_%05d.png" % shots))
-        corner.append((shots / float(FPS), overlay.label(fr["state"], fr["clip"], fr["scan"])))
+        if not args.no_label:
+            corner.append((shots / float(FPS), overlay.label(fr["state"], fr["clip"], fr["scan"])))
         shots += 1
         if k % (FPS * 10) == 0:
             print("[replay] %.0f / %.0f s" % (t, end), flush=True)
+    if args.still:
+        import shutil
+        for _ in range(60):
+            app.update()                                                  # the last capture written
+        shutil.copyfile(os.path.join(frames, "f_%05d.png" % (shots - 1)), os.path.abspath(args.still))
+        shutil.rmtree(frames, ignore_errors=True)
+        print("[replay] still %s" % args.still)
+        return
     mp4 = os.path.join(os.path.abspath(args.capture), "replay_%s.mp4" % tag)
-    encode_video(app, frames, corner, shots, mp4, FPS, tag="replay")
+    encode_video(app, frames, corner, shots, mp4, FPS, size=(W, H), tag="replay")
 
 
 main()
