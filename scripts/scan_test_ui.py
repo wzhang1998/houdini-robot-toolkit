@@ -55,7 +55,8 @@ def scan_distances(config, root=None):
     import glob
     root = root or UI.ROOT
     name = os.path.splitext(os.path.basename(config))[0]
-    own = json.load(open(config)).get("scan", {}).get("led_gap_m")
+    scan = json.load(open(config)).get("scan", {})
+    own, own_mps = scan.get("led_gap_m"), scan.get("speed_mps")
     out = [("LEDs %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
     found = []
     for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
@@ -64,12 +65,28 @@ def scan_distances(config, root=None):
         except (OSError, ValueError):
             continue
         if info.get("led_gap_m") is not None:
-            found.append((info["led_gap_m"], info.get("front_gap_m"), os.path.dirname(f)))
-    for gap, front, d in sorted(found, key=lambda x: x[0]):
+            mps = info.get("scan_speed_mps")
+            found.append((info["led_gap_m"], mps if mps is not None and mps != own_mps else 0.0,
+                          info.get("front_gap_m"), os.path.dirname(f)))
+    for gap, mps, front, d in sorted(found, key=lambda x: (x[0], x[1])):
         where = os.path.relpath(d, root).replace("\\", "/")
-        out.append(("front %.1f cm  (LEDs %.1f cm, %s)" % (100.0 * front, 100.0 * gap, where) if front is not None
-                    else "LEDs %.1f cm  (%s)" % (100.0 * gap, where), d))
+        fast = ", %.2f m/s" % mps if mps else ""
+        out.append(("front %.1f cm%s  (LEDs %.1f cm, %s)" % (100.0 * front, fast, 100.0 * gap, where)
+                    if front is not None else "LEDs %.1f cm%s  (%s)" % (100.0 * gap, fast, where), d))
     return out
+
+
+def built_speed(config, scan_dir):
+    """The scan speed (m/s) a run multiplies: the chosen scan-only build's own (show.py --speed), else the
+    show config's scan.speed_mps."""
+    if scan_dir:
+        try:
+            v = json.load(open(os.path.join(scan_dir, "compiled.json"))).get("info", {}).get("scan_speed_mps")
+        except (OSError, ValueError):
+            v = None
+        if v is not None:
+            return float(v)
+    return float(json.load(open(config)).get("scan", {}).get("speed_mps", 0.2))
 
 
 def step_command(name, scan_speed):
@@ -82,7 +99,6 @@ def run_window(config):
     from tkinter import messagebox, ttk
     link = UI.ShowLink(config)
     cfg = json.load(open(config))
-    built_mps = float(cfg.get("scan", {}).get("speed_mps", 0.2))
     root = tk.Tk()
     root.title("Scan test -- %s" % cfg.get("name", os.path.basename(config)))
     pad = {"padx": 8, "pady": 4}
@@ -228,8 +244,7 @@ def run_window(config):
                        command=lambda n=name: link.trigger(step_command(n, scan_speed.get())))
         b.grid(row=0, column=i, padx=4, pady=4)
         buttons[name] = b
-    ttk.Label(st, text="Scan speed (of the built %.2f m/s)" % built_mps).grid(row=1, column=1, columnspan=2,
-                                                                             sticky="e")
+    ttk.Label(st, text="Scan speed (of the built)").grid(row=1, column=1, columnspan=2, sticky="e")
     ttk.Spinbox(st, from_=UI.SCAN_SPEED[0], to=UI.SCAN_SPEED[1], increment=0.05, textvariable=scan_speed,
                 width=6).grid(row=1, column=3, sticky="w")
     mps_l = ttk.Label(st, text="")
@@ -273,7 +288,8 @@ def run_window(config):
         for name, b in buttons.items():
             b.configure(state="normal" if name in allowed else "disabled")
         finish_b.configure(state="normal" if live and s["state"] != "PAUSED" else "disabled")
-        mps_l.config(text="= %.3f m/s" % (built_mps * scan_speed.get()))
+        built_mps = built_speed(link.config, distances.get(dist_pick.get()))
+        mps_l.config(text="= %.3f m/s  (built %.2f m/s)" % (built_mps * scan_speed.get(), built_mps))
         state = str(s["state"]) if live else ("STARTING" if running else "NOT RUNNING")
         state_l.config(text=state, bg=UI.STATE_COLOUR.get(state, "#777777"))
         if live:
@@ -330,16 +346,26 @@ def self_test():
     root = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, "shows"))
     cfgp = os.path.join(root, "shows", "s.json")
-    json.dump({"scan": {"led_gap_m": 0.06}}, open(cfgp, "w"))
-    for mm, gap, front in ((45, 0.045, None), (35, 0.035, None), (19, 0.0193, 0.015)):
+    json.dump({"scan": {"led_gap_m": 0.06, "speed_mps": 0.2}}, open(cfgp, "w"))
+    for mm, gap, front, mps in ((45, 0.045, None, None), (35, 0.035, None, None), (19, 0.0193, 0.015, None),
+                                (12, 0.0123, 0.008, 0.4)):
         d = os.path.join(root, "shows", "scans", "s_gap%d" % mm)
         os.makedirs(d)
         info = {"led_gap_m": gap, "scan_only": True}
         if front is not None:
             info["front_gap_m"] = front
+        if mps is not None:
+            info["scan_speed_mps"] = mps
         json.dump({"info": info}, open(os.path.join(d, "compiled.json"), "w"))
     ds = scan_distances(cfgp, root)
+    fast = os.path.join(root, "shows", "scans", "s_gap12")
+    speeds = (built_speed(cfgp, None), built_speed(cfgp, fast), built_speed(cfgp, os.path.join(root, "shows", "scans",
+                                                                                                  "s_gap45")))
     shutil.rmtree(root, ignore_errors=True)
+    check("a variant built faster says so in the list; the speed the window multiplies is the chosen build's (the "
+          "show's config's for its own and the older ones)", "0.40 m/s" in ds[1][0] and "m/s" not in ds[2][0]
+          and speeds == (0.2, 0.4, 0.2), ([l for l, _ in ds], speeds))
+    ds = [x for x in ds if not x[1] or not x[1].endswith("s_gap12")]
     check("the distances: the show's own first, then its scan-only builds nearest first",
           [l.split()[1] for l, _ in ds] == ["6.0", "1.5", "3.5", "4.5"] and ds[0][1] is None
           and ds[2][1].endswith("gap35"), [l for l, _ in ds])

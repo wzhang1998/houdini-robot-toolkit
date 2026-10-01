@@ -468,7 +468,8 @@ def resolve_hubs(cfg, rig):
     return out
 
 
-def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None):
+def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, speed_mps=None,
+          accel_mps2=None):
     """The show's clip graph from its config. scan_only: the scan and its
     moves alone (no idle library, showpieces or moves between the hubs) --
     to look at a new scan before the library is made again. gap_m: the
@@ -476,7 +477,11 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None):
     scan.led_gap_m (a scan-only variant, to try distances on the paper).
     scan_margin_m: that variant's own margin to the paper instead of
     margins.scan_canvas_m -- a gap nearer than the show's margin allows
-    (the collision model's front is ~4 mm before the LEDs' face)."""
+    (the collision model's front is ~4 mm before the LEDs' face).
+    speed_mps, accel_mps2: that variant's scan speed and ramp instead of
+    scan.speed_mps / accel_mps2, its area lowered by scan_area_down (the
+    top stays the show's); the build's checks say whether the joints and
+    the room allow it."""
     import choreo
     import collision as C
     import robot_profile as RP
@@ -489,6 +494,17 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None):
         if not (scan_only and gap_m is not None):
             raise ValueError("scan_margin_m is for a scan-only variant at its own gap")
         cfg["margins"]["scan_canvas_m"] = float(scan_margin_m)
+    area_down = 0.0
+    if speed_mps is not None or accel_mps2 is not None:
+        if not (scan_only and gap_m is not None):
+            raise ValueError("speed_mps / accel_mps2 are for a scan-only variant at its own gap")
+        v = float(speed_mps if speed_mps is not None else cfg["scan"]["speed_mps"])
+        a = float(accel_mps2 if accel_mps2 is not None else cfg["scan"].get("accel_mps2", 0.5))
+        area_down = scan_area_down(cfg, v, a)
+        cfg["scan"]["speed_mps"], cfg["scan"]["accel_mps2"] = v, a
+        if area_down and cfg["scan"].get("area"):
+            cfg["scan"]["area"]["center"][2] -= area_down
+        log("scan at %.2f m/s, ramp peak %.2f m/s2: the area %.1f cm lower" % (v, a, 100.0 * area_down))
     prof = RP.load("fr20")
     vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
     model = C.load_model("fr20")
@@ -594,6 +610,9 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None):
                            "inputs": inputs, "scan_only": scan_only,
                            "led_gap_m": (cfg.get("scan") or {}).get("led_gap_m"),
                            "scan_canvas_m": cfg["margins"]["scan_canvas_m"],
+                           "scan_speed_mps": (cfg.get("scan") or {}).get("speed_mps"),
+                           "scan_accel_mps2": (cfg.get("scan") or {}).get("accel_mps2"),
+                           "scan_area_down_m": area_down,
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     g.info["front_gap_m"] = front_gap(g, cfg, model)
@@ -803,6 +822,21 @@ def scan_line(cfg, env, prof, dt=0.016):
               "travel": [round(x, 6) for x in d],
               "clearance_m": rep["min_env_clearance_m"]}
     return ts, [list(q) for q in qs], labels
+
+
+def scan_ramp_m(v, a):
+    """How far a scan's ramp runs from rest to v with scan_profile's sine-shaped acceleration peaking at a, m."""
+    return v * (math.pi * v / (2.0 * a)) / 2.0
+
+
+def scan_area_down(cfg, v, a):
+    """How far to lower the scan's area for a scan at v, a instead of the config's: a pass down (or up) the
+    paper starts its ramp above the area, and the top is by the controller's work zone (its Z 1600 mm cap) --
+    the area goes down by the ramp's growth, so the scan's top stays where the show's is. A pass across: 0."""
+    s = cfg["scan"]
+    if s.get("direction", "left_to_right") not in ("top_to_bottom", "bottom_to_top"):
+        return 0.0
+    return max(0.0, scan_ramp_m(v, a) - scan_ramp_m(s["speed_mps"], s.get("accel_mps2", 0.5)))
 
 
 def scan_profile(cruise_m, v, a, dt):
@@ -2101,6 +2135,27 @@ def self_test():
             refused.append("--scan-margin is for" in err.getvalue() or "--scan-margin must be" in err.getvalue())
     check("--scan-margin only for a scan-only variant at its own gap (--scan-only --gap), and more than 0: the show's "
           "own scan keeps its config's margin", refused == [True, True, True], refused)
+    refused = []
+    for argv in (["build", party, "--speed", "0.4"], ["build", party, "--scan-only", "--speed", "0.4"],
+                 ["build", party, "--scan-only", "--gap", "0.012", "--accel", "1.2"],
+                 ["build", party, "--scan-only", "--gap", "0.012", "--speed", "0"]):
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                main(argv)
+            refused.append(None)
+        except SystemExit:
+            refused.append(any(t in err.getvalue() for t in ("--speed is for", "--accel is for", "--speed must be")))
+    check("--speed / --accel only for a scan-only variant (--scan-only --gap), --accel with --speed, a speed > 0",
+          refused == [True] * 4, refused)
+    vc = {"scan": {"direction": "top_to_bottom", "speed_mps": 0.2, "accel_mps2": 0.8}}
+    hc = {"scan": {"direction": "left_to_right", "speed_mps": 0.2, "accel_mps2": 0.8}}
+    check("a faster scan's longer ramps: the area lowered by the ramp's growth, so its top (by the controller's "
+          "1.6 m cap) stays where the show's is; across the paper the ramps run sideways, nothing lowered",
+          scan_area_down(vc, 0.2, 0.8) == 0.0 and abs(scan_area_down(vc, 0.4, 1.2) - (scan_ramp_m(0.4, 1.2) -
+          scan_ramp_m(0.2, 0.8))) < 1e-12 and abs(scan_ramp_m(0.4, 1.2) - 0.10472) < 1e-4
+          and scan_area_down(hc, 0.4, 1.2) == 0.0 and scan_area_down(vc, 0.2, 2.0) == 0.0,
+          (scan_area_down(vc, 0.4, 1.2), scan_ramp_m(0.4, 1.2)))
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
@@ -2222,8 +2277,20 @@ def main(argv=None):
                     help="build --scan-only --gap: that variant's margin to the paper M (not the config's "
                          "margins.scan_canvas_m) -- for a gap nearer than the show's margin allows; show_stream's "
                          "move to the start hub takes it too")
+    ap.add_argument("--speed", type=float, default=None, metavar="V",
+                    help="build --scan-only --gap: that variant's scan at V m/s (not scan.speed_mps), to "
+                         "shows/scans/<show>_gap<mm>_v<cm/s>; its area lowered so its top stays the show's")
+    ap.add_argument("--accel", type=float, default=None, metavar="A",
+                    help="with --speed: its ramps' peak A m/s2 (not scan.accel_mps2) -- faster wants steeper ramps, "
+                         "or the area goes far down")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
+    if a.speed is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
+        ap.error("--speed is for build --scan-only --gap (the show's own scan keeps scan.speed_mps)")
+    if a.accel is not None and a.speed is None:
+        ap.error("--accel is for --speed")
+    if a.speed is not None and a.speed <= 0.0:
+        ap.error("--speed must be more than 0")
     if a.gap is not None and not (a.command == "build" and a.scan_only):
         ap.error("--gap is for build --scan-only (the show's own gap is its config's scan.led_gap_m)")
     if a.scan_margin is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
@@ -2232,9 +2299,12 @@ def main(argv=None):
         ap.error("--scan-margin must be more than 0")
     if a.command == "build" and a.scan_only:
         t0 = time.time()
-        g = build(cfg_path, scan_only=True, gap_m=a.gap, scan_margin_m=a.scan_margin)
+        g = build(cfg_path, scan_only=True, gap_m=a.gap, scan_margin_m=a.scan_margin, speed_mps=a.speed,
+                  accel_mps2=a.accel)
         name = os.path.splitext(os.path.basename(cfg_path))[0]
-        out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d" % (name, round(a.gap * 1000))) if a.gap is not None
+        fast = "_v%d" % round(a.speed * 100) if a.speed is not None else ""
+        out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d%s" % (name, round(a.gap * 1000), fast))
+               if a.gap is not None
                else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC
         write_preview(g, out)
         g.save(os.path.join(out, "compiled.json"))

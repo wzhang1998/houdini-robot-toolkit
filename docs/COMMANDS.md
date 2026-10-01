@@ -37,6 +37,19 @@ the Distance list names it so ("front 0.8 cm (LEDs 1.2 cm)"):
 ```bash
 uv run scripts/show.py build shows/party.json --scan-only --gap 0.0193 --scan-margin 0.01    # front 15 mm
 uv run scripts/show.py build shows/party.json --scan-only --gap 0.0123 --scan-margin 0.005   # front 8 mm
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.0063 --scan-margin 0.001   # front 2 mm
+```
+
+Faster than the show's scan (scan_test's speed only slows a build down):
+`--speed V --accel A` builds the variant at V m/s to `..._gap<mm>_v<cm/s>`,
+its area lowered by its longer ramps so its top stays the show's (the
+controller's Z 1600 mm cap). At the show's safety (0.5 of each joint's
+limits) 0.4 m/s with 1.2 m/s2 is the most: the area 6.5 cm lower, J3 at
+~34 % of its speed and ~44 % of its acceleration; 0.5 m/s puts the forearm
+by the floor at the bottom, and 1.0 m/s would ask J3 for ~95 % of its speed.
+
+```bash
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.0123 --scan-margin 0.005 --speed 0.4 --accel 1.2
 ```
 
 
