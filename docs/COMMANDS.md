@@ -52,8 +52,8 @@ The scan plays at its built speed times the scan speed (show_ui / scan_test_ui's
 every other move, not the exposure (the party's scan: 2 mm from the paper).
 
 The pigment fades in 10-20 s, so the party's scan is several passes:
-`scan.passes` [0.25, 0.21, 0.18, 0.15] m/s runs down, up, down, up the
-paper, each slower, the LEDs lit both ways (~26 s). Every pass has the
+`scan.passes` (eight, 0.3 slowing to 0.15 m/s) runs down, up, down, up ...
+the paper, each slower, the LEDs lit both ways (~51 s). Every pass has the
 fastest's ramp, gentler the slower, so all turn at rest at the same two ends
 (`show.scan_passes_profile`); `scan.accel_mps2` is that ramp's peak. The OSC
 `/robot/scan/speed` is signed along u (negative on a pass back up), and

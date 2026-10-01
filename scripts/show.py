@@ -469,7 +469,7 @@ def resolve_hubs(cfg, rig):
 
 
 def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, speed_mps=None,
-          accel_mps2=None, area_height_m=None):
+          accel_mps2=None, area_height_m=None, passes=None):
     """The show's clip graph from its config. scan_only: the scan and its
     moves alone (no idle library, showpieces or moves between the hubs) --
     to look at a new scan before the library is made again. gap_m: the
@@ -482,7 +482,9 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
     scan.speed_mps / accel_mps2, its area lowered by scan_area_down (the
     top stays the show's); the build's checks say whether the joints and
     the room allow it. area_height_m: that variant's picture this tall, its
-    top kept (scan_area_shorter) -- the room a faster scan's ramps need."""
+    top kept (scan_area_shorter) -- the room a faster scan's ramps need.
+    passes: that variant's scan.passes (speeds, m/s), its area as the
+    show's."""
     import choreo
     import collision as C
     import robot_profile as RP
@@ -495,6 +497,10 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
         if not (scan_only and gap_m is not None):
             raise ValueError("scan_margin_m is for a scan-only variant at its own gap")
         cfg["margins"]["scan_canvas_m"] = float(scan_margin_m)
+    if passes is not None:
+        if not (scan_only and gap_m is not None) or speed_mps is not None:
+            raise ValueError("passes is for a scan-only variant at its own gap, not with speed_mps")
+        cfg["scan"]["passes"] = [float(v) for v in passes]
     if area_height_m is not None:
         if not (scan_only and gap_m is not None):
             raise ValueError("area_height_m is for a scan-only variant at its own gap")
@@ -2218,6 +2224,18 @@ def self_test():
             refused.append(any(t in err.getvalue() for t in ("--speed is for", "--accel is for", "--speed must be")))
     check("--speed / --accel only for a scan-only variant (--scan-only --gap), --accel with --speed, a speed > 0",
           refused == [True] * 4, refused)
+    refused = []
+    for argv in (["build", party, "--passes", "0.25,0.15"], ["build", party, "--scan-only", "--gap", "0.002", "--passes",
+                 "0.25,0.15", "--speed", "0.2"], ["build", party, "--scan-only", "--gap", "0.002", "--passes", "0.25,0"]):
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                main(argv)
+            refused.append(None)
+        except SystemExit:
+            refused.append(any(t in err.getvalue() for t in ("--passes is for", "--passes or --speed", "--passes must")))
+    check("--passes (speeds, comma separated) only for a scan-only variant, not with --speed, each > 0",
+          refused == [True] * 3, refused)
     import collision as CC
     import robot_profile as RPP
     sw = CC.strip_width(CC.tool_def(RPP.load("fr20")))
@@ -2372,8 +2390,23 @@ def main(argv=None):
     ap.add_argument("--area-height", type=float, default=None, metavar="H",
                     help="build --scan-only --gap: that variant's picture H m tall (not scan.area's), its top kept "
                          "-- the room a faster scan's ramps need; to ..._h<cm>")
+    ap.add_argument("--passes", default=None, metavar="V,V,...",
+                    help="build --scan-only --gap: that variant's passes (m/s, comma separated: down, up, ...), not "
+                         "scan.passes; to ..._p<n>")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
+    passes = None
+    if a.passes is not None:
+        if not (a.command == "build" and a.scan_only and a.gap is not None):
+            ap.error("--passes is for build --scan-only --gap (the show's own scan keeps scan.passes)")
+        if a.speed is not None:
+            ap.error("--passes or --speed, not both")
+        try:
+            passes = [float(x) for x in a.passes.split(",")]
+        except ValueError:
+            passes = []
+        if not passes or min(passes) <= 0.0:
+            ap.error("--passes must be speeds > 0, comma separated")
     if a.area_height is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
         ap.error("--area-height is for build --scan-only --gap (the show's own scan keeps scan.area)")
     if a.speed is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
@@ -2391,10 +2424,11 @@ def main(argv=None):
     if a.command == "build" and a.scan_only:
         t0 = time.time()
         g = build(cfg_path, scan_only=True, gap_m=a.gap, scan_margin_m=a.scan_margin, speed_mps=a.speed,
-                  accel_mps2=a.accel, area_height_m=a.area_height)
+                  accel_mps2=a.accel, area_height_m=a.area_height, passes=passes)
         name = os.path.splitext(os.path.basename(cfg_path))[0]
         fast = "_v%d" % round(a.speed * 100) if a.speed is not None else ""
         fast += "_h%d" % round(a.area_height * 100) if a.area_height is not None else ""
+        fast += "_p%d" % len(passes) if passes else ""
         out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d%s" % (name, round(a.gap * 1000), fast))
                if a.gap is not None
                else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC
