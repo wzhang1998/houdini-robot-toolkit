@@ -59,7 +59,13 @@ def scan_distances(config, root=None):
     scan = json.load(open(config)).get("scan", {})
     own, own_mps = scan.get("led_gap_m"), scan.get("speed_mps")
     own_h = (scan.get("area") or {}).get("size", [None, None])[1]
-    out = [("front %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
+    own_n = len(scan.get("passes") or [1])
+
+    def npass(n):
+        return "%d pass%s" % (n, "" if n == 1 else "es")
+    own_txt = ", " + npass(own_n) if own_n > 1 else ""
+    out = [("front %.1f cm%s  (the show's own scan)" % (100.0 * own, own_txt) if own is not None
+            else "the show's own scan", None)]
     found = []
     for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
         try:
@@ -69,11 +75,13 @@ def scan_distances(config, root=None):
         if info.get("led_gap_m") is not None:
             mps = info.get("scan_speed_mps")
             h = ((info.get("scan_area") or {}).get("size") or [None, None])[1]
+            n = len(info["scan_passes"]) if info.get("scan_passes") else None
             found.append((info["led_gap_m"], mps if mps is not None and mps != own_mps else 0.0,
-                          h if h is not None and h != own_h else 0.0, info.get("front_gap_m"), os.path.dirname(f)))
-    for gap, mps, h, front, d in sorted(found, key=lambda x: (x[0], x[1], -x[2])):
+                          h if h is not None and h != own_h else 0.0, n if n is not None and n != own_n else 0,
+                          info.get("front_gap_m"), os.path.dirname(f)))
+    for gap, mps, h, n, front, d in sorted(found, key=lambda x: (x[0], x[1], -x[2], x[3])):
         where = os.path.relpath(d, root).replace("\\", "/")
-        fast = (", %.2f m/s" % mps if mps else "") + (", %.1f m tall" % h if h else "")
+        fast = (", %.2f m/s" % mps if mps else "") + (", %.1f m tall" % h if h else "") + (", " + npass(n) if n else "")
         out.append(("front %.1f cm%s  (collision model %.1f cm, %s)" % (100.0 * gap, fast, 100.0 * front, where)
                     if front is not None else "front %.1f cm%s  (%s)" % (100.0 * gap, fast, where), d))
     return out
@@ -370,7 +378,7 @@ def self_test():
     root = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, "shows"))
     cfgp = os.path.join(root, "shows", "s.json")
-    json.dump({"scan": {"led_gap_m": 0.06, "speed_mps": 0.2}}, open(cfgp, "w"))
+    json.dump({"scan": {"led_gap_m": 0.06, "speed_mps": 0.2, "passes": [0.3, 0.2]}}, open(cfgp, "w"))
     for mm, gap, front, mps in ((45, 0.045, None, None), (35, 0.035, None, None), (19, 0.0193, 0.015, None),
                                 (12, 0.0123, 0.008, 0.4), (11, 0.011, 0.007, 0.5)):
         d = os.path.join(root, "shows", "scans", "s_gap%d" % mm)
@@ -382,6 +390,8 @@ def self_test():
             info["scan_speed_mps"] = mps
         if mm == 11:
             info["scan_area"] = {"center": [0.0, 1.0, 1.1], "size": [1.0, 0.8]}
+        if mm == 19:
+            info["scan_passes"] = [0.2]
         json.dump({"info": info}, open(os.path.join(d, "compiled.json"), "w"))
     ds = scan_distances(cfgp, root)
     def by(name):
@@ -393,6 +403,8 @@ def self_test():
     check("a variant built faster says so in the list; the speed the window multiplies is the chosen build's (the "
           "show's config's for its own and the older ones)", "0.40 m/s" in by("s_gap12") and "m/s" not in by("s_gap19")
           and speeds == (0.2, 0.4, 0.2), ([l for l, _ in ds], speeds))
+    check("a variant with other passes than the show's says how many (the show's own: its passes)",
+          "1 pass" in by("s_gap19") and "pass" not in by("s_gap45") and "2 passes" in ds[0][0], (by("s_gap19"), ds[0][0]))
     short = by("s_gap11")
     check("a variant with a shorter picture says how tall", "0.8 m tall" in short and "m tall" not in by("s_gap12"),
           short)

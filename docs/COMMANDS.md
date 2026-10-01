@@ -49,7 +49,16 @@ distance (the pressed bar had sat 1.7 mm into it).
 
 The scan plays at its built speed times the scan speed (show_ui / scan_test_ui's
 "Scan speed", `--scan-speed`), whatever the show's speed: the arm's 0.3 slows
-every other move, not the exposure (the party's scan: 0.15 m/s, 2 mm from the paper).
+every other move, not the exposure (the party's scan: 2 mm from the paper).
+
+The pigment fades in 10-20 s, so the party's scan is several passes:
+`scan.passes` [0.25, 0.21, 0.18, 0.15] m/s runs down, up, down, up the
+paper, each slower, the LEDs lit both ways (~26 s). Every pass has the
+fastest's ramp, gentler the slower, so all turn at rest at the same two ends
+(`show.scan_passes_profile`); `scan.accel_mps2` is that ramp's peak. The OSC
+`/robot/scan/speed` is signed along u (negative on a pass back up), and
+`/robot/scan` is the progress over all the passes. A `--speed` variant is
+one pass at that speed.
 
 Faster than the show's scan (the scan speed only slows a build down):
 `--speed V --accel A` builds the variant at V m/s to `..._gap<mm>_v<cm/s>`,

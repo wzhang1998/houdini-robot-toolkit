@@ -507,6 +507,7 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
         a = float(accel_mps2 if accel_mps2 is not None else cfg["scan"].get("accel_mps2", 0.5))
         area_down = scan_area_down(cfg, v, a)
         cfg["scan"]["speed_mps"], cfg["scan"]["accel_mps2"] = v, a
+        cfg["scan"].pop("passes", None)                    # one pass at that speed
         if area_down and cfg["scan"].get("area"):
             cfg["scan"]["area"]["center"][2] -= area_down
         log("scan at %.2f m/s, ramp peak %.2f m/s2: the area %.1f cm lower" % (v, a, 100.0 * area_down))
@@ -616,6 +617,7 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
                            "led_gap_m": (cfg.get("scan") or {}).get("led_gap_m"),
                            "scan_canvas_m": cfg["margins"]["scan_canvas_m"],
                            "scan_speed_mps": (cfg.get("scan") or {}).get("speed_mps"),
+                           "scan_passes": scan_passes(cfg) if cfg.get("scan") else None,
                            "scan_accel_mps2": (cfg.get("scan") or {}).get("accel_mps2"),
                            "scan_area_down_m": area_down,
                            "scan_area": (cfg.get("scan") or {}).get("area"),
@@ -800,8 +802,9 @@ def scan_line(cfg, env, prof, dt=0.016):
     strip_w = C.strip_width(tool) or 0.0254                           # across the scan
     start, end, info = scan_ends(cfg, tool_z, strip_w)
     s = cfg["scan"]
-    v, lead = s["speed_mps"], s.get("lead_m", 0.05)
-    ts, ss, (t_on, t_off) = scan_profile(info["cruise_m"], v, s.get("accel_mps2", 0.5), dt)
+    passes, lead = scan_passes(cfg), s.get("lead_m", 0.05)
+    v = max(passes)
+    ts, ss, spans, _ = scan_passes_profile(info["cruise_m"], passes, s.get("accel_mps2", 0.5), dt)
     d = info["direction"]
     pts = [tuple(start[i] + d[i] * x for i in range(3)) for x in ss]
     model, chain, fo, vel, acc = CF._model()
@@ -822,7 +825,8 @@ def scan_line(cfg, env, prof, dt=0.016):
         raise SystemExit("scan: %s" % C.describe(rep))
     labels = {"speed_mps": v, "exposed_m": round(info["exposed_m"], 4), "direction": s.get("direction", "left_to_right"),
               "roll_deg": scan_roll(cfg), "led_gap_m": s["led_gap_m"],
-              "led_on_s": [round(t_on + lead / v, 4), round(t_off - lead / v, 4)],
+              "led_on_s": [round(spans[0][0] + lead / passes[0], 4), round(spans[-1][1] - lead / passes[-1], 4)],
+              "passes": passes,
               "u": [round(u, 5) for u in scan_positions(ss, info, lead, strip_w)],
               "travel": [round(x, 6) for x in d],
               "clearance_m": rep["min_env_clearance_m"]}
@@ -850,7 +854,7 @@ def scan_area_down(cfg, v, a):
     s = cfg["scan"]
     if s.get("direction", "left_to_right") not in ("top_to_bottom", "bottom_to_top"):
         return 0.0
-    return max(0.0, scan_ramp_m(v, a) - scan_ramp_m(s["speed_mps"], s.get("accel_mps2", 0.5)))
+    return max(0.0, scan_ramp_m(v, a) - scan_ramp_m(max(scan_passes(cfg)), s.get("accel_mps2", 0.5)))
 
 
 def scan_profile(cruise_m, v, a, dt):
@@ -876,6 +880,34 @@ def scan_profile(cruise_m, v, a, dt):
         ts.append(t)
         ss.append(s)
     return ts, ss, (ta, ta + tc)
+
+
+def scan_passes(cfg):
+    """The scan's passes' speeds (m/s), first to last: scan.passes (down, up, down ... the paper, each its own
+    speed: a ping-pong the fading pigment is shown whole by), else the one scan.speed_mps."""
+    s = cfg["scan"]
+    return [float(v) for v in (s.get("passes") or [s["speed_mps"]])]
+
+
+def scan_passes_profile(cruise_m, passes, a, dt):
+    """The scan's time law over its passes: the first along the travel, the next back, ... each scan_profile's
+    at its own speed, all with the fastest's ramp (peak acceleration a) so they turn at rest at the same two
+    ends -- the slower, the gentler its ramps. (times, distance along the travel from the first's start,
+    [(cruise start, end)] a pass, the ramp's length m). One pass: scan_profile's own."""
+    if len(passes) == 1:
+        ts, ss, span = scan_profile(cruise_m, passes[0], a, dt)
+        return ts, ss, [span], scan_ramp_m(passes[0], a)
+    ramp = scan_ramp_m(max(passes), a)
+    end = cruise_m + 2.0 * ramp
+    ts, xs, spans, t0 = [], [], [], 0.0
+    for k, v in enumerate(passes):
+        pt, ps, (on, off) = scan_profile(cruise_m, v, math.pi * v * v / (4.0 * ramp), dt)
+        first = 0 if k == 0 else 1                      # the turn's rest point once
+        ts += [t0 + t for t in pt[first:]]
+        xs += [x if k % 2 == 0 else end - x for x in ps[first:]]
+        spans.append((t0 + on, t0 + off))
+        t0 += pt[-1]
+    return ts, xs, spans, ramp
 
 
 def scan_positions(ss, info, lead, strip_w):
@@ -939,7 +971,7 @@ def scan_ends(cfg, tool_z, strip_w=0.0254):
     standoff = s["led_gap_m"] + c.get("thickness", 0.02) / 2.0 + tool_z
     centre = [middle[i] - n[i] * standoff for i in range(3)]
     cruise = exposed + strip_w + 2 * s.get("lead_m", 0.05)
-    v, a = s["speed_mps"], s.get("accel_mps2", 0.5)
+    v, a = max(scan_passes(cfg)), s.get("accel_mps2", 0.5)       # the fastest pass's ramps (scan_passes_profile)
     ramp = v * (math.pi * v / (2.0 * a)) / 2.0
     half = cruise / 2.0 + ramp
     start = [centre[i] - travel[i] * half for i in range(3)]
@@ -1600,6 +1632,7 @@ class Runner:
         """(u, led, m/s) of the strip across the scan's opening (its labels'
         u, scan_positions), where the arm is lag_s of wall time behind the
         commands; rate: segment seconds a wall second (the stream's speed).
+        The m/s along u, signed: negative on a pass back (scan.passes).
         (-1, 0, 0) outside the scan."""
         us = (self.seg.labels or {}).get("u") if self.seg.kind == "scan" else None
         if not us:
@@ -1616,8 +1649,8 @@ class Runner:
         u = u_at(t)
         h = 0.02
         dudt = (u_at(t + h) - u_at(t - h)) / (min(t + h, ts[-1]) - max(t - h, ts[0]) or h)
-        mps = dudt * float((self.seg.labels or {}).get("exposed_m", 0.0)) * seg_rate
-        return round(u, 4), 1 if 0.0 <= u <= 1.0 else 0, round(abs(mps), 4)
+        mps = dudt * float((self.seg.labels or {}).get("exposed_m", 0.0)) * seg_rate   # signed: < 0 back up u
+        return round(u, 4), 1 if 0.0 <= u <= 1.0 else 0, round(mps, 4)
 
     def status(self, lag_s=0.0, rate=1.0):
         prog = self.seg_t / self.seg.duration if self.seg.duration > 0 else 1.0
@@ -1985,6 +2018,11 @@ def self_test():
           now["scan_u"] == 0.5 and now["scan_led"] == 1 and abs(now["scan_mps"] - 0.5) < 1e-6
           and late["scan_u"] == 0.0 and r.status(lag_s=5.0)["scan_led"] == 0,
           (now["scan_u"], now["scan_led"], now["scan_mps"], late["scan_u"]))
+    r.seg = Segment("scan", "scan", [0.0, 2.0], [S0, S1], "scan_start", "scan_end", {"u": [1.5, -0.5], "exposed_m": 1.0})
+    back = r.status()
+    check("... signed along u: a pass back up the paper (u falling) has a negative speed (TouchDesigner's lead and "
+          "fade follow it)", back["scan_u"] == 0.5 and back["scan_led"] == 1 and abs(back["scan_mps"] + 0.5) < 1e-6,
+          back["scan_mps"])
     # the scan's speed at run time (tuning an exposure): only the scan slows
     r = Runner(g, Selector(g.idle(), 1, seed=0), hub_stay=(99, 99), seed=0, scan_speed=0.5)
     r.step(0.5)
@@ -2079,6 +2117,24 @@ def self_test():
     check("the scan's time law: still at both ends, the cruise (1.0 m) at exactly its speed",
           ss[0] == 0.0 and vs[0] < 0.01 and vs[-1] < 0.01 and max(abs(v - 0.3) for v in cruise) < 1e-6
           and abs(off - on - 1.0 / 0.3) < 1e-9, (vs[0], vs[-1], min(cruise), max(cruise), on, off))
+    one = scan_passes_profile(1.0, [0.3], 0.5, 0.01)
+    check("one pass: scan_profile's own time law", one[0] == ts and one[1] == ss and one[2] == [(on, off)], one[2])
+    ts2, xs2, spans, ramp = scan_passes_profile(1.0, [0.25, 0.21, 0.15], 1.2, 0.01)
+    L = 1.0 + 2 * ramp
+    ends = [xs2[min(range(len(ts2)), key=lambda k: abs(ts2[k] - t))] for t in (spans[0][1], spans[1][1])]
+    vel = [(b - a) / (t1 - t0) for a, b, t0, t1 in zip(xs2, xs2[1:], ts2, ts2[1:])]
+
+    def cruise_v(k):
+        a_, b_ = spans[k]
+        return [v for v, t in zip(vel, ts2) if a_ + 0.02 <= t <= b_ - 0.02]
+    acc2 = max(abs((c - b) - (b - a)) / 0.01 ** 2 for a, b, c in zip(xs2, xs2[1:], xs2[2:]))
+    check("passes: down, up, down, each at its own speed over the same 1 m, turning at rest at the same two ends "
+          "(its ramps as long as the fastest's, gentler the slower: the peak acceleration the fastest's)",
+          xs2[0] == 0.0 and abs(max(xs2) - L) < 1e-6 and abs(xs2[-1] - L) < 1e-6
+          and max(abs(v - 0.25) for v in cruise_v(0)) < 1e-6 and max(abs(v + 0.21) for v in cruise_v(1)) < 1e-6
+          and max(abs(v - 0.15) for v in cruise_v(2)) < 1e-6 and abs(ramp - scan_ramp_m(0.25, 1.2)) < 1e-12
+          and acc2 <= 1.2 * 1.01 and all(abs(t1 - t0) > 1e-9 for t0, t1 in zip(ts2, ts2[1:])),
+          (round(max(xs2) - L, 6), round(acc2, 3), [round(e, 3) for e in ends]))
     sc = {"canvas": cv, "scan": {"direction": "left_to_right", "speed_mps": 0.3, "accel_mps2": 0.5, "led_gap_m": 0.06,
                                  "lead_m": 0.05}}
     a, b, info = scan_ends(sc, tool_z=0.07)
