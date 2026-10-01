@@ -54,6 +54,8 @@ stream over the same step()).
 
 import argparse
 import bisect
+import contextlib
+import io
 import json
 import math
 import os
@@ -466,12 +468,15 @@ def resolve_hubs(cfg, rig):
     return out
 
 
-def build(cfg_path, log=print, scan_only=False, gap_m=None):
+def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None):
     """The show's clip graph from its config. scan_only: the scan and its
     moves alone (no idle library, showpieces or moves between the hubs) --
     to look at a new scan before the library is made again. gap_m: the
     LEDs' face this far from the paper instead of the config's
-    scan.led_gap_m (a scan-only variant, to try distances on the paper)."""
+    scan.led_gap_m (a scan-only variant, to try distances on the paper).
+    scan_margin_m: that variant's own margin to the paper instead of
+    margins.scan_canvas_m -- a gap nearer than the show's margin allows
+    (the collision model's front is ~4 mm before the LEDs' face)."""
     import choreo
     import collision as C
     import robot_profile as RP
@@ -480,6 +485,10 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None):
     cfg = json.load(open(cfg_path))
     if gap_m is not None:
         cfg["scan"]["led_gap_m"] = float(gap_m)
+    if scan_margin_m is not None:
+        if not (scan_only and gap_m is not None):
+            raise ValueError("scan_margin_m is for a scan-only variant at its own gap")
+        cfg["margins"]["scan_canvas_m"] = float(scan_margin_m)
     prof = RP.load("fr20")
     vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
     model = C.load_model("fr20")
@@ -584,8 +593,10 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None):
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
                            "inputs": inputs, "scan_only": scan_only,
                            "led_gap_m": (cfg.get("scan") or {}).get("led_gap_m"),
+                           "scan_canvas_m": cfg["margins"]["scan_canvas_m"],
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
+    g.info["front_gap_m"] = front_gap(g, cfg, model)
     bad = g.check_joins()
     if bad:
         raise SystemExit("segments do not meet at their hubs: %s" % bad)
@@ -610,6 +621,25 @@ def require_connected(g):
     if gaps:
         raise SystemExit("routes missing (every hub must reach every other, the scan and each sequence's hub): %s"
                          % "; ".join(gaps))
+
+
+def front_gap(graph, cfg, model=None, every=4):
+    """How near the scan comes to the paper: the collision model's nearest to the canvas (its own parts, no
+    margin) over the scan segment, m -- the bar's front, where a tape measures from (the LEDs' face,
+    scan.led_gap_m, is ~4 mm behind it). None without a scan or a canvas."""
+    import collision as C
+    seg = next((x for x in graph.segments if x.kind == "scan"), None)
+    if seg is None or not cfg.get("canvas"):
+        return None
+    model = model or C.load_model("fr20")
+    paper = canvas_boxes(cfg["canvas"])
+    best = None
+    for q in seg.q[::every] + [seg.q[-1]]:
+        for c in C.capsules(model, q)[0]:
+            for o in paper:
+                d = C.capsule_distance(o, c[1], c[2], c[3])
+                best = d if best is None else min(best, d)
+    return best
 
 
 def tool_zone_report(segs, env, model, prof=None):
@@ -2053,6 +2083,24 @@ def self_test():
     except SystemExit as e:
         preview = str(e)
     check("a scan-only build is refused as a show", preview is not None and "scan-only" in preview, preview)
+    near = os.path.join(ROOT, "shows", "scans", "party_gap35", "compiled.json")
+    if os.path.exists(near):
+        fg = front_gap(Graph.load(near), json.load(open(os.path.join(ROOT, "shows", "party.json"))))
+        check("the scan's front: the collision model's nearest to the paper -- 3.5 cm from the LEDs is 3.07 cm from "
+              "the bar's front (the tape's 3 cm, 2026-10-01)", fg is not None and abs(fg - 0.0307) < 0.001, fg)
+    party = os.path.join(ROOT, "shows", "party.json")
+    refused = []
+    for argv in (["build", party, "--scan-margin", "0.01"], ["build", party, "--scan-only", "--scan-margin", "0.01"],
+                 ["build", party, "--scan-only", "--gap", "0.008", "--scan-margin", "0"]):
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                main(argv)
+            refused.append(None)
+        except SystemExit:
+            refused.append("--scan-margin is for" in err.getvalue() or "--scan-margin must be" in err.getvalue())
+    check("--scan-margin only for a scan-only variant at its own gap (--scan-only --gap), and more than 0: the show's "
+          "own scan keeps its config's margin", refused == [True, True, True], refused)
     check("no frame: the canvas alone", [p["name"] for p in canvas_parts(dict(cv, frame=None))] == ["canvas"])
     spin = Segment("spin", "idle", [0.0, 1.0], [A, list(A[:5]) + [170.0]], "a", "a", {})
     lim6 = [(-175.0, 175.0)] * 5 + [(-150.0, 150.0)]
@@ -2170,20 +2218,29 @@ def main(argv=None):
                     help="build --scan-only: the LEDs' face M from the paper (not the config's scan.led_gap_m), to "
                          "shows/scans/<show>_gap<mm> (in git: the arm's PC has it): a distance to try with scan_test "
                          "(show_stream --scan-from)")
+    ap.add_argument("--scan-margin", type=float, default=None, metavar="M",
+                    help="build --scan-only --gap: that variant's margin to the paper M (not the config's "
+                         "margins.scan_canvas_m) -- for a gap nearer than the show's margin allows; show_stream's "
+                         "move to the start hub takes it too")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
     if a.gap is not None and not (a.command == "build" and a.scan_only):
         ap.error("--gap is for build --scan-only (the show's own gap is its config's scan.led_gap_m)")
+    if a.scan_margin is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
+        ap.error("--scan-margin is for build --scan-only --gap (the show's own scan keeps margins.scan_canvas_m)")
+    if a.scan_margin is not None and a.scan_margin <= 0.0:
+        ap.error("--scan-margin must be more than 0")
     if a.command == "build" and a.scan_only:
         t0 = time.time()
-        g = build(cfg_path, scan_only=True, gap_m=a.gap)
+        g = build(cfg_path, scan_only=True, gap_m=a.gap, scan_margin_m=a.scan_margin)
         name = os.path.splitext(os.path.basename(cfg_path))[0]
         out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d" % (name, round(a.gap * 1000))) if a.gap is not None
                else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC
         write_preview(g, out)
         g.save(os.path.join(out, "compiled.json"))
-        print("wrote %s: %s, %.0f s" % (os.path.relpath(out, ROOT),
-                                        ", ".join("%s %.1f s" % (x.name, x.duration) for x in g.segments), time.time() - t0))
+        print("wrote %s: %s, the bar's front %.1f mm from the paper, %.0f s" % (os.path.relpath(out, ROOT),
+                                        ", ".join("%s %.1f s" % (x.name, x.duration) for x in g.segments),
+                                        1e3 * (g.info.get("front_gap_m") or 0.0), time.time() - t0))
         return 0
     if a.command == "build":
         t0 = time.time()

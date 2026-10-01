@@ -49,22 +49,26 @@ STEP_BUTTONS = (("to_scan", "3  To scan start"), ("back", "Back to start pos"), 
 
 def scan_distances(config, root=None):
     """[(label, dir or None)]: the show's own scan (None) and its scan-only builds at other distances
-    (shows/scans/<show>_gap<mm>/compiled.json), nearest first; the gap read from each build."""
+    (shows/scans/<show>_gap<mm>/compiled.json), nearest first; the gap read from each build -- named by its
+    front (the bar's nearest point to the paper, as a tape measures it) when the build knows it, else by the
+    LEDs' face (scan.led_gap_m, ~4 mm behind the front)."""
     import glob
     root = root or UI.ROOT
     name = os.path.splitext(os.path.basename(config))[0]
     own = json.load(open(config)).get("scan", {}).get("led_gap_m")
-    out = [("%.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
+    out = [("LEDs %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
     found = []
     for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
         try:
-            gap = json.load(open(f)).get("info", {}).get("led_gap_m")
+            info = json.load(open(f)).get("info", {})
         except (OSError, ValueError):
             continue
-        if gap is not None:
-            found.append((gap, os.path.dirname(f)))
-    for gap, d in sorted(found):
-        out.append(("%.1f cm  (%s)" % (100.0 * gap, os.path.relpath(d, root).replace("\\", "/")), d))
+        if info.get("led_gap_m") is not None:
+            found.append((info["led_gap_m"], info.get("front_gap_m"), os.path.dirname(f)))
+    for gap, front, d in sorted(found, key=lambda x: x[0]):
+        where = os.path.relpath(d, root).replace("\\", "/")
+        out.append(("front %.1f cm  (LEDs %.1f cm, %s)" % (100.0 * front, 100.0 * gap, where) if front is not None
+                    else "LEDs %.1f cm  (%s)" % (100.0 * gap, where), d))
     return out
 
 
@@ -327,15 +331,21 @@ def self_test():
     os.makedirs(os.path.join(root, "shows"))
     cfgp = os.path.join(root, "shows", "s.json")
     json.dump({"scan": {"led_gap_m": 0.06}}, open(cfgp, "w"))
-    for mm, gap in ((45, 0.045), (35, 0.035)):
+    for mm, gap, front in ((45, 0.045, None), (35, 0.035, None), (19, 0.0193, 0.015)):
         d = os.path.join(root, "shows", "scans", "s_gap%d" % mm)
         os.makedirs(d)
-        json.dump({"info": {"led_gap_m": gap, "scan_only": True}}, open(os.path.join(d, "compiled.json"), "w"))
+        info = {"led_gap_m": gap, "scan_only": True}
+        if front is not None:
+            info["front_gap_m"] = front
+        json.dump({"info": info}, open(os.path.join(d, "compiled.json"), "w"))
     ds = scan_distances(cfgp, root)
     shutil.rmtree(root, ignore_errors=True)
     check("the distances: the show's own first, then its scan-only builds nearest first",
-          [l.split()[0] for l, _ in ds] == ["6.0", "3.5", "4.5"] and ds[0][1] is None and ds[1][1].endswith("gap35"),
-          [l for l, _ in ds])
+          [l.split()[1] for l, _ in ds] == ["6.0", "1.5", "3.5", "4.5"] and ds[0][1] is None
+          and ds[2][1].endswith("gap35"), [l for l, _ in ds])
+    check("a build that knows its front (the bar's nearest point, as a tape measures it) is named by it, the LEDs' "
+          "gap after; one that does not, by the LEDs'", ds[1][0].startswith("front 1.5 cm") and "LEDs 1.9 cm" in ds[1][0]
+          and ds[2][0].startswith("LEDs 3.5 cm"), [l for l, _ in ds])
     go = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, scan_test=True, goto_start=True)
     check("Move to start pos: only the checked MoveJ", "--goto-start" in go and "--scan-test" not in go, go)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")

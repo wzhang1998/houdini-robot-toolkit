@@ -434,12 +434,14 @@ def check_sim_ip(ip):
                          % (ip, P.SIM_NET))
 
 
-def start_env(cfg):
+def start_env(cfg, canvas_margin=None):
     """The room the move to the start hub is checked in: the show's, with the paper at the scan's own margin
-    (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4)."""
+    (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4). canvas_margin:
+    a scan variant's own (show.py build --scan-only --gap --scan-margin), else margins.scan_canvas_m."""
     import collision as C
     import show as S
-    env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, cfg["margins"]["scan_canvas_m"])
+    margin = cfg["margins"]["scan_canvas_m"] if canvas_margin is None else canvas_margin
+    env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, margin)
     return dict(env, objects=[dict(o, keep_margin=True) if o["name"] == "canvas" else o for o in env["objects"]])
 
 
@@ -981,6 +983,10 @@ def self_test():
         check("the move to the start hub is checked with the paper (its scan margin): from a stopped scan it "
               "detours rather than passing 2 cm from it", cv is not None and path is not None and "detour" in why,
               why[:120])
+        near = next(o for o in start_env(pcfg, 0.003)["objects"] if o["name"] == "canvas")
+        check("a scan variant's own (smaller) margin is the start move's: after it stops 8 mm from the paper the "
+              "arm is not inside the show's margin, refused", near["margin_m"] == 0.003 and cv["margin_m"] ==
+              pcfg["margins"]["scan_canvas_m"], (near["margin_m"], cv["margin_m"]))
 
     ob = S.OscBridge.__new__(S.OscBridge)
     ob.allow = S.osc_allow("127.0.0.1", [("10.0.0.5", 9002)])
@@ -1265,12 +1271,16 @@ def main(argv=None):
         ap.error("--scan-test or --rehearse, not both")
     if a.scan_from and not a.scan_test:
         ap.error("--scan-from is for --scan-test")
+    start_margin = None                    # the paper's margin for the move to the start hub: the show's
     if a.scan_test:
         import scan_test
         scan_graph = graph
         if a.scan_from:
             scan_graph = scan_variant(a.scan_from, cfg_path)
-            print("scan test at %.1f cm from the paper (%s)" % (100.0 * scan_graph.info["led_gap_m"], a.scan_from))
+            start_margin = scan_graph.info.get("scan_canvas_m")
+            print("scan test at %.1f cm from the paper (%s)%s" % (
+                100.0 * scan_graph.info["led_gap_m"], a.scan_from,
+                ", its margin %.1f cm" % (100.0 * start_margin) if start_margin is not None else ""))
         runner = scan_test.ScanTest(scan_graph, scan_speed=a.scan_speed)
     elif a.rehearse:
         import rehearse
@@ -1304,7 +1314,7 @@ def main(argv=None):
     rep = {"target": "hardware" if a.hardware else "sim", "config": os.path.relpath(cfg_path, ROOT)}
     move_vel = a.move_vel if a.move_vel is not None else (10.0 if a.hardware else 20.0)
     off = P.move_checked(ctrl, start_q, a.env, "fr20", move_vel, rep, "start", ask, "the start hub (%s)" % runner.hub,
-                         env=start_env(cfg), stop=cmds.stop_requested)
+                         env=start_env(cfg, start_margin), stop=cmds.stop_requested)
     if off is None:
         print(json.dumps(rep, indent=1))
         return 1

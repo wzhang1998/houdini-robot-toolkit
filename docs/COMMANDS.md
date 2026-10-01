@@ -27,6 +27,18 @@ Distance picks one (show_stream `--scan-test --scan-from DIR`, refused when
 built from other inputs than the show's now). The one chosen goes into the
 show's config (`scan.led_gap_m`), then a full build.
 
+Nearer than the show's margin to the paper (`margins.scan_canvas_m`, 3 cm)
+allows: `--scan-margin M` gives that variant its own margin (the show's own
+scan keeps the config's; show_stream's move to the start hub takes the
+variant's). Each build records its front -- the collision model's nearest to
+the paper, where a tape measures from, ~4.3 mm before the LEDs' face -- and
+the Distance list names it so ("front 0.8 cm (LEDs 1.2 cm)"):
+
+```bash
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.0193 --scan-margin 0.01    # front 15 mm
+uv run scripts/show.py build shows/party.json --scan-only --gap 0.0123 --scan-margin 0.005   # front 8 mm
+```
+
 
 Rehearse (show_ui's button): every motion of the show once -- every idle
 clip, every move between hubs, the scan -- then it ends at the start hub.
