@@ -58,6 +58,7 @@ def scan_distances(config, root=None):
     name = os.path.splitext(os.path.basename(config))[0]
     scan = json.load(open(config)).get("scan", {})
     own, own_mps = scan.get("led_gap_m"), scan.get("speed_mps")
+    own_h = (scan.get("area") or {}).get("size", [None, None])[1]
     out = [("front %.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
     found = []
     for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
@@ -67,11 +68,12 @@ def scan_distances(config, root=None):
             continue
         if info.get("led_gap_m") is not None:
             mps = info.get("scan_speed_mps")
+            h = ((info.get("scan_area") or {}).get("size") or [None, None])[1]
             found.append((info["led_gap_m"], mps if mps is not None and mps != own_mps else 0.0,
-                          info.get("front_gap_m"), os.path.dirname(f)))
-    for gap, mps, front, d in sorted(found, key=lambda x: (x[0], x[1])):
+                          h if h is not None and h != own_h else 0.0, info.get("front_gap_m"), os.path.dirname(f)))
+    for gap, mps, h, front, d in sorted(found, key=lambda x: (x[0], x[1], -x[2])):
         where = os.path.relpath(d, root).replace("\\", "/")
-        fast = ", %.2f m/s" % mps if mps else ""
+        fast = (", %.2f m/s" % mps if mps else "") + (", %.1f m tall" % h if h else "")
         out.append(("front %.1f cm%s  (collision model %.1f cm, %s)" % (100.0 * gap, fast, 100.0 * front, where)
                     if front is not None else "front %.1f cm%s  (%s)" % (100.0 * gap, fast, where), d))
     return out
@@ -88,6 +90,16 @@ def built_speed(config, scan_dir):
         if v is not None:
             return float(v)
     return float(json.load(open(config)).get("scan", {}).get("speed_mps", 0.2))
+
+
+def read_number(get):
+    """A field's number, or None while it is half typed ("", "."): tkinter raises TclError then, which in the
+    window's refresh would stop it (the arm's PC, 2026-10-01)."""
+    import tkinter
+    try:
+        return float(get())
+    except (tkinter.TclError, ValueError):
+        return None
 
 
 def step_command(name, scan_speed):
@@ -213,6 +225,8 @@ def run_window(config):
 
     def launch(goto_start):
         why = ready("Move to start pos" if goto_start else "Start")
+        if not why and None in (read_number(speed.get), read_number(move_vel.get), read_number(scan_speed.get)):
+            why = "Move speed, MoveJ % and Scan speed must be numbers."
         if why:
             messagebox.showerror("Not yet", why)
             return
@@ -237,12 +251,19 @@ def run_window(config):
                                                                                               padx=6)
 
     # --- the steps --------------------------------------------------------------
+    def step(name):
+        f = read_number(scan_speed.get)
+        if f is None:
+            messagebox.showerror("Not yet", "Scan speed must be a number.")
+            return
+        link.trigger(step_command(name, f))
+
     st = ttk.LabelFrame(root, text="Steps  (only what is allowed where the arm is)")
     st.pack(fill="x", **pad)
     buttons = {}
     for i, (name, label) in enumerate(STEP_BUTTONS):
         b = ttk.Button(st, text=label, width=18,
-                       command=lambda n=name: link.trigger(step_command(n, scan_speed.get())))
+                       command=lambda n=name: step(n))
         b.grid(row=0, column=i, padx=4, pady=4)
         buttons[name] = b
     ttk.Label(st, text="Scan speed (of the built)").grid(row=1, column=1, columnspan=2, sticky="e")
@@ -290,7 +311,9 @@ def run_window(config):
             b.configure(state="normal" if name in allowed else "disabled")
         finish_b.configure(state="normal" if live and s["state"] != "PAUSED" else "disabled")
         built_mps = built_speed(link.config, distances.get(dist_pick.get()))
-        mps_l.config(text="= %.3f m/s  (built %.2f m/s)" % (built_mps * scan_speed.get(), built_mps))
+        f = read_number(scan_speed.get)
+        mps_l.config(text=("= %.3f m/s" % (built_mps * f) if f is not None else "= ? m/s") + "  (built %.2f m/s)"
+                     % built_mps)
         state = str(s["state"]) if live else ("STARTING" if running else "NOT RUNNING")
         state_l.config(text=state, bg=UI.STATE_COLOUR.get(state, "#777777"))
         if live:
@@ -349,7 +372,7 @@ def self_test():
     cfgp = os.path.join(root, "shows", "s.json")
     json.dump({"scan": {"led_gap_m": 0.06, "speed_mps": 0.2}}, open(cfgp, "w"))
     for mm, gap, front, mps in ((45, 0.045, None, None), (35, 0.035, None, None), (19, 0.0193, 0.015, None),
-                                (12, 0.0123, 0.008, 0.4)):
+                                (12, 0.0123, 0.008, 0.4), (11, 0.011, 0.007, 0.5)):
         d = os.path.join(root, "shows", "scans", "s_gap%d" % mm)
         os.makedirs(d)
         info = {"led_gap_m": gap, "scan_only": True}
@@ -357,16 +380,23 @@ def self_test():
             info["front_gap_m"] = front
         if mps is not None:
             info["scan_speed_mps"] = mps
+        if mm == 11:
+            info["scan_area"] = {"center": [0.0, 1.0, 1.1], "size": [1.0, 0.8]}
         json.dump({"info": info}, open(os.path.join(d, "compiled.json"), "w"))
     ds = scan_distances(cfgp, root)
+    def by(name):
+        return next(l for l, d in ds if d and d.endswith(name))
     fast = os.path.join(root, "shows", "scans", "s_gap12")
     speeds = (built_speed(cfgp, None), built_speed(cfgp, fast), built_speed(cfgp, os.path.join(root, "shows", "scans",
                                                                                                   "s_gap45")))
     shutil.rmtree(root, ignore_errors=True)
     check("a variant built faster says so in the list; the speed the window multiplies is the chosen build's (the "
-          "show's config's for its own and the older ones)", "0.40 m/s" in ds[1][0] and "m/s" not in ds[2][0]
+          "show's config's for its own and the older ones)", "0.40 m/s" in by("s_gap12") and "m/s" not in by("s_gap19")
           and speeds == (0.2, 0.4, 0.2), ([l for l, _ in ds], speeds))
-    ds = [x for x in ds if not x[1] or not x[1].endswith("s_gap12")]
+    short = by("s_gap11")
+    check("a variant with a shorter picture says how tall", "0.8 m tall" in short and "m tall" not in by("s_gap12"),
+          short)
+    ds = [x for x in ds if not x[1] or not x[1].endswith(("s_gap12", "s_gap11"))]
     check("the distances: the show's own first, then its scan-only builds nearest first",
           [l.split()[1] for l, _ in ds] == ["6.0", "1.9", "3.5", "4.5"] and ds[0][1] is None
           and ds[2][1].endswith("gap35"), [l for l, _ in ds])
@@ -375,6 +405,12 @@ def self_test():
           "(its capsules reach ~4 mm past the rim)", ds[1][0].startswith("front 1.9 cm") and
           "collision model 1.5 cm" in ds[1][0] and ds[2][0].startswith("front 3.5 cm") and "collision" not in ds[2][0]
           and ds[0][0].startswith("front 6.0 cm"), [l for l, _ in ds])
+    import tkinter
+
+    def half_typed():
+        raise tkinter.TclError('expected floating-point number but got "."')
+    check("a number half typed in a field (\".\") reads as None, not an error that stops the window's refresh",
+          read_number(half_typed) is None and read_number(lambda: 0.4) == 0.4)
     go = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, scan_test=True, goto_start=True)
     check("Move to start pos: only the checked MoveJ", "--goto-start" in go and "--scan-test" not in go, go)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")

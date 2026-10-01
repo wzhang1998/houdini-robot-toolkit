@@ -469,7 +469,7 @@ def resolve_hubs(cfg, rig):
 
 
 def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, speed_mps=None,
-          accel_mps2=None):
+          accel_mps2=None, area_height_m=None):
     """The show's clip graph from its config. scan_only: the scan and its
     moves alone (no idle library, showpieces or moves between the hubs) --
     to look at a new scan before the library is made again. gap_m: the
@@ -481,7 +481,8 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
     speed_mps, accel_mps2: that variant's scan speed and ramp instead of
     scan.speed_mps / accel_mps2, its area lowered by scan_area_down (the
     top stays the show's); the build's checks say whether the joints and
-    the room allow it."""
+    the room allow it. area_height_m: that variant's picture this tall, its
+    top kept (scan_area_shorter) -- the room a faster scan's ramps need."""
     import choreo
     import collision as C
     import robot_profile as RP
@@ -494,6 +495,10 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
         if not (scan_only and gap_m is not None):
             raise ValueError("scan_margin_m is for a scan-only variant at its own gap")
         cfg["margins"]["scan_canvas_m"] = float(scan_margin_m)
+    if area_height_m is not None:
+        if not (scan_only and gap_m is not None):
+            raise ValueError("area_height_m is for a scan-only variant at its own gap")
+        cfg["scan"]["area"] = scan_area_shorter(cfg, float(area_height_m))
     area_down = 0.0
     if speed_mps is not None or accel_mps2 is not None:
         if not (scan_only and gap_m is not None):
@@ -613,6 +618,7 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
                            "scan_speed_mps": (cfg.get("scan") or {}).get("speed_mps"),
                            "scan_accel_mps2": (cfg.get("scan") or {}).get("accel_mps2"),
                            "scan_area_down_m": area_down,
+                           "scan_area": (cfg.get("scan") or {}).get("area"),
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     g.info["front_gap_m"] = front_gap(g, cfg, model)
@@ -791,8 +797,7 @@ def scan_line(cfg, env, prof, dt=0.016):
     import fairino_player as P
     tool = C.tool_def(prof)
     tool_z = (tool or {}).get("tcp", {}).get("xyz", [0.0, 0.0, 0.0])[2] if tool and tool.get("tcp") else 0.0
-    strip = C.strip_box(tool)
-    strip_w = strip["size"][0] if strip else 0.0254                  # across the scan
+    strip_w = C.strip_width(tool) or 0.0254                           # across the scan
     start, end, info = scan_ends(cfg, tool_z, strip_w)
     s = cfg["scan"]
     v, lead = s["speed_mps"], s.get("lead_m", 0.05)
@@ -827,6 +832,15 @@ def scan_line(cfg, env, prof, dt=0.016):
 def scan_ramp_m(v, a):
     """How far a scan's ramp runs from rest to v with scan_profile's sine-shaped acceleration peaking at a, m."""
     return v * (math.pi * v / (2.0 * a)) / 2.0
+
+
+def scan_area_shorter(cfg, height_m):
+    """The scan's area (scan.area) height_m tall instead, its top and width kept: a faster scan's ramps need
+    the room below it (the forearm by the floor at the bottom)."""
+    area = cfg["scan"]["area"]
+    c, (w, h) = list(area["center"]), area["size"]
+    c[2] += (h - height_m) / 2.0
+    return {"center": c, "size": [w, height_m]}
 
 
 def scan_area_down(cfg, v, a):
@@ -2120,8 +2134,8 @@ def self_test():
     near = os.path.join(ROOT, "shows", "scans", "party_gap35", "compiled.json")
     if os.path.exists(near):
         fg = front_gap(Graph.load(near), json.load(open(os.path.join(ROOT, "shows", "party.json"))))
-        check("the scan's collision model nearest the paper: 3.5 cm from the shade's rim is 3.07 cm from its capsules",
-              fg is not None and abs(fg - 0.0307) < 0.001, fg)
+        check("the scan's collision model nearest the paper: 3.5 cm from the shade's rim is ~3.41 cm from its capsules "
+              "(0.93 mm past the rim, cad_tool_mesh's check)", fg is not None and abs(fg - 0.0341) < 0.0005, fg)
     party = os.path.join(ROOT, "shows", "party.json")
     refused = []
     for argv in (["build", party, "--scan-margin", "0.01"], ["build", party, "--scan-only", "--scan-margin", "0.01"],
@@ -2148,6 +2162,22 @@ def self_test():
             refused.append(any(t in err.getvalue() for t in ("--speed is for", "--accel is for", "--speed must be")))
     check("--speed / --accel only for a scan-only variant (--scan-only --gap), --accel with --speed, a speed > 0",
           refused == [True] * 4, refused)
+    import collision as CC
+    import robot_profile as RPP
+    sw = CC.strip_width(CC.tool_def(RPP.load("fr20")))
+    check("the strip's width across a scan: the bar's, across all its long boxes (37 mm), not its middle strip's",
+          abs(sw - 0.037) < 1e-9, sw)
+    short = scan_area_shorter({"scan": {"area": {"center": [0.2, 1.1, 1.0], "size": [1.0, 1.0]}}}, 0.8)
+    check("a shorter scan area keeps its top (by the controller's 1.6 m cap) and its width: 0.5-1.5 m -> 0.7-1.5 m",
+          short == {"center": [0.2, 1.1, 1.1], "size": [1.0, 0.8]}, short)
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            main(["build", party, "--scan-only", "--area-height", "0.8"])
+        bad = None
+    except SystemExit:
+        bad = "--area-height is for" in err.getvalue()
+    check("--area-height only for a scan-only variant (--scan-only --gap)", bad is True, bad)
     vc = {"scan": {"direction": "top_to_bottom", "speed_mps": 0.2, "accel_mps2": 0.8}}
     hc = {"scan": {"direction": "left_to_right", "speed_mps": 0.2, "accel_mps2": 0.8}}
     check("a faster scan's longer ramps: the area lowered by the ramp's growth, so its top (by the controller's "
@@ -2283,8 +2313,13 @@ def main(argv=None):
     ap.add_argument("--accel", type=float, default=None, metavar="A",
                     help="with --speed: its ramps' peak A m/s2 (not scan.accel_mps2) -- faster wants steeper ramps, "
                          "or the area goes far down")
+    ap.add_argument("--area-height", type=float, default=None, metavar="H",
+                    help="build --scan-only --gap: that variant's picture H m tall (not scan.area's), its top kept "
+                         "-- the room a faster scan's ramps need; to ..._h<cm>")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
+    if a.area_height is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
+        ap.error("--area-height is for build --scan-only --gap (the show's own scan keeps scan.area)")
     if a.speed is not None and not (a.command == "build" and a.scan_only and a.gap is not None):
         ap.error("--speed is for build --scan-only --gap (the show's own scan keeps scan.speed_mps)")
     if a.accel is not None and a.speed is None:
@@ -2300,9 +2335,10 @@ def main(argv=None):
     if a.command == "build" and a.scan_only:
         t0 = time.time()
         g = build(cfg_path, scan_only=True, gap_m=a.gap, scan_margin_m=a.scan_margin, speed_mps=a.speed,
-                  accel_mps2=a.accel)
+                  accel_mps2=a.accel, area_height_m=a.area_height)
         name = os.path.splitext(os.path.basename(cfg_path))[0]
         fast = "_v%d" % round(a.speed * 100) if a.speed is not None else ""
+        fast += "_h%d" % round(a.area_height * 100) if a.area_height is not None else ""
         out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d%s" % (name, round(a.gap * 1000), fast))
                if a.gap is not None
                else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC

@@ -214,7 +214,7 @@
  },
  "canvas": {
   "placeholder": true,
-  "center": [0.2237, 1.1374, 0.9],
+  "center": [0.224, 1.1391, 0.9],
   "normal": [
    0.2032,
    0.9791,
@@ -225,7 +225,7 @@
    1.8
   ],
   "thickness": 0.02,
-  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall. Measured on the arm 2026-10-01: the bar laid flat on the wall by hand (joints -110.935 -72.548 50.41 -155.95 -80.795 89.134) -- its facing the wall's normal (0.6 deg off the earlier plane: 10 mm over the bar's 1 m), its front (the CAD's, the shade's rim) on the face, 2.5 mm nearer than before at 1.57 m high. Kept upright: the 37 mm face pressed by hand gives no trustworthy lean (it said 1.9 deg, which the 8 mm scan would have hit at the bottom)."
+  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall. Measured on the arm 2026-10-01: the bar laid flat on the wall by hand (joints -110.935 -72.548 50.41 -155.95 -80.795 89.134) -- its facing the wall's normal (0.6 deg off the earlier plane: 10 mm over the bar's 1 m), its front (the CAD's, the shade's rim) on the face, 2.5 mm nearer than before at 1.57 m high. Kept upright: the 37 mm face pressed by hand gives no trustworthy lean (it said 1.9 deg, which the 8 mm scan would have hit at the bottom). Then a tape at the scan's start put the 6.3 mm scan 8 mm from the paper: the bar pressed flat had sat a little in it -- the face 1.7 mm further, as the tape says (the user: the tape is the reference)."
  },
  "scan": {
   "direction": "top_to_bottom",
@@ -238,16 +238,16 @@
   },
   "speed_mps": 0.2,
   "accel_mps2": 0.8,
-  "led_gap_m": 0.06,
+  "led_gap_m": 0.002,
   "lead_m": 0.02,
   "safety": 0.5,
   "from_hub": "rest",
   "approach_m": 0.2,
-  "_note": "One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed)."
+  "_note": "One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed). The LEDs' face 2 mm from the paper, the nearest the user asked for (2026-10-01: 3.5 cm too faint, 8 mm good, nearer better): the scan and its moves keep 0.8 mm from it (margins.scan_canvas_m), the bar's collision model 0.93 mm past its rim."
  },
  "margins": {
   "idle_canvas_m": 0.15,
-  "scan_canvas_m": 0.03,
+  "scan_canvas_m": 0.0008,
   "ceiling_m": 0.3
  },
  "transition_safety": 0.5,

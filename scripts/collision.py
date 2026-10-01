@@ -148,6 +148,17 @@ def strip_box(tool):
     return max(boxes, key=lambda b: max(b["size"])) if boxes else None
 
 
+def strip_width(tool):
+    """How wide the strip is across (the tool's x): across all the boxes as long as its longest -- the bar
+    split into narrow boxes along its length so its capsules hug it is still the bar's width. 0 without."""
+    boxes = (tool or {}).get("boxes") or []
+    if not boxes:
+        return 0.0
+    longest = max(max(b["size"]) for b in boxes)
+    long_ = [b for b in boxes if abs(max(b["size"]) - longest) < 1e-9]
+    return max(b["xyz"][0] + b["size"][0] / 2.0 for b in long_) - min(b["xyz"][0] - b["size"][0] / 2.0 for b in long_)
+
+
 def strip_capsule(caps):
     """Of capsules (dicts with a, b: the model's or tool_capsules'), the
     tool's longest (the LED strip's), or None: the one rule for "the strip"."""
@@ -559,9 +570,9 @@ if __name__ == "__main__":
        and sum(1 for c in m["caps"] if c["name"] == ROOT_LINK) > 1, str([(c["name"], round(c["r"], 3)) for c in roots]))
     mt = load_model("fr20")
     tb = [c for c in mt["caps"] if c["name"].startswith("tool_")]
-    ok("the profile's tool rides on the last link, each capsule containing its box",
+    ok("the profile's tool rides on the last link, each capsule containing its box (the bar 1.0875 m with its caps)",
        tb and all(c["joint"] == len(mt["chain"]) - 1 for c in tb)
-       and any(abs(math.dist(c["a"], c["b"]) - 1.0) < 1e-9 for c in tb), str([c["name"] for c in tb]))
+       and any(abs(math.dist(c["a"], c["b"]) - 1.0875) < 1e-9 for c in tb), str([c["name"] for c in tb]))
     ok("... and is checked against the arm's links but its own wrist",
        any("tool_strip" in (mt["caps"][i]["name"], mt["caps"][j]["name"]) and "forearm_link" in
            (mt["caps"][i]["name"], mt["caps"][j]["name"]) for i, j in mt["pairs"]))

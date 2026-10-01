@@ -6,29 +6,63 @@
      30 wide above and below that; the 3D-printed shade on top, its rim 47.35 out (led_tcp: the scan's gap is
      measured from it; the LED chips sit 4.6 below it). The checks make each box a capsule round its longest
      side (collision.tool_capsules), so the parts are split where one box's capsule would bulge far past them:
-     the plate into four strips, the bar into its middle and two strips above and two below, the block
-     between plate and bar (about 66 x 100 x 16, under the bar's middle) into two. The bar's length
+     the plate into four strips, the bar into its middle (five strips across, 7.4 wide) and the shade
+     above it (six, 4.8 wide: its capsules 0.9 mm past the rim, was 4.3; a scan's gap within a mm of what
+     it says, 2026-10-01) and two strips below, the block between plate and bar (about 66 x 100 x 16, under
+     the bar's middle) into two. The bar's length
      along the flange's y. "strip" (the bar's middle) is the strip: listed first of the long boxes. -->
 <robot name="uv_bar">
   <link name="tool_mount"/>
   <link name="strip">
-    <collision><origin xyz="0 0 0.02975" rpy="0 0 0"/><geometry><box size="0.037 1.0875 0.018"/></geometry></collision>
+    <collision><origin xyz="0 0 0.02975" rpy="0 0 0"/><geometry><box size="0.0074 1.0875 0.018"/></geometry></collision>
   </link>
   <joint name="tool_mount_to_strip" type="fixed"><parent link="tool_mount"/><child link="strip"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
-  <link name="strip_top_a">
-    <collision><origin xyz="-0.00725 0 0.0430" rpy="0 0 0"/><geometry><box size="0.0145 1.0875 0.0094"/></geometry></collision>
+  <link name="strip_l2">
+    <collision><origin xyz="-0.0148 0 0.02975" rpy="0 0 0"/><geometry><box size="0.0074 1.0875 0.018"/></geometry></collision>
   </link>
-  <joint name="tool_mount_to_strip_top_a" type="fixed"><parent link="tool_mount"/><child link="strip_top_a"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
-  <link name="strip_top_b">
-    <collision><origin xyz="0.00725 0 0.0430" rpy="0 0 0"/><geometry><box size="0.0145 1.0875 0.0094"/></geometry></collision>
+  <joint name="tool_mount_to_strip_l2" type="fixed"><parent link="tool_mount"/><child link="strip_l2"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_l1">
+    <collision><origin xyz="-0.0074 0 0.02975" rpy="0 0 0"/><geometry><box size="0.0074 1.0875 0.018"/></geometry></collision>
   </link>
-  <joint name="tool_mount_to_strip_top_b" type="fixed"><parent link="tool_mount"/><child link="strip_top_b"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <joint name="tool_mount_to_strip_l1" type="fixed"><parent link="tool_mount"/><child link="strip_l1"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_r1">
+    <collision><origin xyz="0.0074 0 0.02975" rpy="0 0 0"/><geometry><box size="0.0074 1.0875 0.018"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_r1" type="fixed"><parent link="tool_mount"/><child link="strip_r1"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_r2">
+    <collision><origin xyz="0.0148 0 0.02975" rpy="0 0 0"/><geometry><box size="0.0074 1.0875 0.018"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_r2" type="fixed"><parent link="tool_mount"/><child link="strip_r2"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_a1">
+    <collision><origin xyz="-0.00241667 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_a1" type="fixed"><parent link="tool_mount"/><child link="strip_top_a1"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_a2">
+    <collision><origin xyz="-0.00725 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_a2" type="fixed"><parent link="tool_mount"/><child link="strip_top_a2"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_a3">
+    <collision><origin xyz="-0.0120833 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_a3" type="fixed"><parent link="tool_mount"/><child link="strip_top_a3"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_b1">
+    <collision><origin xyz="0.00241667 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_b1" type="fixed"><parent link="tool_mount"/><child link="strip_top_b1"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_b2">
+    <collision><origin xyz="0.00725 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_b2" type="fixed"><parent link="tool_mount"/><child link="strip_top_b2"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <link name="strip_top_b3">
+    <collision><origin xyz="0.0120833 0 0.043" rpy="0 0 0"/><geometry><box size="0.00483333 1.0875 0.0094"/></geometry></collision>
+  </link>
+  <joint name="tool_mount_to_strip_top_b3" type="fixed"><parent link="tool_mount"/><child link="strip_top_b3"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="strip_bottom_a">
-    <collision><origin xyz="-0.0075 0 0.01645" rpy="0 0 0"/><geometry><box size="0.015 1.0875 0.0087"/></geometry></collision>
+    <collision><origin xyz="-0.0081 0 0.01645" rpy="0 0 0"/><geometry><box size="0.0162 1.0875 0.0087"/></geometry></collision>
   </link>
   <joint name="tool_mount_to_strip_bottom_a" type="fixed"><parent link="tool_mount"/><child link="strip_bottom_a"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="strip_bottom_b">
-    <collision><origin xyz="0.0075 0 0.01645" rpy="0 0 0"/><geometry><box size="0.015 1.0875 0.0087"/></geometry></collision>
+    <collision><origin xyz="0.0081 0 0.01645" rpy="0 0 0"/><geometry><box size="0.0162 1.0875 0.0087"/></geometry></collision>
   </link>
   <joint name="tool_mount_to_strip_bottom_b" type="fixed"><parent link="tool_mount"/><child link="strip_bottom_b"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="bracket_a">

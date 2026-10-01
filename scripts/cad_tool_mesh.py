@@ -14,7 +14,12 @@ the flange's y (rotate z 90) and its middle is 29.75 mm out (assets/tools/uv_bar
 
 import argparse
 import math
+import os
 import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
 
 
 def transform(p, scale, rot_z_deg, t):
@@ -74,6 +79,23 @@ def self_test():
     p = transform((0.0, 58.0, -29.75), 0.001, 90.0, (0.0, 0.0, 0.02975))
     check("the plate's underside on the flange's face (z 0), its edge on -x", abs(p[2]) < 1e-9
           and abs(p[0] + 0.058) < 1e-9, p)
+    visual = os.path.join(ROOT, "assets", "tools", "cad", "uv_bar_visual.usda")
+    if os.path.exists(visual):
+        import collision as C
+        import robot_profile as RP
+        from pxr import Usd, UsdGeom
+        st = Usd.Stage.Open(visual)
+        cad = []
+        for prim in st.Traverse():
+            if prim.IsA(UsdGeom.Mesh):
+                xf = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                cad += [tuple(xf.Transform(v)) for v in UsdGeom.Mesh(prim).GetPointsAttr().Get() or []]
+        caps = C.tool_capsules(C.tool_def(RP.load("fr20")), 0.0)
+        out = [q for q in cad if not any(C._seg_point_dist(c["a"], c["b"], q) <= c["r"] + 1e-6 for c in caps)]
+        front = max(max(c["a"][2], c["b"][2]) + c["r"] for c in caps)
+        check("the bar's collision model holds every CAD point (%d), its front at most 1 mm past the shade's rim "
+              "(47.35 mm: a scan's gap can be what it says)" % len(cad),
+              cad and not out and front <= 0.04735 + 0.001, (len(out), round(1e3 * front, 2)))
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
