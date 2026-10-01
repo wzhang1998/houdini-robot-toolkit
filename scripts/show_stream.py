@@ -6,6 +6,7 @@ the show's state machine (show.Runner), instead of one CSV per run.
     python scripts/show_stream.py shows/party.json --sim --minutes 30 --osc      # TouchDesigner drives it
     python scripts/show_stream.py shows/party.json --hardware --ip IP --speed 0.3 --minutes 10
     python scripts/show_stream.py shows/party.json --sim --osc --scan-test     # the scan step by step (scan_test.py)
+    python scripts/show_stream.py shows/party.json --hardware --osc --rehearse  # every motion once (rehearse.py)
 
 Every segment of the compiled show (shows/*.compiled.json, from `show.py
 build`) was checked in the room at build time and meets the next at rest,
@@ -101,6 +102,7 @@ class Commands:
         self.stop_requested = threading.Event()
         self.speed_now = speed                     # what the stream plays at (fixed; reported over OSC)
         self.skipped = 0                           # ticks skipped so far (reported over OSC: a stall shows at once)
+        self.run_start = self.run_end = None       # perf_counter of the stream's start and its --minutes end
 
     def trigger(self, name="scan"):
         self.q.put(("trigger", name))
@@ -122,7 +124,20 @@ class Commands:
         scan's position where the arm is, lag_s of wall time behind."""
         s = getattr(self.runner, "robot_status", self.runner.status)(lag_s=lag_s, rate=self.speed_now)   # track_mode's
         s["time_left"] = round(s["time_left"] / max(self.speed_now, 1e-6), 2)
+        s.update(self.run_times(s.get("plan_left")))
         return s
+
+    def run_times(self, plan_left=None, now=None):
+        """{run_elapsed, run_left} in wall seconds: the run's time so far and until its --minutes end (then the
+        running clip finishes at a hub), or the rehearsal's own end if sooner (plan_left: its segment seconds
+        left). Both 0 before the stream starts."""
+        if self.run_start is None:
+            return {"run_elapsed": 0.0, "run_left": 0.0}
+        now = time.perf_counter() if now is None else now
+        left = max(0.0, self.run_end - now)
+        if plan_left is not None:
+            left = min(left, plan_left / max(self.speed_now, 1e-6))
+        return {"run_elapsed": round(now - self.run_start, 1), "run_left": round(left, 1)}
 
     def apply(self):
         while True:
@@ -500,6 +515,7 @@ def stream(ctrl, link, runner, commands, guard, dt, speed, minutes, osc=None, lo
     ctrl.servo_start()
     start = time.perf_counter() + 0.05
     next_t = start
+    commands.run_start, commands.run_end = start, start + end_at
     corr = None
     if lag_correction:
         corr = LagCorrector(start, step, **(lag_correction if isinstance(lag_correction, dict) else {}))
@@ -817,6 +833,23 @@ def self_test():
           and c.sent[-1][1] in (A, B), (rep["ended"], r.state))
     check("one continuous stream: ServoMoveStart once, ServoMoveEnd once, no StopMotion",
           c.calls == ["start", "end"], c.calls)
+    cm = Commands(r, 0.5)
+    check("the run's times: 0 before the stream starts", cm.run_times() == {"run_elapsed": 0.0, "run_left": 0.0})
+    cm.run_start, cm.run_end = 100.0, 700.0
+    check("... then elapsed and left to its --minutes end", cm.run_times(now=160.0)
+          == {"run_elapsed": 60.0, "run_left": 540.0}, cm.run_times(now=160.0))
+    check("... or a rehearsal's own end if sooner (its segment s at the speed)",
+          cm.run_times(plan_left=100.0, now=160.0)["run_left"] == 200.0)
+
+    import rehearse
+    rc = FakeCtrl()
+    rh = rehearse.Rehearsal(graph, log=lambda *a: None)
+    t0 = time.time()
+    rrep, _, _ = stream(rc, FakeLink(rc), rh, Commands(rh), Guard(vel, lim, dt, 1.0), dt, 1.0, 1.0,
+                        log=lambda *a: None)
+    check("a rehearsal streams every segment once, then ends at a hub by itself (well before --minutes)",
+          rrep["ended"] == "at a hub" and rh.finished and [n for _, n in rh.history] == [x.name for x in rh.items]
+          and time.time() - t0 < 10.0, (rrep["ended"], [n for _, n in rh.history]))
     check("no jump between segments (largest step within the limit)", rep["worst_step_of_limit"] <= 1.0,
           rep["worst_step_of_limit"])
     check("tick ids increase", all(b[0] > a[0] for a, b in zip(c.sent, c.sent[1:])))
@@ -1175,7 +1208,8 @@ def main(argv=None):
                     help="the scan alone at this fraction of its built speed (0 < f <= 1; tuning an exposure)")
     ap.add_argument("--osc-out", action="append", default=[], metavar="HOST:PORT",
                     help="also send the status here (a control window and TouchDesigner both listening); repeatable")
-    ap.add_argument("--minutes", type=float, default=5.0)
+    ap.add_argument("--minutes", type=float, default=None,
+                    help="the run's length (default 5; --rehearse: the whole rehearsal at this speed)")
     ap.add_argument("--osc", action="store_true", help="TouchDesigner in and out (the config's osc ports)")
     ap.add_argument("--osc-lag-ms", type=float, default=None,
                     help="how far the arm is behind the commands, for the scan's position sent to TouchDesigner "
@@ -1199,6 +1233,10 @@ def main(argv=None):
     ap.add_argument("--scan-test", action="store_true",
                     help="the scan step by step instead of the show (scan_test.py): /robot/trigger to_scan, "
                          "'scan F', back, return; /robot/pause finishes at the start pos")
+    ap.add_argument("--rehearse", action="store_true",
+                    help="every motion of the show once, in order, then end (rehearse.py): checking the room slowly")
+    ap.add_argument("--rehearse-from", type=int, default=1, metavar="STEP",
+                    help="--rehearse from this step on (after a stop: the step its status said)")
     a = ap.parse_args(argv)
     speed = a.speed if a.speed is not None else (HARDWARE_SPEED if a.hardware else 1.0)
     if not MIN_SPEED <= speed <= 1.0:
@@ -1220,12 +1258,25 @@ def main(argv=None):
     dt = 1.0 / RATE_HZ
     if not 0.0 < a.scan_speed <= 1.0:
         ap.error("--scan-speed must be within 0..1 (the scan plays at most as fast as built)")
+    if a.scan_test and a.rehearse:
+        ap.error("--scan-test or --rehearse, not both")
     if a.scan_test:
         import scan_test
         runner = scan_test.ScanTest(graph, scan_speed=a.scan_speed)
+    elif a.rehearse:
+        import rehearse
+        try:
+            runner = rehearse.Rehearsal(graph, start_step=a.rehearse_from, scan_speed=a.scan_speed)
+        except ValueError as e:
+            ap.error(str(e))
+        print("rehearsal: steps %d..%d of %d, %s at speed %.2f (then it ends at %s)"
+              % (a.rehearse_from, len(runner.items), len(runner.items), rehearse.mmss(runner.plan_left() / speed),
+                 speed, runner.items[-1].end))
     else:
         runner = S.runner_for(graph, seed=a.seed, scan_speed=a.scan_speed)
     start_q = runner.step(0.0)
+    minutes = a.minutes if a.minutes is not None else (
+        runner.plan_left() / speed / 60.0 + 2.0 if a.rehearse else 5.0)
 
     cmds = Commands(runner, speed)
     answers = None
@@ -1251,9 +1302,11 @@ def main(argv=None):
     if a.goto_start:
         print("at the start hub (%s), %.2f deg off. Not streaming (--goto-start)." % (runner.hub, off))
         return 0
-    plan = ("Stream %s: %.1f min at speed %.2f (fixed for the run) from hub %s, ServoJ %g Hz%s."
+    plan = ("Stream %s%s: %.1f min at speed %.2f (fixed for the run) from hub %s, ServoJ %g Hz%s."
             "\nStop: Ctrl+C or OSC /robot/stop "
-            "(software stop). Keep a hand on the E-stop." % (cfg.get("name", "show"), a.minutes, speed, runner.hub,
+            "(software stop). Keep a hand on the E-stop." % (cfg.get("name", "show"),
+                                                              " -- the rehearsal, every motion once" if a.rehearse else "",
+                                                              minutes, speed, runner.hub,
                                                               RATE_HZ, ", TouchDesigner on OSC" if a.osc else ""))
     print(plan)
     if not ask(plan):
@@ -1274,7 +1327,7 @@ def main(argv=None):
     guard = Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, speed)     # J6: the tool cable's range
     link = Link(ip)
     try:
-        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, a.minutes, osc=osc, analyse=False,
+        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, minutes, osc=osc, analyse=False,
                                        playback_ppm=playback_ppm, lag_correction=lag_fix)
     finally:
         if osc is not None:

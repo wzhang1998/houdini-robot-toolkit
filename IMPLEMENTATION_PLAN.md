@@ -895,6 +895,26 @@ ChArUco hand-eye (check `cv2.calibrateHandEye` exists in OpenCV 5, else pin
 4.x); align Laban definitions with Larboulette & Gibet 2015 (our flow =
 stillness fraction, theirs = jerk); AIST++ as the retarget test set.
 
+## Stage 17: The rehearsal, and the run's time left (2026-09-30, the user's go)
+**Goal**: Before the show runs unattended (an evening, 19:00-24:00), the
+real arm walks through every motion it can play, slowly, with how far along
+and how long is left: rehearse.py, a runner for show_stream --rehearse (as
+scan_test is): every idle clip (calm first at each hub), every hub-to-hub
+move (a circuit through all of them), the scan; then it ends at the start
+hub. Pause holds at the segment's end, resume goes on, --rehearse-from N
+after a stop. The stream sends the run's time so far and left
+(/robot/run_elapsed, /robot/run_left); show_ui shows them and has Rehearse.
+**Success Criteria**: every idle clip and move once, joined, home at the end;
+its length at a speed said before it starts; it ends by itself; the time
+left counts down; the show itself unchanged.
+**Tests**: rehearse self-test (party: 70 clips, 12 moves, the scan, joined;
+unbalanced moves still all covered; an unreachable hub refused; pause,
+resume, the run's end, from a step); show_stream self-test (run times; a
+rehearsal streamed to the fake controller ends at a hub, every segment
+once); show_ui self-test (argv, the time line, the plan's question).
+SimMachine: party_bigwipe steps 78-87, ended at a hub, 0 skipped.
+**Status**: In Progress (the real arm: the user, at 0.3)
+
 ## Stage 4: ROS 2 validation service
 **Goal**: A container (ROS 2 Jazzy + MoveIt 2) with an FR20 MoveIt config
 (URDF from `assets/fairino_description`, SRDF, collision scene) and an HTTP

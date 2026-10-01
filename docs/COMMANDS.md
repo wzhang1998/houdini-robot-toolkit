@@ -16,7 +16,14 @@ uv run scripts/show.py report shows/party.json            # the library as numbe
 ```bash
 uv run scripts/show_ui.py                                 # THE window: target (SimMachine / arm), triggers, big wipes, STOP
 uv run scripts/scan_test_ui.py                            # the scan step by step: line the strip up, try exposures
+uv run scripts/rehearse.py shows/party_bigwipe.json --speed 0.3   # the rehearsal's steps and length (nothing moves)
 ```
+
+Rehearse (show_ui's button): every motion of the show once -- every idle
+clip, every move between hubs, the scan -- then it ends at the start hub.
+Walk the real arm through it slowly before the show runs on its own; after a
+stop, "from step" goes on where it was. The window shows the run's time so
+far and left (a show: to its Minutes; a rehearsal: to its end).
 
 show_ui starts `show_stream.py` itself. By hand, SimMachine:
 
@@ -124,6 +131,7 @@ python scripts/femto_format.py && python scripts/mocap_cmu.py && python scripts/
 python scripts/track_osc.py && python scripts/track_runner.py && python scripts/track_test.py --self-test
 python scripts/track_mode.py --self-test && python scripts/track_ui.py --self-test
 uv run scripts/show_stream.py --self-test
+uv run scripts/rehearse.py --self-test && uv run scripts/show_ui.py --self-test
 ```
 
 The tracking scripts need numpy and ruckig: the system Python has them

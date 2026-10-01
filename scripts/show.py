@@ -42,6 +42,7 @@ energy the arm changes hub (level) more often.
 OSC in:  /robot/trigger [name] (default scan)   /robot/pause   /robot/resume   /robot/reset
          /robot/mood <action>   /robot/energy <0..1> (below 0: back to the arc)
 OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
+         /robot/run_elapsed f  /robot/run_left f (wall s: the run's time so far and left; streaming only)
          /robot/scan f (0..1 of the scan's time)  /robot/joints f*6
          /robot/scan/u f (across the opening, 0..1: the LEDs' column)  /robot/scan/led i  /robot/scan/speed f
 
@@ -1641,10 +1642,14 @@ class OscBridge:
         return ip in self.allow
 
     def send(self, q):
-        msgs = osc_messages(self.runner.status(lag_s=self.lag_s), q, self.eyes, self.canvas)
+        s = self.runner.status(lag_s=self.lag_s)
+        msgs = osc_messages(s, q, self.eyes, self.canvas)
         if hasattr(self.runner, "speed_now"):                  # the streaming backend
             msgs.append(("/robot/speed_now", float(self.runner.speed_now)))
             msgs.append(("/robot/skipped", int(self.runner.skipped)))
+            # the run's time so far and left (wall s; its --minutes end, or a rehearsal's own)
+            msgs.append(("/robot/run_elapsed", float(s.get("run_elapsed", 0.0))))
+            msgs.append(("/robot/run_left", float(s.get("run_left", 0.0))))
         for c in self.clients:
             for addr, value in msgs:
                 c.send_message(addr, value)

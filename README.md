@@ -294,7 +294,9 @@ uv run scripts/show_ui.py            # the show's window: target, triggers, stop
 `show_stream.py` streams the show to SimMachine or the arm (`--hardware`
 plays at speed 0.3 and asks first), paced by the controller's playback rate
 (`playback.toml`), and pulls its lag back while the arm rests at a hub.
-`scan_test_ui.py` runs the scan step by step. In Houdini,
+`scan_test_ui.py` runs the scan step by step. `rehearse.py` (show_ui's
+Rehearse) plays every motion of the show once, slowly, to check the real
+room before the show runs on its own. In Houdini,
 `scenes/FR20_show.hiplc` holds `/obj/robot_show` (`wenyi::robot_show`), the
 show on one parameter page — see [docs/show_pipeline.md](docs/show_pipeline.md).
 

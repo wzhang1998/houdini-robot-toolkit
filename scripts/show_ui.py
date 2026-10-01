@@ -17,8 +17,14 @@ changes, since it reads the show's own status.
 
 Speed is the global show speed, set before Start and fixed for the run
 (it is not changed while the arm moves). The window shows the state, the
-clip and its time left, what is next, the queue, waiting triggers, and the
+clip and its time left, the run's time so far and left (Minutes, then the
+clip finishes at a hub), what is next, the queue, waiting triggers, and the
 ticks skipped so far (a stall shows at once).
+
+Rehearse: every motion of the show once, in order, then it ends
+(rehearse.py) -- for walking the real arm through all of it slowly before
+the show plays on its own. It says how long it takes first; its status
+reads "rehearsal 23/87"; "from step" goes on after a stop.
 
 Target: SimMachine, or the real FR20. For the real arm the window turns red
 and asks more:
@@ -125,13 +131,14 @@ def show_choices(shows_dir=None, root=ROOT):
 
 
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
-                goto_start=False, scan_speed=1.0, scan_test=False):
+                goto_start=False, scan_speed=1.0, scan_test=False, rehearse_from=None):
     """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
     given; status also to each HOST:PORT in `also` (TouchDesigner).
     goto_start: only the move to the start hub. scan_speed: the scan alone
     slower than built (tuning an exposure). scan_test: the scan step by step
-    (scan_test.py) instead of the show. Refuses what the window does not
-    allow on the real arm (ValueError)."""
+    (scan_test.py) instead of the show. rehearse_from: the rehearsal
+    (rehearse.py) from this step, its own length (minutes not passed).
+    Refuses what the window does not allow on the real arm (ValueError)."""
     if not SCAN_SPEED[0] <= scan_speed <= SCAN_SPEED[1]:
         raise ValueError("scan speed %g: %g..%g of the built scan's" % ((scan_speed,) + SCAN_SPEED))
     if target not in ("sim", "hardware"):
@@ -149,7 +156,11 @@ def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, targ
     argv = [python, STREAM, config, "--" + target, "--ip", ip, "--move-vel", "%g" % move_vel, "--stdin-control"]
     if goto_start:
         return argv + ["--goto-start"]
-    argv += ["--osc", "--minutes", "%g" % minutes, "--speed", "%g" % speed, "--scan-speed", "%g" % scan_speed]
+    argv += ["--osc", "--speed", "%g" % speed, "--scan-speed", "%g" % scan_speed]
+    if rehearse_from is not None:
+        argv += ["--rehearse", "--rehearse-from", "%d" % rehearse_from]
+    else:
+        argv += ["--minutes", "%g" % minutes]
     if scan_test:
         argv.append("--scan-test")
     for t in also:
@@ -167,13 +178,14 @@ class ShowLink:
         self.status = {"state": "-", "clip": "-", "hub": "-", "progress": 0.0, "scan": -1.0, "speed_now": 0.0,
                        "sequence": "", "next": "", "queue": "", "pending": "", "time_left": 0.0, "fault": "",
                        "skipped": 0, "energy_now": 0.0, "clip_energy": 0.0,
-                       "scan/u": -1.0, "scan/led": 0, "scan/speed": 0.0}
+                       "scan/u": -1.0, "scan/led": 0, "scan/speed": 0.0, "run_elapsed": 0.0, "run_left": 0.0}
         self.log = queue.Queue()
         self.asks = queue.Queue()                   # show_stream's questions before the real arm moves
         self.proc, self.ip, self.target, self.goto_start = None, None, None, False
         d = dispatcher.Dispatcher()
         for key in ("state", "clip", "hub", "progress", "scan", "speed_now", "sequence", "next", "queue", "pending",
-                    "time_left", "fault", "skipped", "energy_now", "clip_energy", "scan/u", "scan/led", "scan/speed"):
+                    "time_left", "fault", "skipped", "energy_now", "clip_energy", "scan/u", "scan/led", "scan/speed",
+                    "run_elapsed", "run_left"):
             d.map("/robot/" + key, self._status_setter(key))
         self.server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", send_port or osc["send_port"]), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -192,11 +204,12 @@ class ShowLink:
         return self.proc is not None and self.proc.poll() is None
 
     def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False, scan_speed=1.0,
-              scan_test=False):
+              scan_test=False, rehearse_from=None):
         if self.running:
             return
         argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
-                           goto_start=goto_start, scan_speed=scan_speed, scan_test=scan_test)
+                           goto_start=goto_start, scan_speed=scan_speed, scan_test=scan_test,
+                           rehearse_from=rehearse_from)
         self.ip, self.target, self.goto_start = ip, target, goto_start
         self.spawn(argv)
 
@@ -290,6 +303,34 @@ STATE_COLOUR = {"IDLE": "#2e8b57", "MOVE": "#2f6db5", "TO_SCAN": "#b8860b", "SCA
 STATE_WORDS = {"IDLE": "idling at a hub", "MOVE": "moving between hubs", "TO_SCAN": "going to the scan",
                "SCAN": "scanning", "FROM_SCAN": "back from the scan", "PAUSED": "paused at a hub",
                "FAULT": "stopped: fault", "HOLD": "held after a fault"}
+
+
+def mmss(s):
+    s = int(round(float(s)))
+    return "%d:%02d:%02d" % (s // 3600, s // 60 % 60, s % 60) if s >= 3600 else "%d:%02d" % (s // 60, s % 60)
+
+
+def run_line(s):
+    """The run's time in words from the status: so far, left, the rehearsal's step."""
+    seq = str(s.get("sequence") or "")
+    step = ("   |   " + seq) if seq.startswith("rehearsal") else ""
+    return "run %s   |   %s left%s" % (mmss(s.get("run_elapsed") or 0.0), mmss(s.get("run_left") or 0.0), step)
+
+
+def rehearsal_plan(config, speed, scan_speed=1.0, from_step=1):
+    """(from_step, the question before a rehearsal: its steps and length at this speed). ValueError if the
+    step is not in it."""
+    import rehearse
+    import show as S
+    g = S.Graph.load(S.compiled_path(config))
+    items = rehearse.plan(g)
+    if not 1 <= from_step <= len(items):
+        raise ValueError("from step %d: the rehearsal has steps 1..%d" % (from_step, len(items)))
+    _, total = rehearse.table(items[from_step - 1:], speed, scan_speed)
+    return from_step, ("Every motion of the show once (%d steps: every idle clip, every move between hubs, the "
+                       "scan), then it ends at %s.\n\nSteps %d..%d at speed %.2f: about %s, plus the move to "
+                       "the start.\n\nGo on?" % (len(items), items[-1].end, from_step, len(items), speed,
+                                                   rehearse.mmss(total)))
 
 
 def run_window(config):
@@ -418,14 +459,24 @@ def run_window(config):
                     "uv run scripts/show_ui.py" % (sys.executable, ", ".join(miss)))
         return None
 
-    def launch(goto_start):
-        why = ready("Move to start" if goto_start else "Start")
+    def launch(goto_start, rehearse=False):
+        why = ready("Move to start" if goto_start else ("Rehearse" if rehearse else "Start"))
         if why:
             messagebox.showerror("Not yet", why)
             return
+        frm = None
+        if rehearse:
+            try:
+                frm, question = rehearsal_plan(link.config, speed.get(), scan_speed.get(), from_step.get())
+            except (ValueError, tk.TclError) as e:
+                messagebox.showerror("Not yet", str(e))
+                return
+            if not messagebox.askokcancel("Rehearse", question):
+                return
         link.start(ip.get().strip(), minutes.get(), speed.get(),
                    [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [],
-                   target=target.get(), move_vel=move_vel.get(), goto_start=goto_start, scan_speed=scan_speed.get())
+                   target=target.get(), move_vel=move_vel.get(), goto_start=goto_start, scan_speed=scan_speed.get(),
+                   rehearse_from=frm)
         for v in ticks:                              # the checklist again next time
             v.set(False)
 
@@ -433,6 +484,15 @@ def run_window(config):
     goto_b.grid(row=2, column=6, padx=10)
     start_b = ttk.Button(top, text="Start", command=lambda: launch(False))
     start_b.grid(row=1, column=6, padx=10)
+    from_step = tk.IntVar(value=1)
+    reh = ttk.Frame(top)
+    reh.grid(row=3, column=6, columnspan=2, sticky="w", padx=10)
+    rehearse_b = ttk.Button(reh, text="Rehearse", command=lambda: launch(False, rehearse=True))
+    rehearse_b.pack(side="left")
+    ttk.Label(reh, text=" from step").pack(side="left")
+    from_box = ttk.Spinbox(reh, from_=1, to=999, increment=1, textvariable=from_step, width=4)
+    from_box.pack(side="left")
+    before_start.append(from_box)
     tk.Button(top, text="STOP", bg="#c0392b", fg="white", width=8, font=("Segoe UI", 10, "bold"),
               command=lambda: threading.Thread(target=link.stop, daemon=True).start()).grid(row=1, column=7, rowspan=2)
 
@@ -451,6 +511,8 @@ def run_window(config):
     left_l.grid(row=1, column=3, sticky="w", padx=6)
     where_l = ttk.Label(now, text="", font=("Segoe UI", 10))
     where_l.grid(row=2, column=1, columnspan=3, sticky="w")
+    run_l = ttk.Label(now, text="", font=("Consolas", 12, "bold"))
+    run_l.grid(row=3, column=1, columnspan=3, sticky="w")
 
     # --- next ---------------------------------------------------------------------
     nxt = ttk.LabelFrame(root, text="Next")
@@ -519,6 +581,7 @@ def run_window(config):
             w.configure(state="disabled" if running else "normal")
         start_b.configure(state="disabled" if running else "normal")
         goto_b.configure(state="disabled" if running else "normal")
+        rehearse_b.configure(state="disabled" if running else "normal")
         try:
             question = link.asks.get_nowait()          # show_stream asks before the real arm moves
         except queue.Empty:
@@ -544,8 +607,9 @@ def run_window(config):
             queue_l.config(text=("then:  " + "  >  ".join(q[1:])) if len(q) > 1 else "")
             pend = [x for x in str(s.get("pending") or "").split(",") if x]
             pend_l.config(text=("waiting triggers:  " + ", ".join(pend)) if pend else "")
+            run_l.config(text=run_line(s))
         else:
-            for w in (clip_l, left_l, where_l, queue_l, pend_l):
+            for w in (clip_l, left_l, where_l, queue_l, pend_l, run_l):
                 w.config(text="")
             next_l.config(text="-")
             prog["value"] = 0.0
@@ -635,6 +699,28 @@ def self_test():
     hw = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware")
     check("the real arm: --hardware (never --sim), its slow move to the start hub (10 %)",
           "--hardware" in hw and "--sim" not in hw and hw[hw.index("--move-vel") + 1] == "10", hw)
+    rh = stream_argv(DEFAULT_CONFIG, "10.0.0.9", 5, 0.3, target="hardware", rehearse_from=41)
+    check("Rehearse: --rehearse from the step given, its own length (no --minutes), still --hardware and OSC",
+          "--rehearse" in rh and rh[rh.index("--rehearse-from") + 1] == "41" and "--minutes" not in rh
+          and "--hardware" in rh and "--osc" in rh, rh)
+    check("the run's time in words: so far, left, the rehearsal's step",
+          run_line({"run_elapsed": 75.0, "run_left": 3725.0, "sequence": "rehearsal 23/87"})
+          == "run 1:15   |   1:02:05 left   |   rehearsal 23/87"
+          and run_line({"run_elapsed": 5, "run_left": 595, "sequence": "greet"}) == "run 0:05   |   9:55 left",
+          run_line({"run_elapsed": 75.0, "run_left": 3725.0, "sequence": "rehearsal 23/87"}))
+    frm, question = rehearsal_plan(DEFAULT_CONFIG, 0.3, from_step=3)
+    check("before a rehearsal: its steps and its length at the speed", frm == 3 and "Steps 3.." in question
+          and "speed 0.30" in question, question)
+    try:
+        rehearsal_plan(DEFAULT_CONFIG, 0.3, from_step=999)
+        check("a step past the rehearsal's end is refused", False)
+    except ValueError:
+        check("a step past the rehearsal's end is refused", True)
+    out.send_message("/robot/run_elapsed", 12.5)
+    out.send_message("/robot/run_left", 587.5)
+    time.sleep(0.3)
+    check("the run's times from the show are shown", link.status["run_elapsed"] == 12.5
+          and link.status["run_left"] == 587.5, link.status)
     import shutil
     import tempfile
     import show as S
