@@ -466,16 +466,20 @@ def resolve_hubs(cfg, rig):
     return out
 
 
-def build(cfg_path, log=print, scan_only=False):
+def build(cfg_path, log=print, scan_only=False, gap_m=None):
     """The show's clip graph from its config. scan_only: the scan and its
     moves alone (no idle library, showpieces or moves between the hubs) --
-    to look at a new scan before the library is made again."""
+    to look at a new scan before the library is made again. gap_m: the
+    LEDs' face this far from the paper instead of the config's
+    scan.led_gap_m (a scan-only variant, to try distances on the paper)."""
     import choreo
     import collision as C
     import robot_profile as RP
     import safe_move
     inputs = input_digests(cfg_path)          # first: an edit during the build is then seen as one (audit, 9)
     cfg = json.load(open(cfg_path))
+    if gap_m is not None:
+        cfg["scan"]["led_gap_m"] = float(gap_m)
     prof = RP.load("fr20")
     vel, acc = RP.velocity_limits(prof), RP.acceleration_limits(prof)
     model = C.load_model("fr20")
@@ -579,6 +583,7 @@ def build(cfg_path, log=print, scan_only=False):
     g = Graph(hubs, segs, {"config": os.path.relpath(cfg_path, ROOT).replace("\\", "/"),
                            "built": time.strftime("%Y-%m-%d %H:%M"), "start_hub": cfg["start_hub"],
                            "inputs": inputs, "scan_only": scan_only,
+                           "led_gap_m": (cfg.get("scan") or {}).get("led_gap_m"),
                            "dropped": dropped, "canvas": cfg.get("canvas"), "stage": cfg.get("stage"),
                            "sequences": cfg.get("sequences", {}), "select": cfg.get("select", {})})
     bad = g.check_joins()
@@ -1061,16 +1066,19 @@ _STRIP = {}
 
 def strip_face(robot="fr20"):
     """(offset along the tool's z to the LEDs' face, the LEDs' length) from
-    the profile's tool (collision.strip_box, in the flange's frame); the
-    length the tool block's led_span_m when it says (the bar with its end
-    caps is longer than its row of LEDs), else the box's."""
+    the profile's tool, in the flange's frame: the face its TCP (the LED face,
+    as the scan's gap is measured from it), else the top of its strip box
+    (collision.strip_box); the length the tool block's led_span_m when it says
+    (the bar with its end caps is longer than its row of LEDs), else the box's."""
     if robot not in _STRIP:
         import collision as C
         import robot_profile as RP
         prof = RP.load(robot)
-        box = C.strip_box(C.tool_def(prof))
+        tool = C.tool_def(prof)
+        box = C.strip_box(tool)
         span = (prof.get("tool") or {}).get("led_span_m")
-        _STRIP[robot] = (box["xyz"][2] + box["size"][2] / 2.0, float(span or box["size"][1])) if box else (0.0, 0.0)
+        face = tool["tcp"]["xyz"][2] if tool and tool.get("tcp") else (box["xyz"][2] + box["size"][2] / 2.0 if box else 0.0)
+        _STRIP[robot] = (face, float(span or box["size"][1])) if box else (0.0, 0.0)
     return _STRIP[robot]
 
 
@@ -2158,12 +2166,20 @@ def main(argv=None):
     ap.add_argument("--triggers", default="scan", help="comma separated, used in turn")
     ap.add_argument("--scan-only", action="store_true",
                     help="build: the scan and its moves alone, to geo/show/<show>_scan (the show's own file untouched)")
+    ap.add_argument("--gap", type=float, default=None, metavar="M",
+                    help="build --scan-only: the LEDs' face M from the paper (not the config's scan.led_gap_m), to "
+                         "shows/scans/<show>_gap<mm> (in git: the arm's PC has it): a distance to try with scan_test "
+                         "(show_stream --scan-from)")
     a = ap.parse_args(argv)
     cfg_path = os.path.abspath(a.config)
+    if a.gap is not None and not (a.command == "build" and a.scan_only):
+        ap.error("--gap is for build --scan-only (the show's own gap is its config's scan.led_gap_m)")
     if a.command == "build" and a.scan_only:
         t0 = time.time()
-        g = build(cfg_path, scan_only=True)
-        out = os.path.join(ROOT, "geo", "show", os.path.splitext(os.path.basename(cfg_path))[0] + "_scan")
+        g = build(cfg_path, scan_only=True, gap_m=a.gap)
+        name = os.path.splitext(os.path.basename(cfg_path))[0]
+        out = (os.path.join(ROOT, "shows", "scans", "%s_gap%d" % (name, round(a.gap * 1000))) if a.gap is not None
+               else os.path.join(ROOT, "geo", "show", name + "_scan"))           # a distance to try: in git, for the arm's PC
         write_preview(g, out)
         g.save(os.path.join(out, "compiled.json"))
         print("wrote %s: %s, %.0f s" % (os.path.relpath(out, ROOT),

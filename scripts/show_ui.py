@@ -131,13 +131,14 @@ def show_choices(shows_dir=None, root=ROOT):
 
 
 def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, target="sim", move_vel=None,
-                goto_start=False, scan_speed=1.0, scan_test=False, rehearse_from=None):
+                goto_start=False, scan_speed=1.0, scan_test=False, rehearse_from=None, scan_from=None):
     """The show_stream.py command: SimMachine or the real arm, OSC on, the IP
     given; status also to each HOST:PORT in `also` (TouchDesigner).
     goto_start: only the move to the start hub. scan_speed: the scan alone
     slower than built (tuning an exposure). scan_test: the scan step by step
     (scan_test.py) instead of the show. rehearse_from: the rehearsal
     (rehearse.py) from this step, its own length (minutes not passed).
+    scan_from: a scan test at another distance (a scan-only build's dir).
     Refuses what the window does not allow on the real arm (ValueError)."""
     if not SCAN_SPEED[0] <= scan_speed <= SCAN_SPEED[1]:
         raise ValueError("scan speed %g: %g..%g of the built scan's" % ((scan_speed,) + SCAN_SPEED))
@@ -163,6 +164,8 @@ def stream_argv(config, ip, minutes, speed, also=(), python=sys.executable, targ
         argv += ["--minutes", "%g" % minutes]
     if scan_test:
         argv.append("--scan-test")
+        if scan_from:
+            argv += ["--scan-from", scan_from]
     for t in also:
         argv += ["--osc-out", t]
     return argv
@@ -204,12 +207,12 @@ class ShowLink:
         return self.proc is not None and self.proc.poll() is None
 
     def start(self, ip, minutes, speed, also=(), target="sim", move_vel=None, goto_start=False, scan_speed=1.0,
-              scan_test=False, rehearse_from=None):
+              scan_test=False, rehearse_from=None, scan_from=None):
         if self.running:
             return
         argv = stream_argv(self.config, ip, minutes, speed, also, target=target, move_vel=move_vel,
                            goto_start=goto_start, scan_speed=scan_speed, scan_test=scan_test,
-                           rehearse_from=rehearse_from)
+                           rehearse_from=rehearse_from, scan_from=scan_from)
         self.ip, self.target, self.goto_start = ip, target, goto_start
         self.spawn(argv)
 

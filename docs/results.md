@@ -17,6 +17,7 @@ Only **real FR20** rows describe something the arm has actually done.
 
 | Date | Result | Before -> after | Commit |
 |---|---|---|---|
+| 2026-10-01 | The new wall measured from the arm at the scan's start (bar off, a tape from the flange): 17.2 cm to the paper where the build put 10.74 (the arm exactly at the build's joints, its tool square to the canvas): the wall 6.46 cm further than the placeholder canvas. Canvas and scan area moved back 6.46 cm; the bar's collision boxes split to its section (its capsules 4.3 mm past the shade's rim, was 7.8; all 17,459 CAD points inside); both shows rebuilt clear; scans at 3.5 / 4.5 cm built to try (3.1 / 4.1 cm clear). The first scans had been 12.9 cm from the LED chips to the paper: blurred (a bare LED's spot ~1.3 x the distance) | -- |
 | 2026-09-25 | First clip streamed on the real arm: `fr20_test_new.csv` (323 frames, 13.4 s), ServoJ at 125 Hz, 3 runs, 0 controller errors | -- | bdfa47c (retime), 6c4b335 (play_ui) |
 | 2026-09-25 | At speed 1.0 the clip played at its designed length, 13.4 s, not slowed (peak J5 acceleration 148.8 of 150 deg/s^2) | the same curve's earlier export needed x8.54 | bdfa47c |
 | 2026-09-25 | Tracking after removing the controller's ~114 ms lag: max 0.80 / 0.76 deg, RMS 0.29 / 0.26 deg (speed 1.0); two runs agree within 0.23 deg, end pose 0.035 deg | raw, un-aligned error ~7 deg (all lag) | -- |

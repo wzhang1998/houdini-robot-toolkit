@@ -214,11 +214,7 @@
  },
  "canvas": {
   "placeholder": true,
-  "center": [
-   0.2117,
-   1.0764,
-   0.9
-  ],
+  "center": [0.2242, 1.1398, 0.9],
   "normal": [
    0.193,
    0.9812,
@@ -234,11 +230,7 @@
  "scan": {
   "direction": "top_to_bottom",
   "area": {
-   "center": [
-    0.2117,
-    1.0764,
-    1.0
-   ],
+   "center": [0.2242, 1.1398, 1.0],
    "size": [
     1.0,
     1.0

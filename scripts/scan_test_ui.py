@@ -18,6 +18,10 @@ real frame and trying exposures on the paper.
 5. Return              from_scan: back to the start pos. Then Scan again.
 6. Finish              back to the start pos the way it came; the stream
                        ends there (it writes its report).
+Distance: the show's own scan, or a scan-only build at another distance
+(show.py build <show> --scan-only --gap M: shows/scans/<show>_gap<mm>),
+each checked in the room as the show's; a variant built from other inputs
+than the show's now is refused by the stream.
 Only the steps allowed where the arm is are enabled (the stream says which).
 STOP (as the show window's): /robot/stop and StopMotion straight to the
 controller -- a software stop; the E-stop is the safety. After a STOP, Move
@@ -41,6 +45,27 @@ import show_ui as UI  # noqa: E402
 
 STEP_BUTTONS = (("to_scan", "3  To scan start"), ("back", "Back to start pos"), ("scan", "4  Scan"),
                 ("return", "5  Return"))
+
+
+def scan_distances(config, root=None):
+    """[(label, dir or None)]: the show's own scan (None) and its scan-only builds at other distances
+    (shows/scans/<show>_gap<mm>/compiled.json), nearest first; the gap read from each build."""
+    import glob
+    root = root or UI.ROOT
+    name = os.path.splitext(os.path.basename(config))[0]
+    own = json.load(open(config)).get("scan", {}).get("led_gap_m")
+    out = [("%.1f cm  (the show's own scan)" % (100.0 * own) if own is not None else "the show's own scan", None)]
+    found = []
+    for f in glob.glob(os.path.join(root, "shows", "scans", name + "_gap*", "compiled.json")):
+        try:
+            gap = json.load(open(f)).get("info", {}).get("led_gap_m")
+        except (OSError, ValueError):
+            continue
+        if gap is not None:
+            found.append((gap, os.path.dirname(f)))
+    for gap, d in sorted(found):
+        out.append(("%.1f cm  (%s)" % (100.0 * gap, os.path.relpath(d, root).replace("\\", "/")), d))
+    return out
 
 
 def step_command(name, scan_speed):
@@ -113,6 +138,19 @@ def run_window(config):
     show_box.bind("<<ComboboxSelected>>", show_changed)
     before_start.append(show_box)
     refresh_shows()
+    distances, dist_pick = {}, tk.StringVar()
+
+    def refresh_distances():
+        distances.clear()
+        distances.update(scan_distances(link.config))
+        dist_box["values"] = list(distances)
+        if dist_pick.get() not in distances:
+            dist_pick.set(next(iter(distances)))
+    ttk.Label(top, text="Distance").grid(row=4, column=0, sticky="e", padx=(8, 2))
+    dist_box = ttk.Combobox(top, textvariable=dist_pick, state="readonly", width=60, postcommand=refresh_distances)
+    dist_box.grid(row=4, column=1, columnspan=4, sticky="w", pady=(2, 4))
+    before_start.append(dist_box)
+    refresh_distances()
 
     checks = ttk.LabelFrame(root, text="Before the real arm moves")
     ticks = [tk.BooleanVar(value=False) for _ in range(3)]
@@ -161,7 +199,8 @@ def run_window(config):
             link.start(ip.get().strip(), 120.0, speed.get(),
                        [td_target.get().strip()] if td_on.get() and td_target.get().strip() else [],
                        target=target.get(), move_vel=move_vel.get(), goto_start=goto_start,
-                       scan_speed=scan_speed.get(), scan_test=not goto_start)
+                       scan_speed=scan_speed.get(), scan_test=not goto_start,
+                       scan_from=distances.get(dist_pick.get()))
         except ValueError as e:
             messagebox.showerror("Not allowed", str(e))
             return
@@ -280,6 +319,23 @@ def self_test():
     argv = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, ["127.0.0.1:9002"], scan_test=True)
     check("Start: show_stream in scan-test mode, OSC on, status also to TD", "--scan-test" in argv and "--osc" in argv
           and argv[argv.index("--osc-out") + 1] == "127.0.0.1:9002", argv)
+    near = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, scan_test=True, scan_from="geo/x_gap35")
+    check("another distance: --scan-from its build", near[near.index("--scan-from") + 1] == "geo/x_gap35", near)
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, "shows"))
+    cfgp = os.path.join(root, "shows", "s.json")
+    json.dump({"scan": {"led_gap_m": 0.06}}, open(cfgp, "w"))
+    for mm, gap in ((45, 0.045), (35, 0.035)):
+        d = os.path.join(root, "shows", "scans", "s_gap%d" % mm)
+        os.makedirs(d)
+        json.dump({"info": {"led_gap_m": gap, "scan_only": True}}, open(os.path.join(d, "compiled.json"), "w"))
+    ds = scan_distances(cfgp, root)
+    shutil.rmtree(root, ignore_errors=True)
+    check("the distances: the show's own first, then its scan-only builds nearest first",
+          [l.split()[0] for l, _ in ds] == ["6.0", "3.5", "4.5"] and ds[0][1] is None and ds[1][1].endswith("gap35"),
+          [l for l, _ in ds])
     go = UI.stream_argv(UI.DEFAULT_CONFIG, "192.168.116.128", 120, 0.5, scan_test=True, goto_start=True)
     check("Move to start pos: only the checked MoveJ", "--goto-start" in go and "--scan-test" not in go, go)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")

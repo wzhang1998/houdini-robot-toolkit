@@ -17,7 +17,16 @@ uv run scripts/show.py report shows/party.json            # the library as numbe
 uv run scripts/show_ui.py                                 # THE window: target (SimMachine / arm), triggers, big wipes, STOP
 uv run scripts/scan_test_ui.py                            # the scan step by step: line the strip up, try exposures
 uv run scripts/rehearse.py shows/party_bigwipe.json --speed 0.3   # the rehearsal's steps and length (nothing moves)
+uv run scripts/show.py build shows/party_bigwipe.json --scan-only --gap 0.035   # a scan 3.5 cm from the paper, to try
 ```
+
+Scan distances to try: `build --scan-only --gap M` writes the scan alone at
+another gap (the shade's rim to the paper) to `shows/scans/<show>_gap<mm>/`
+(in git, a few seconds each, checked as the show's). scan_test_ui's
+Distance picks one (show_stream `--scan-test --scan-from DIR`, refused when
+built from other inputs than the show's now). The one chosen goes into the
+show's config (`scan.led_gap_m`), then a full build.
+
 
 Rehearse (show_ui's button): every motion of the show once -- every idle
 clip, every move between hubs, the scan -- then it ends at the start hub.

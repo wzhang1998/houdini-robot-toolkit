@@ -1233,6 +1233,9 @@ def main(argv=None):
     ap.add_argument("--scan-test", action="store_true",
                     help="the scan step by step instead of the show (scan_test.py): /robot/trigger to_scan, "
                          "'scan F', back, return; /robot/pause finishes at the start pos")
+    ap.add_argument("--scan-from", default=None, metavar="DIR",
+                    help="--scan-test with the scan of a scan-only build at another distance (show.py build "
+                         "--scan-only --gap M: shows/scans/<show>_gap<mm>); refused if its inputs are not the show's")
     ap.add_argument("--rehearse", action="store_true",
                     help="every motion of the show once, in order, then end (rehearse.py): checking the room slowly")
     ap.add_argument("--rehearse-from", type=int, default=1, metavar="STEP",
@@ -1260,9 +1263,15 @@ def main(argv=None):
         ap.error("--scan-speed must be within 0..1 (the scan plays at most as fast as built)")
     if a.scan_test and a.rehearse:
         ap.error("--scan-test or --rehearse, not both")
+    if a.scan_from and not a.scan_test:
+        ap.error("--scan-from is for --scan-test")
     if a.scan_test:
         import scan_test
-        runner = scan_test.ScanTest(graph, scan_speed=a.scan_speed)
+        scan_graph = graph
+        if a.scan_from:
+            scan_graph = scan_variant(a.scan_from, cfg_path)
+            print("scan test at %.1f cm from the paper (%s)" % (100.0 * scan_graph.info["led_gap_m"], a.scan_from))
+        runner = scan_test.ScanTest(scan_graph, scan_speed=a.scan_speed)
     elif a.rehearse:
         import rehearse
         try:
@@ -1356,6 +1365,26 @@ def main(argv=None):
               % (ip, out["playback_ppm_suggested"], playback_ppm))
     print("log:", base + ".json")
     return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
+
+
+def scan_variant(path, cfg_path):
+    """The scan-only build at path (a directory with compiled.json, or the file) for a scan test: SystemExit
+    unless it was built from the show's own inputs as they are now (the room, the tool, the config) -- only its
+    gap may differ (show.py build --scan-only --gap)."""
+    import show as S
+    f = os.path.join(path, "compiled.json") if os.path.isdir(path) else path
+    if not os.path.exists(f):
+        raise SystemExit("--scan-from %s: no compiled.json (show.py build %s --scan-only --gap M)"
+                         % (path, os.path.relpath(cfg_path, ROOT)))
+    g = S.Graph.load(f)
+    if not g.info.get("scan_only"):
+        raise SystemExit("--scan-from %s: not a scan-only build" % path)
+    changed = S.stale_inputs(g.info, cfg_path)
+    if changed:
+        raise SystemExit("--scan-from %s: %s changed since it was built -- build it again" % (path, ", ".join(changed)))
+    if g.info.get("led_gap_m") is None:
+        raise SystemExit("--scan-from %s: built before its gap was recorded -- build it again" % path)
+    return g
 
 
 def toml_playback_ppm(ip, path=None):
