@@ -8,7 +8,8 @@ whole room (--camera audience / side / 'ex ey ez tx ty tz').
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party.json --td-live
         TouchDesigner live: TD hears the show (as from show_stream, on 9002) and its LEDs (Art-Net 6455),
         canvas preview (6457) and ceiling level (ceiling_light, 6458) come back, drawn on the strip, the paper
-        and the ceiling's LED frame, in real time. Only with
+        and the ceiling's LED frame, in real time; the tracked guests too (people_track, /track/people on 9010:
+        tracking_test > Send to Isaac), drawn as people (people_viz.py). Only with
         show_stream, scan_test and show_ui closed (the one OSC port, 9000; TD's STOP here holds the arm in
         Isaac) and TD's Controller IP cleared. TD: pixel_scan > Output > Preview Art-Net IP 127.0.0.1.
     C:/isaacsim6/python.bat scripts/isaac/run_show.py shows/party_bigwipe.json --demo
@@ -78,6 +79,8 @@ ap.add_argument("--demo", action="store_true",
                 help="the 5 min demo: headless, --minutes 5, --auto-trigger 55 with the show's big wipes between "
                      "the scans, --seed 1, --camera audience, --video; the paper simulated (--canvas-sim) unless "
                      "--td-live, no OSC unless --td-live (then --record instead of --video)")
+ap.add_argument("--people-in", type=int, default=0, metavar="PORT",
+                help="the tracked guests from TD's people_track (/track/people; 9010), drawn and recorded")
 ap.add_argument("--ceiling", type=int, default=0, metavar="PORT",
                 help="the ceiling's level from TD ceiling_light's preview (Art-Net, 6458): the LED frame dimmed")
 ap.add_argument("--canvas", type=int, default=0, metavar="PORT",
@@ -95,6 +98,7 @@ if args.td_live:
     args.artnet = args.artnet or 6455
     args.canvas = args.canvas or 6457
     args.ceiling = args.ceiling or 6458
+    args.people_in = args.people_in or 9010
 if args.demo:
     args.headless = True
     args.minutes = args.minutes or 5.0
@@ -248,6 +252,12 @@ def main():
         import room_look
         ceiling_rx = artnet.DimmerReceiver(args.ceiling)
         print("[show] the ceiling's level from TD on 127.0.0.1:%d" % args.ceiling)
+    people_rx, people_viz, people_now = None, None, []
+    if args.people_in:
+        import track_osc
+        from people_viz import PeopleViz
+        people_rx, people_viz = track_osc.TrackIn(args.people_in), PeopleViz(stage)
+        print("[show] the tracked guests from TD on 127.0.0.1:%d" % args.people_in)
     model, img_levels, t_model, canvas_seen = None, None, 0.0, -1
     if args.canvas_sim and cfg.get("scan") and canvas is None:
         import canvas_model as CM
@@ -289,6 +299,12 @@ def main():
             if lv is not None and abs(lv - ceiling_now) > 1e-3:
                 room_look.set_ceiling(stage, lv)
                 ceiling_now = lv
+        if people_rx is not None:
+            got = people_rx.poll()
+            if got is not None:
+                people_now = got[0]
+            if draw:
+                people_viz.update(people_now, runner.clock)
         if viz is not None and draw:
             s0 = runner.status()
             if s0["state"] == "TO_SCAN":
@@ -324,7 +340,7 @@ def main():
             shots += 1
         if recorder is not None and runner.clock >= next_rec:          # 30 a second, whether drawn or not
             recorder.frame(runner.clock, runner.status(), q, rx.poll() if rx is not None else None,
-                           ceiling_rx.poll() if ceiling_rx is not None else None)
+                           ceiling_rx.poll() if ceiling_rx is not None else None, people_now)
             got = canvas_rx.poll() if canvas_rx is not None else None
             if got is not None and canvas_rx.packets != rec_seen:
                 recorder.canvas(runner.clock, *got)

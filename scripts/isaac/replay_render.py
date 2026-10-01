@@ -56,6 +56,7 @@ from canvas_viz import CanvasViz  # noqa: E402
 from isaac_stage import (PHYSICS_DT, attach_tool, camera_spec, encode_video, import_robot, load_room,  # noqa: E402
                          render_settings, use_camera)
 from led_viz import LedViz  # noqa: E402
+from people_viz import PeopleViz  # noqa: E402
 from scan_viz import ScanViz  # noqa: E402
 
 FPS = 30
@@ -83,6 +84,7 @@ def main():
     robot.set_joint_positions(np.radians(first["q"]), joint_indices=idx)
     scan = ScanViz(stage, cfg) if cfg.get("scan") else None       # the area's outline; TD draws the rest
     leds = LedViz(stage, led0=args.led0, gain=args.led_gain)
+    guests = PeopleViz(stage)                                  # the tracked guests, if the run had any
     canvas = CanvasViz(stage, cfg) if cfg.get("scan") and cap.canvas_t else None
     render_settings()
     use_camera(stage, "/World/ReplayCam", *camera_spec(args.camera, cfg, env))
@@ -108,6 +110,7 @@ def main():
             robot.apply_action(ArticulationAction(joint_positions=np.radians(q), joint_indices=idx))
             world.step(render=s == steps - 1)
         leds.update(fr["leds"], q)
+        guests.update(fr.get("people") or [], t)
         lit = fr["ceiling"] if args.ceiling < 0.0 else args.ceiling
         if ceiling is None or abs(lit - ceiling) > 1e-3:                   # TD ceiling_light's level
             room_look.set_ceiling(stage, lit)

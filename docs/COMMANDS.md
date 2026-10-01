@@ -54,7 +54,11 @@ C:/isaacsim6/python.bat scripts/isaac/record_library.py --headless              
 
 `--guides` draws the safety zones (hidden by default). `--camera room |
 audience | side | 'ex ey ez tx ty tz [focal]'`. Close show_stream,
-scan_test and show_ui before `--td-live`.
+scan_test and show_ui before `--td-live`. `--td-live` also draws the
+tracked guests (TD tracking_test > Send to Isaac, /track/people on 9010) and
+records them; replay_render draws them again. TD's tracking_test only runs
+with its cook flag on (it is off so as not to take the Femto downstairs):
+Source Sim plays a recording without the camera.
 
 ## The tracking test (apart from the party show)
 

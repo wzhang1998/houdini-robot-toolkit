@@ -5,10 +5,11 @@ and replay_render.py renders it at leisure: TD ran in real time, as in the
 show, and the video need not.
 
     <dir>/capture.json    the show, the seed, when
-    <dir>/frames.csv      t, state, clip, scan, scan_u, j1..j6, led0..led59, ceiling     (30 a second)
+    <dir>/frames.csv      t, state, clip, scan, scan_u, j1..j6, led0..led59, ceiling, people     (30 a second;
+                          people: "id:x:y:z;..." the tracked guests' heads, TD's people_track, robot frame)
     <dir>/canvas.bin      records: t f64 | w u16 | h u16 | n u32 | zlib(RGB8, rows top first)
 
-    w = Writer(dir, meta); w.frame(t, status, q, leds, ceiling); w.canvas(t, w, h, rgb); w.close()
+    w = Writer(dir, meta); w.frame(t, status, q, leds, ceiling, people); w.canvas(t, w, h, rgb); w.close()
     r = Reader(dir); r.frames; r.canvas_at(t)
 
     python scripts/td_capture.py --self-test
@@ -26,6 +27,21 @@ LEDS = 60
 HEAD = struct.Struct("<dHHI")
 
 
+def people_text(people):
+    """The tracked guests [(id, x, y, z, ...)] as one cell: "id:x:y:z;..." ("" nobody)."""
+    return ";".join("%s:%.3f:%.3f:%.3f" % (p[0], p[1], p[2], p[3]) for p in (people or []))
+
+
+def people_parse(text):
+    """[(id, x, y, z)] of a people cell."""
+    out = []
+    for part in text.split(";"):
+        bits = part.split(":")
+        if len(bits) == 4:
+            out.append((bits[0],) + tuple(float(v) for v in bits[1:]))
+    return out
+
+
 class Writer:
     def __init__(self, path, meta):
         os.makedirs(path, exist_ok=True)
@@ -35,18 +51,19 @@ class Writer:
         self.f = open(os.path.join(path, "frames.csv"), "w", newline="")
         self.w = csv.writer(self.f)
         self.w.writerow(["t", "state", "clip", "scan", "scan_u"] + ["j%d" % i for i in range(1, 7)]
-                        + ["led%d" % i for i in range(LEDS)] + ["ceiling"])
+                        + ["led%d" % i for i in range(LEDS)] + ["ceiling", "people"])
         self.c = open(os.path.join(path, "canvas.bin"), "wb")
         self.frames = self.images = 0
 
-    def frame(self, t, status, q, leds, ceiling=None):
+    def frame(self, t, status, q, leds, ceiling=None, people=None):
         """One moment: the show's status (Runner.status), the joints (deg), the
         strip's levels (None: nothing from TD yet -> dark), the ceiling's level
-        (TD ceiling_light; None: nothing from TD -> full, the room as lit)."""
+        (TD ceiling_light; None: nothing from TD -> full, the room as lit), the
+        tracked guests [(id, x, y, z, ...)] (None: nobody)."""
         lv = list(leds or [])[:LEDS] + [0.0] * (LEDS - len(leds or []))
         self.w.writerow(["%.4f" % t, status["state"], status["clip"], "%.4f" % status["scan"],
                          "%.4f" % status["scan_u"]] + ["%.4f" % x for x in q] + ["%.4f" % x for x in lv]
-                        + ["%.4f" % (1.0 if ceiling is None else ceiling)])
+                        + ["%.4f" % (1.0 if ceiling is None else ceiling), people_text(people)])
         self.frames += 1
 
     def canvas(self, t, w, h, rgb):
@@ -70,7 +87,8 @@ class Reader:
                                     "scan": float(row["scan"]), "scan_u": float(row["scan_u"]),
                                     "q": [float(row["j%d" % i]) for i in range(1, 7)],
                                     "leds": [float(row["led%d" % i]) for i in range(LEDS)],
-                                    "ceiling": float(row.get("ceiling") or 1.0)})    # older captures: full
+                                    "ceiling": float(row.get("ceiling") or 1.0),     # older captures: full
+                                    "people": people_parse(row.get("people") or "")})
         self.times = [fr["t"] for fr in self.frames]
         self.canvas_t, self._canvas = [], []
         p = os.path.join(path, "canvas.bin")
@@ -136,7 +154,7 @@ def self_test():
     st = {"state": "IDLE", "clip": "greet_01_wave", "scan": -1.0, "scan_u": -1.0}
     w.frame(0.0, st, [0, -90, 90, -90, -90, 0], None)
     w.frame(1 / 30.0, dict(st, state="SCAN", clip="scan", scan=0.5, scan_u=0.5), [1, 2, 3, 4, 5, 6], [0.5] * 60,
-            ceiling=0.25)
+            ceiling=0.25, people=[(45, -0.5, -1.9, 1.61, 0.9), (7, 0.25, -2.5, 1.7, 0.5)])
     img = bytes([200, 100, 50]) * (4 * 3)
     w.canvas(0.02, 4, 3, img)
     w.canvas(0.5, 4, 3, bytes(36))
@@ -160,11 +178,17 @@ def self_test():
     check("a record cut short at the end is left out", len(Reader(d).canvas_t) == 2)
     check("the ceiling's level kept (none from TD: full, the room as lit)",
           r.frames[0]["ceiling"] == 1.0 and r.frames[1]["ceiling"] == 0.25, [f["ceiling"] for f in r.frames])
+    check("the tracked guests kept (id, head x y z); nobody: none",
+          r.frames[0]["people"] == [] and r.frames[1]["people"] == [("45", -0.5, -1.9, 1.61), ("7", 0.25, -2.5, 1.7)],
+          r.frames[1]["people"])
     old = os.path.join(d, "frames.csv")
-    rows = open(old).read().splitlines()
     cut = lambda line: ",".join(line.split(",")[:-1])  # noqa: E731
+    rows = open(old).read().splitlines()
     open(old, "w").write("\n".join(cut(x) for x in rows) + "\n")
-    check("... a capture from before it: full", Reader(d).frames[1]["ceiling"] == 1.0)
+    check("... a capture from before them: nobody", Reader(d).frames[1]["people"] == [])
+    rows = open(old).read().splitlines()
+    open(old, "w").write("\n".join(cut(x) for x in rows) + "\n")
+    check("... a capture from before the ceiling: full", Reader(d).frames[1]["ceiling"] == 1.0)
     print("\nFAILED: %s" % "; ".join(fails) if fails else "\nOK")
     return 1 if fails else 0
 
