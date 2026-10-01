@@ -141,7 +141,9 @@ matching Houdini viewport capture from the same angle, and list them here.
    90 s or more, 4K, exposure locked.
 2. A close-up of the strip passing over the paper, and a still of the finished violet image.
 3. The interactive mode: someone steps onto the spot, the arm turns, follows, crouches, nods goodbye; two people if
-   possible (attention choosing between them).
+   possible (attention choosing between them). **Record the Femto at the same time** (TD tracking_test > Record:
+   `tracking/femto_rec_*.csv`) and note the take: the Isaac replay of that same take, from the same camera, is the
+   real/sim pair (a replay from another recording does not pair).
 4. Isaac replays from the same camera poses as 1 and 3 (run_tracking / replay_render `--camera 'ex ey ez tx ty tz
    focal'`; Isaac prints the viewport's as `[camera] --camera ...`), to cut real and sim side by side. Note the pose.
 5. A screen recording of TD (pixel_scan, idle_leds, the monitor) during the take.
@@ -161,7 +163,7 @@ matching Houdini viewport capture from the same angle, and list them here.
 | geo/isaac/td_capture_20260930-184751/replay_interact_1920x1080.mp4 (local) | Isaac | the same show, the interact camera, the ceiling look before the flash |
 | geo/isaac/td_capture_20260930-175134/replay_interact_3840x2160.mp4 (local) | Isaac | 4K, the first ceiling look (superseded) |
 | geo/isaac/portfolio/twin_room_like_IMG_0443_1600x1200.png (local) | Isaac | matches IMG_0443.jpg (Downloads; the room through the doorway, the arm at rest): `replay_render.py geo/isaac/td_capture_20260930-191550 --camera "-1.8 -1.6 1.55 -0.2 2.0 0.8 9" --size 1600x1200 --start 0 --ceiling 1.0 --no-label --still ...`; the pose matched by eye. The twin has the show's planned canvas wall, not built in the photo |
-| geo/isaac/portfolio/twin_tracking_like_tracking_MOV_1280x720.png (local) | Isaac | matches tracking.MOV (Downloads; real FR20, 2026-09-30 ~20:07, the interactive mode: the guest behind the glass on the left, the arm following): `--camera "2.0 -1.1 1.6 -1.6 0.45 1.0 10" --size 1280x720 --start 175.6` (the arm at greet), matched by eye. No Femto recording of that session on this PC (the robot laptop may have one), so no replay clip yet |
+| geo/isaac/portfolio/twin_tracking_like_tracking_MOV_1280x720.png (local) | Isaac | matches tracking.MOV (Downloads; real FR20, 2026-09-30 ~20:07, the interactive mode: the guest behind the glass on the left, the arm following): `--camera "2.0 -1.1 1.6 -1.6 0.45 1.0 10" --size 1280x720 --start 175.6` (the arm at greet), matched by eye -- too far from the video's camera and pose to pair (not used on the site). No Femto recording of that session on this PC (the robot laptop may have one), so no replay clip yet |
 | tracking.MOV (Downloads; 1280x720, 70 s) | **real FR20**, 2026-09-30 ~20:07 | the interactive mode with a guest: the guest raises a hand behind the glass, the arm turns and follows |
 
 Still to make (1600 px, clean -- the Karma previews are noisy): atlas, cell,
