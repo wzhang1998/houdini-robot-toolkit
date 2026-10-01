@@ -236,14 +236,14 @@
     1.0
    ]
   },
-  "speed_mps": 0.2,
+  "speed_mps": 0.15,
   "accel_mps2": 0.8,
   "led_gap_m": 0.002,
   "lead_m": 0.02,
   "safety": 0.5,
   "from_hub": "rest",
   "approach_m": 0.2,
-  "_note": "One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed). The LEDs' face 2 mm from the paper, the nearest the user asked for (2026-10-01: 3.5 cm too faint, 8 mm good, nearer better): the scan and its moves keep 0.8 mm from it (margins.scan_canvas_m), the bar's collision model 0.93 mm past its rim."
+  "_note": "One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed). The LEDs' face 2 mm from the paper, the nearest the user asked for (2026-10-01: 3.5 cm too faint, 8 mm good, nearer better): the scan and its moves keep 0.8 mm from it (margins.scan_canvas_m), the bar's collision model 0.93 mm past its rim. At 0.15 m/s: on the arm 0.15 painted best of 0.15-0.4 (the user, 2026-10-01)."
  },
  "margins": {
   "idle_canvas_m": 0.15,

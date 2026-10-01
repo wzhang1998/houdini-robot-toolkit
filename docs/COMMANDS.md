@@ -49,7 +49,7 @@ distance (the pressed bar had sat 1.7 mm into it).
 
 The scan plays at its built speed times the scan speed (show_ui / scan_test_ui's
 "Scan speed", `--scan-speed`), whatever the show's speed: the arm's 0.3 slows
-every other move, not the exposure (the party's scan: 0.2 m/s).
+every other move, not the exposure (the party's scan: 0.15 m/s, 2 mm from the paper).
 
 Faster than the show's scan (the scan speed only slows a build down):
 `--speed V --accel A` builds the variant at V m/s to `..._gap<mm>_v<cm/s>`,

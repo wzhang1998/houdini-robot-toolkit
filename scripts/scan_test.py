@@ -190,10 +190,11 @@ def self_test():
     check("scan at half its speed: SCAN, the LEDs' u moving across", r.moving and r.scan_speed == 0.5
           and r.state == "SCAN")
     t_scan = r.scan.duration / 0.5
+    built_mps = g.info.get("scan_speed_mps") or 0.2             # the build's own (0.15 for the party since 2026-10-01)
     qs = run(t_scan * 0.5)
     mid = r.status()
     check("... halfway through at half speed: u near 0.5, the LEDs on, the strip at half the built m/s, the time "
-          "left at that speed", 0.35 < mid["scan_u"] < 0.65 and mid["scan_led"] == 1 and abs(mid["scan_mps"] - 0.1) < 0.01
+          "left at that speed", 0.35 < mid["scan_u"] < 0.65 and mid["scan_led"] == 1 and abs(mid["scan_mps"] - 0.5 * built_mps) < 0.01
           and abs(mid["time_left"] - t_scan / 2) < 0.05, mid)
     qs += run(t_scan * 0.5 + 0.5)
     check("... then held at its end, return allowed", qs[-1] == r.scan.q[-1] and r.at == END
