@@ -1060,13 +1060,17 @@ _STRIP = {}
 
 
 def strip_face(robot="fr20"):
-    """(offset along the tool's z to the LEDs' face, the strip's length) from
-    the profile's tool (collision.strip_box, in the flange's frame)."""
+    """(offset along the tool's z to the LEDs' face, the LEDs' length) from
+    the profile's tool (collision.strip_box, in the flange's frame); the
+    length the tool block's led_span_m when it says (the bar with its end
+    caps is longer than its row of LEDs), else the box's."""
     if robot not in _STRIP:
         import collision as C
         import robot_profile as RP
-        box = C.strip_box(C.tool_def(RP.load(robot)))
-        _STRIP[robot] = (box["xyz"][2] + box["size"][2] / 2.0, box["size"][1]) if box else (0.0, 0.0)
+        prof = RP.load(robot)
+        box = C.strip_box(C.tool_def(prof))
+        span = (prof.get("tool") or {}).get("led_span_m")
+        _STRIP[robot] = (box["xyz"][2] + box["size"][2] / 2.0, float(span or box["size"][1])) if box else (0.0, 0.0)
     return _STRIP[robot]
 
 
@@ -1161,13 +1165,20 @@ def warm_cues(graph):
 
 
 def strip_ends(q, robot="fr20"):
-    """(a, b): the strip's ends at pose q, the robot's frame (m); a LED 0's end (motion_cues' end a, the
-    collision model's tool_strip capsule) -- where TouchDesigner's guest light puts a guest along it."""
+    """(a, b): the ends of the strip's row of LEDs at pose q, the robot's frame (m); a LED 0's end (motion_cues'
+    end a): the collision model's tool_strip capsule's middle and axis, as long as the LEDs (strip_face: the bar
+    with its end caps is longer) -- where TouchDesigner's guest light puts a guest along it."""
     import collision as C
     if not _CUE_MODEL:
         _CUE_MODEL.append(C.load_model(robot))
     c = next((c for c in C.capsules(_CUE_MODEL[0], q)[0] if c[0] == "tool_strip"), None)
-    return (list(c[1]), list(c[2])) if c else ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    if c is None:
+        return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    mid = [(x + y) / 2.0 for x, y in zip(c[1], c[2])]
+    n = math.dist(c[1], c[2]) or 1.0
+    half = strip_face(robot)[1] / 2.0
+    ax = [(y - x) / n for x, y in zip(c[1], c[2])]
+    return [m - d * half for m, d in zip(mid, ax)], [m + d * half for m, d in zip(mid, ax)]
 
 
 SCAN_GAP_M = 0.06                   # the scan's LEDs to the paper: paper_light's 1
@@ -2123,9 +2134,14 @@ def self_test():
     import collision as C
     cap = next(c for c in C.capsules(C.load_model("fr20"), q0)[0] if c[0] == "tool_strip")
     a_, b_ = strip_ends(q0)
-    check("the strip's ends where the arm is: the collision model's strip (a: LED 0's end), a metre apart",
-          max(abs(x - y) for x, y in zip(a_ + b_, list(cap[1]) + list(cap[2]))) < 1e-6
-          and abs(math.dist(a_, b_) - 1.0) < 0.05, (a_, b_))
+    mid_c = [(x + y) / 2.0 for x, y in zip(cap[1], cap[2])]
+    along = [(y - x) / math.dist(cap[1], cap[2]) for x, y in zip(cap[1], cap[2])]
+    check("the strip's LED row where the arm is: on the collision model's strip, its middle, a to b as it runs "
+          "(a: LED 0's end), as long as the LEDs (led_span_m, not the bar with its caps)",
+          max(abs((x + y) / 2.0 - m) for x, y, m in zip(a_, b_, mid_c)) < 1e-9
+          and sum((y - x) * d for x, y, d in zip(a_, b_, along)) > 0.999 * math.dist(a_, b_)
+          and abs(math.dist(a_, b_) - strip_face()[1]) < 1e-9 and math.dist(a_, b_) < math.dist(cap[1], cap[2]),
+          (round(math.dist(a_, b_), 4), round(math.dist(cap[1], cap[2]), 4)))
     check("OSC carries them: /robot/strip_a, /robot/strip_b (x y z, the robot's frame; TD's guest light)",
           msgs["/robot/strip_a"] == [round(x, 4) for x in a_] and msgs["/robot/strip_b"] == [round(x, 4) for x in b_],
           (msgs["/robot/strip_a"], msgs["/robot/strip_b"]))

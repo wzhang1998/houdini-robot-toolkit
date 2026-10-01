@@ -78,6 +78,23 @@ a controller EtherCAT fault, before it began).
 
 ## Failures and what they taught
 
+- **The real LED bar would have hit the arm in half the show** (2026-10-01,
+  before it went on the arm). The show had been built for the tool as
+  specified before it existed: a 1.0 m strip, 25 x 20 mm, 70 mm out on a
+  40 mm bracket. The fab team's CAD (FULLUVBAR, STEP) is 1087.5 mm long with
+  its end caps, 37 x 35 mm in section, on a 116 mm plate, 47 mm out.
+  - *Found*: every motion of the compiled show checked again with the bar
+    as built: 43 of 87 segments failed -- the forearm into the bar (capsules
+    4.8 cm into each other, 12 clips) and into the plate (2.3 cm, 5), the
+    bar's end 5 mm under the floor's margin plane in 10 low clips, and 20
+    greet clips 26 cm from the ceiling (the sprinkler's 30 cm margin).
+  - *Fix*: the bar's URDF from the CAD (assets/tools/uv_bar.urdf), the show
+    rebuilt with it: 86 segments, every one clear (nearest: the plate 4.3 cm
+    from the paper in the scan); one big wipe (greet_wipe_cols) refused. Isaac
+    shows the bar as built (the CAD as one mesh, cad_tool_mesh.py).
+  - *Lesson*: check the show again whenever the tool is measured, before the
+    arm moves with it.
+
 - **A 30 min stream stuttered, and the log hid a clock drift** (2026-09-27,
   SimMachine). The first 30 min run skipped 159 ticks in 31 bursts, and
   feedback stalled for up to 0.22 s at t = 72, 401, 810, 1032, 1310, 1662 s.

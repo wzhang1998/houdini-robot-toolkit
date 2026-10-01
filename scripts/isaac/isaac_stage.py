@@ -212,7 +212,19 @@ def attach_tool(stage, robot_root="/World/fr20", profile="fr20"):
         cube.AddScaleOp().Set(Gf.Vec3d(*b["size"]))
         UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
         PhysxSchema.PhysxContactReportAPI.Apply(cube.GetPrim()).CreateThresholdAttr().Set(0.0)
-    print("[show] tool %s on %s: %s" % (tool["name"], link.GetPath(), ", ".join(b["name"] for b in tool["boxes"])))
+    vis = (prof.get("tool") or {}).get("visual")
+    if vis and os.path.exists(os.path.join(ROOT, vis["usd"])):
+        # the tool as built (its CAD, converted to USD) seen; the boxes still collide, unseen
+        for b in tool["boxes"]:
+            UsdGeom.Imageable(stage.GetPrimAtPath(base.AppendChild(b["name"]))).MakeInvisible()
+        cad = UsdGeom.Xform.Define(stage, base.AppendChild("cad"))
+        t = vis.get("translate_m", [0.0, 0.0, 0.0])
+        cad.AddTranslateOp().Set(Gf.Vec3d(t[0], t[1], t[2] + fo))
+        cad.AddRotateZOp().Set(float(vis.get("rotate_z_deg", 0.0)))
+        cad.AddScaleOp().Set(Gf.Vec3d(*[float(vis.get("scale", 1.0))] * 3))
+        add_reference_to_stage(os.path.join(ROOT, vis["usd"]), cad.GetPath().pathString + "/model")
+    print("[show] tool %s on %s: %s%s" % (tool["name"], link.GetPath(), ", ".join(b["name"] for b in tool["boxes"]),
+                                         " (seen as %s)" % vis["usd"] if vis else ""))
     return base.pathString
 
 

@@ -526,8 +526,9 @@ def self_test():
           all(len(x) == len(msgs[0]) for x in msgs) and via["state"] in ("IDLE", "MOVE", "PAUSED")
           and "mode" not in via, (len(msgs), via.get("state")))
     m, logs, worst, bad, qs = run(nobody, 200.0, end_at=30.0)
+    still = max(abs(x - y) for x, y in zip(qs[-1], qs[-2])) < 1e-4    # a Ruckig move ends within ~1e-5 deg
     check("End: the clip finishes at a hub, still, then the mode is PAUSED (the stream ends)",
-          m.state == "PAUSED" and m.r.state == "PAUSED" and max(abs(x - y) for x, y in zip(qs[-1], qs[-2])) < 1e-9,
+          m.state == "PAUSED" and m.r.state == "PAUSED" and still,
           (m.state, m.r.hub, round(m.clock, 1)))
     m, logs, worst, bad, qs = run(visitor, 120.0, end_if=lambda m: m.en.state == "TRACK")
     check("End while engaged: goodbye, back at greet, then PAUSED there", m.state == "PAUSED" and m.r.hub == GREET

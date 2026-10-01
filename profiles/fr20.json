@@ -82,7 +82,8 @@
     "strip along J5's axis): every generated motion keeps J6 inside it",
     "(robot_profile.motion_limits); the user's call, 2026-09-28."
   ],
-  "tool": {"urdf": "assets/tools/led_strip.urdf", "mass_kg": null, "cable_j6_deg": [-150.0, 150.0]},
+  "tool": {"urdf": "assets/tools/uv_bar.urdf", "mass_kg": null, "cable_j6_deg": [-150.0, 150.0], "led_span_m": 1.0,
+           "visual": {"usd": "assets/tools/cad/uv_bar_visual.usda"}},
 
   "output": {
     "_comment_writer": "No Fairino-specific writer exists yet. The CSV columns (time_s, j1_deg..j6_deg) are controller-neutral; how the Fairino side consumes them is still open.",
