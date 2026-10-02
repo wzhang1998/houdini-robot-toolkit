@@ -447,12 +447,13 @@ def check_sim_ip(ip):
 
 def start_env(cfg, canvas_margin=None):
     """The room the move to the start hub is checked in: the show's, with the paper at the scan's own margin
-    (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4). canvas_margin:
-    a scan variant's own (show.py build --scan-only --gap --scan-margin), else margins.scan_canvas_m."""
+    (after a stopped scan the arm may be right at it) -- not the bare room (audit 2026-09-29, 4) -- and the
+    scan's own stage (scan.stage: there it may be beyond the idle clips'). canvas_margin: a scan variant's own
+    (show.py build --scan-only --gap --scan-margin), else margins.scan_canvas_m."""
     import collision as C
     import show as S
     margin = cfg["margins"]["scan_canvas_m"] if canvas_margin is None else canvas_margin
-    env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, margin)
+    env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, margin, scan=True)
     return dict(env, objects=[dict(o, keep_margin=True) if o["name"] == "canvas" else o for o in env["objects"]])
 
 
@@ -999,6 +1000,12 @@ def self_test():
         check("a scan variant's own (smaller) margin is the start move's: after it stops 8 mm from the paper the "
               "arm is not inside the show's margin, refused", near["margin_m"] == 0.003 and cv["margin_m"] ==
               pcfg["margins"]["scan_canvas_m"], (near["margin_m"], cv["margin_m"]))
+        wide = {"name": "stage", "center": [0.0, 0.6, 1.0], "size": [3.0, 3.0, 2.0], "yaw_deg": -11.28}
+        st = next(o for o in start_env(dict(pcfg, scan=dict(pcfg["scan"], stage=wide)))["objects"]
+                  if o["name"] == "stage")
+        check("the move to the start hub is checked in the scan's own stage (scan.stage): after a stop beyond "
+              "the idle clips' (party_lr's scan, moved right) the arm can still go home", st["size"] == wide["size"],
+              st["size"])
 
     ob = S.OscBridge.__new__(S.OscBridge)
     ob.allow = S.osc_allow("127.0.0.1", [("10.0.0.5", 9002)])

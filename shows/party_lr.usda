@@ -1,0 +1,48 @@
+#usda 1.0
+(
+    defaultPrim = "Room"
+    metersPerUnit = 1
+    subLayers = [
+        @../envs/volvox_lab_lr.usda@
+    ]
+    upAxis = "Z"
+)
+
+over "Room"
+{
+    over "Objects"
+    {
+        def Cube "canvas" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the show's paper (placeholder)"
+        )
+        {
+            rel material:binding = </Room/Looks/canvas>
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.2754172516541
+            double3 xformOp:scale = (0.02, 2.4, 1.8)
+            double3 xformOp:translate = (0.224, 1.1391, 0.9)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+    }
+
+    over "Looks"
+    {
+        def Material "canvas"
+        {
+            token outputs:surface.connect = </Room/Looks/canvas/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.96, 0.96, 0.93)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+    }
+}
+

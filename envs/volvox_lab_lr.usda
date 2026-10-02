@@ -1,0 +1,571 @@
+#usda 1.0
+(
+    defaultPrim = "Room"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Room" (
+    doc = "FR20 base (URDF): Z up from the base's mounting face; the arm's zero pose points along -X, which is the robot's working front; metres"
+)
+{
+    custom double motionlab:margin_m = 0.05
+    custom string motionlab:source = "volvox_lab.usda with the controller's zone widened 356 mm towards the cart (X max 950 mm) for party_lr (its scan left to right, moved 0.3 m that way, in its own scan.stage; the idle clips keep the stage, as the room's; the user, 2026-10-02); everything else as there. MEASURED 2026-09-25 on the real FR20: floor (level), left partition and TV wall (vertical fits) with scripts/probe_ui.py; ceiling grid by tape (2.16 m); tv, furniture_back (side table), control_cart, shelves_right, back and right walls from a RoomPlan scan (Project-2609251250.usdz) aligned to the probed walls with scripts/scan_to_env.py (the two walls agree to 0.47 deg). The room is square and the arm is mounted turned ~11 deg on a plate that is square to it. The plant and the operator's place marked by the user on a screenshot (+-0.2 m). Still ESTIMATED: the plant's size, base_plate size."
+
+    def Scope "Structure"
+    {
+        def Xform "floor"
+        {
+            double xformOp:rotateZ = -11.28123413421394
+            double3 xformOp:translate = (0.15812585708566682, 0.5525706123592845, -0.0048)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+                doc = "level, at the one floor point probed with the flange flat (tilt 2 deg): z -0.0048. The two taken with the flange tilted ~7 deg read 1-2 cm high (the rim touches first) -- a pointed probe tool would remove this. The floor cannot be above the plate the base stands on (z 0)."
+            )
+            {
+                rel material:binding = </Room/Looks/floor>
+                custom string motionlab:measured = "true"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                double3 xformOp:scale = (3.7810473630695958, 3.5721141920016857, 0.05)
+                double3 xformOp:translate = (0, 0, -0.025)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "ceiling"
+        {
+            double xformOp:rotateZ = -11.28123413421394
+            double3 xformOp:translate = (0.15812585708566682, 0.5525706123592845, 2.1552)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+                doc = "lowest point of the load-bearing grid under the ceiling: 2.16 m by tape (2026-09-25); the ceiling itself is 2.38 m (RoomPlan scan). The raised arm reaches 2.16 m: this plane is in play"
+            )
+            {
+                custom string motionlab:measured = "tape"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                token visibility = "invisible"
+                double3 xformOp:scale = (3.7810473630695958, 3.5721141920016857, 0.05)
+                double3 xformOp:translate = (0, 0, 0.025)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def BasisCurves "outline"
+            {
+                int[] curveVertexCounts = [5]
+                point3f[] points = [(-1.8105236, 1.691178, 0), (-1.8105236, -1.7060571, 0), (1.8105236, -1.6761801, 0), (1.7965721, 1.7060571, 0), (-1.8105236, 1.691178, 0)]
+                color3f[] primvars:displayColor = [(0.7, 0.72, 0.75)] (
+                    interpolation = "constant"
+                )
+                uniform token type = "linear"
+                float[] widths = [0.015] (
+                    interpolation = "constant"
+                )
+            }
+        }
+
+        def Xform "wall_tv"
+        {
+            double xformOp:rotateZ = -11.28123413421394
+            double3 xformOp:translate = (-1.618871665806994, 0.8994584212041561, 1.0751999999999997)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+                doc = "carved panel wall with the TV; vertical fit, probed 2026-09-25 (rms 6.4 mm)"
+            )
+            {
+                custom string motionlab:measured = "true"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                token visibility = "invisible"
+                double3 xformOp:scale = (0.08, 3.5572350934360872, 2.26)
+                double3 xformOp:translate = (-0.04, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Mesh "face" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform bool doubleSided = 0
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                rel material:binding = </Room/Looks/wall>
+                point3f[] points = [(-1.110223e-16, 1.6986176, 1.08), (-1.110223e-16, -1.6986176, 1.08), (-1.110223e-16, -1.6986176, -1.08), (-1.110223e-16, 1.6986176, -1.08)]
+                custom bool singleSided = 1
+                uniform token subdivisionScheme = "none"
+            }
+        }
+
+        def Xform "partition_left"
+        {
+            double xformOp:rotateZ = 79.1914973836886
+            double3 xformOp:translate = (-0.17269915193333563, -1.1058735487640199, 1.0751999999999997)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+                doc = "the wall on the robot's left (the 'glass partition' note was a photo guess); vertical fit, probed 2026-09-25 (rms 2.9 mm)"
+            )
+            {
+                custom string motionlab:measured = "true"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                token visibility = "invisible"
+                double3 xformOp:scale = (0.08, 3.7811706168874197, 2.26)
+                double3 xformOp:translate = (-0.04, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Mesh "face" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform bool doubleSided = 0
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                rel material:binding = </Room/Looks/glass_face>
+                point3f[] points = [(5.551115e-16, 1.8105853, 1.08), (-5.551115e-16, -1.8105853, 1.08), (-5.551115e-16, -1.8105853, -1.08), (5.551115e-16, 1.8105853, -1.08)]
+                custom bool singleSided = 1
+                uniform token subdivisionScheme = "none"
+            }
+        }
+
+        def Xform "wall_back"
+        {
+            double xformOp:rotateZ = 168.9551068902526
+            double3 xformOp:translate = (1.929749351882713, 0.21440146905067103, 1.0751999999999997)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+                doc = "RoomPlan Wall0+Wall4 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); behind the robot, with the door (Door1) the control cart stands by"
+            )
+            {
+                custom string motionlab:measured = "scan"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                token visibility = "invisible"
+                double3 xformOp:scale = (0.08, 3.5422660354960116, 2.26)
+                double3 xformOp:translate = (-0.04, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Mesh "face" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform bool doubleSided = 0
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                rel material:binding = </Room/Looks/glass_face>
+                point3f[] points = [(-1.6653345e-16, 1.691133, 1.08), (3.8857806e-16, -1.691133, 1.08), (3.8857806e-16, -1.691133, -1.08), (-1.6653345e-16, 1.691133, -1.08)]
+                custom bool singleSided = 1
+                uniform token subdivisionScheme = "none"
+            }
+        }
+
+        def Xform "wall_right_glass"
+        {
+            double xformOp:rotateZ = -101.04489310974739
+            double3 xformOp:translate = (0.4835768380090544, 2.219733439018847, 1.0751999999999997)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "slab" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+                doc = "RoomPlan Wall3 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg); a glass wall: RoomPlan read the glass as a 3.55 m opening (Door0), it is solid (user) -- kept as a solid plane"
+            )
+            {
+                custom string motionlab:measured = "scan"
+                custom string motionlab:role = "obstacle"
+                double size = 1
+                token visibility = "invisible"
+                double3 xformOp:scale = (0.08, 3.7671264829182944, 2.26)
+                double3 xformOp:translate = (-0.04, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Mesh "face" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform bool doubleSided = 0
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                rel material:binding = </Room/Looks/glass_face>
+                point3f[] points = [(-2.7755576e-16, -1.8035632, -1.08), (-1.6653345e-16, 1.8035632, -1.08), (-1.6653345e-16, 1.8035632, 1.08), (-2.7755576e-16, -1.8035632, 1.08)]
+                custom bool singleSided = 1
+                uniform token subdivisionScheme = "none"
+            }
+        }
+    }
+
+    def Scope "Objects"
+    {
+        def Cube "base_plate" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the plate the base is bolted to: square to the room, the arm on it turned ~11 deg (user, 2026-09-25); size and centre still estimated. The upper-arm capsule runs ~6 cm fat near it, so no extra margin"
+        )
+        {
+            rel material:binding = </Room/Looks/base_plate>
+            custom double motionlab:margin_m = 0
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = -11.28
+            double3 xformOp:scale = (1.1, 0.8, 0.02)
+            double3 xformOp:translate = (-0.15, -0, -0.01)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "tv" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "on the TV wall;; RoomPlan Television0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+        )
+        {
+            rel material:binding = </Room/Looks/tv>
+            custom string motionlab:measured = "scan"
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.96
+            double3 xformOp:scale = (1.6797, 0.0994, 0.8982)
+            double3 xformOp:translate = (-1.5778, 0.863, 1.463)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "furniture_back" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "drawer cart / AC / heater: the TV wall was touched at y -0.19..0.68 below 0.9 m, so kept only at y > 0.8;; RoomPlan Table0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+        )
+        {
+            rel material:binding = </Room/Looks/furniture>
+            custom string motionlab:measured = "scan"
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = 78.96
+            double3 xformOp:scale = (0.5874, 0.5282, 0.5015)
+            double3 xformOp:translate = (-1.2299, 1.5259, 0.246)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "shelves_right" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "RoomPlan Storage0 (Project-2609251250.usdz, aligned to the probed Wall2=wall_tv / Wall1=partition_left / floor, yaw 153.03 deg)"
+        )
+        {
+            rel material:binding = </Room/Looks/shelves>
+            custom string motionlab:measured = "scan"
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = -11.04
+            double3 xformOp:scale = (0.9242, 0.3185, 1.8005)
+            double3 xformOp:translate = (1.6588, 1.8281, 0.8954)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cube "control_cart" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "red cart: laptop, E-stop; by the door behind the robot (user confirmed on the scan); RoomPlan Storage1"
+        )
+        {
+            rel material:binding = </Room/Looks/cart>
+            custom string motionlab:measured = "scan"
+            custom string motionlab:role = "obstacle"
+            double size = 1
+            double xformOp:rotateZ = -101.04
+            double3 xformOp:scale = (0.6937, 0.6337, 1.0909)
+            double3 xformOp:translate = (1.5562, -0.0452, 0.5407)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Cylinder "plant" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            doc = "the one plant: front-right corner (TV wall / glass wall); position read off a Houdini screenshot the user marked, 2026-09-25 (+-0.2 m); radius and height estimated"
+        )
+        {
+            uniform token axis = "Z"
+            double height = 1.9
+            rel material:binding = </Room/Looks/plant>
+            custom string motionlab:role = "obstacle"
+            double radius = 0.3
+            double3 xformOp:translate = (-1.074, 2.099, 0.95)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
+    def Scope "Zones"
+    {
+        def Xform "operator"
+        {
+            double3 xformOp:translate = (1.453, -0.661, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+
+            def Cylinder "volume" (
+                doc = "where the operator stands, hand on the E-stop: behind the robot beside the control cart, door side (user, 2026-09-25; +-0.2 m). Keep-out: no link may enter"
+            )
+            {
+                uniform token axis = "Z"
+                double height = 2
+                custom string motionlab:role = "keep_out"
+                uniform token purpose = "guide"
+                double radius = 0.4
+                double3 xformOp:translate = (0, 0, 1)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+
+            def BasisCurves "outline"
+            {
+                int[] curveVertexCounts = [37, 37, 2, 2, 2, 2, 2, 2]
+                point3f[] points = [(0.31734133, 0.24350457, 0), (0.28284273, 0.28284273, 0), (0.24350457, 0.31734133, 0), (0.2, 0.34641016, 0), (0.15307337, 0.3695518, 0), (0.10352762, 0.38637033, 0), (0.052210476, 0.39657795, 0), (0, 0.4, 0), (-0.052210476, 0.39657795, 0), (-0.10352762, 0.38637033, 0), (-0.15307337, 0.3695518, 0), (-0.2, 0.34641016, 0), (-0.24350457, 0.31734133, 0), (-0.28284273, 0.28284273, 0), (-0.31734133, 0.24350457, 0), (-0.34641016, 0.2, 0), (-0.3695518, 0.15307337, 0), (-0.38637033, 0.10352762, 0), (-0.39657795, 0.052210476, 0), (-0.4, 0, 0), (-0.39657795, -0.052210476, 0), (-0.38637033, -0.10352762, 0), (-0.3695518, -0.15307337, 0), (-0.34641016, -0.2, 0), (-0.31734133, -0.24350457, 0), (-0.28284273, -0.28284273, 0), (-0.24350457, -0.31734133, 0), (-0.2, -0.34641016, 0), (-0.15307337, -0.3695518, 0), (-0.10352762, -0.38637033, 0), (-0.052210476, -0.39657795, 0), (0, -0.4, 0), (0.052210476, -0.39657795, 0), (0.10352762, -0.38637033, 0), (0.15307337, -0.3695518, 0), (0.2, -0.34641016, 0), (0.24350457, -0.31734133, 0), (0.31734133, 0.24350457, 2), (0.28284273, 0.28284273, 2), (0.24350457, 0.31734133, 2), (0.2, 0.34641016, 2), (0.15307337, 0.3695518, 2), (0.10352762, 0.38637033, 2), (0.052210476, 0.39657795, 2), (0, 0.4, 2), (-0.052210476, 0.39657795, 2), (-0.10352762, 0.38637033, 2), (-0.15307337, 0.3695518, 2), (-0.2, 0.34641016, 2), (-0.24350457, 0.31734133, 2), (-0.28284273, 0.28284273, 2), (-0.31734133, 0.24350457, 2), (-0.34641016, 0.2, 2), (-0.3695518, 0.15307337, 2), (-0.38637033, 0.10352762, 2), (-0.39657795, 0.052210476, 2), (-0.4, 0, 2), (-0.39657795, -0.052210476, 2), (-0.38637033, -0.10352762, 2), (-0.3695518, -0.15307337, 2), (-0.34641016, -0.2, 2), (-0.31734133, -0.24350457, 2), (-0.28284273, -0.28284273, 2), (-0.24350457, -0.31734133, 2), (-0.2, -0.34641016, 2), (-0.15307337, -0.3695518, 2), (-0.10352762, -0.38637033, 2), (-0.052210476, -0.39657795, 2), (0, -0.4, 2), (0.052210476, -0.39657795, 2), (0.10352762, -0.38637033, 2), (0.15307337, -0.3695518, 2), (0.2, -0.34641016, 2), (0.24350457, -0.31734133, 2), (0.28284273, 0.28284273, 0), (0.28284273, 0.28284273, 2), (0, 0.4, 0), (0, 0.4, 2), (-0.28284273, 0.28284273, 0), (-0.28284273, 0.28284273, 2), (-0.4, 0, 0), (-0.4, 0, 2), (-0.28284273, -0.28284273, 0), (-0.28284273, -0.28284273, 2), (0, -0.4, 0), (0, -0.4, 2)]
+                color3f[] primvars:displayColor = [(0.95, 0.2, 0.15)] (
+                    interpolation = "constant"
+                )
+                uniform token type = "linear"
+                float[] widths = [0.005] (
+                    interpolation = "constant"
+                )
+            }
+        }
+
+        def Xform "operator_slow"
+        {
+            double3 xformOp:translate = (1.453, -0.661, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+
+            def Cylinder "volume" (
+                doc = "ISO/TS 15066-style reduced speed round the operator: inside it the TCP may not exceed 0.25 m/s"
+            )
+            {
+                uniform token axis = "Z"
+                double height = 2.4
+                custom string motionlab:role = "slow"
+                custom double motionlab:tcp_speed_mps = 0.25
+                uniform token purpose = "guide"
+                double radius = 1.3
+                double3 xformOp:translate = (0, 0, 1.2)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+
+            def BasisCurves "outline"
+            {
+                int[] curveVertexCounts = [19, 19, 2, 2, 2]
+                point3f[] points = [(0.49748847, 1.2010434, 0), (0.33646476, 1.2557036, 0), (0.16968405, 1.2888783, 0), (0, 1.3, 0), (-0.16968405, 1.2888783, 0), (-0.33646476, 1.2557036, 0), (-0.49748847, 1.2010434, 0), (-0.65, 1.125833, 0), (-0.7913899, 1.0313593, 0), (-0.9192388, 0.9192388, 0), (-1.0313593, 0.7913899, 0), (-1.125833, 0.65, 0), (-1.2010434, 0.49748847, 0), (-1.2557036, 0.33646476, 0), (-1.2888783, 0.16968405, 0), (-1.3, 1.110223e-16, 0), (-1.2888783, -0.16968405, 0), (-1.2557036, -0.33646476, 0), (-1.2010434, -0.49748847, 0), (0.49748847, 1.2010434, 2.4), (0.33646476, 1.2557036, 2.4), (0.16968405, 1.2888783, 2.4), (0, 1.3, 2.4), (-0.16968405, 1.2888783, 2.4), (-0.33646476, 1.2557036, 2.4), (-0.49748847, 1.2010434, 2.4), (-0.65, 1.125833, 2.4), (-0.7913899, 1.0313593, 2.4), (-0.9192388, 0.9192388, 2.4), (-1.0313593, 0.7913899, 2.4), (-1.125833, 0.65, 2.4), (-1.2010434, 0.49748847, 2.4), (-1.2557036, 0.33646476, 2.4), (-1.2888783, 0.16968405, 2.4), (-1.3, 1.110223e-16, 2.4), (-1.2888783, -0.16968405, 2.4), (-1.2557036, -0.33646476, 2.4), (-1.2010434, -0.49748847, 2.4), (0, 1.3, 0), (0, 1.3, 2.4), (-0.9192388, 0.9192388, 0), (-0.9192388, 0.9192388, 2.4), (-1.3, 1.110223e-16, 0), (-1.3, 1.110223e-16, 2.4)]
+                color3f[] primvars:displayColor = [(1, 0.65, 0.1)] (
+                    interpolation = "constant"
+                )
+                uniform token type = "linear"
+                float[] widths = [0.005] (
+                    interpolation = "constant"
+                )
+            }
+        }
+
+        def Xform "stage"
+        {
+            double xformOp:rotateZ = -11.28
+            double3 xformOp:translate = (-0.3898, 0.6676, 1.0026)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "volume" (
+                doc = "where the TCP performs: room-aligned, 0.15 m inside the TV wall, the left partition and the right glass wall, 0.6 m behind the base (the operator and cart side stays out), 0.15 m under the ceiling"
+            )
+            {
+                custom string motionlab:role = "work"
+                uniform token purpose = "guide"
+                double size = 1
+                double3 xformOp:scale = (2.2136, 3.0857, 2.0052)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def BasisCurves "outline"
+            {
+                int[] curveVertexCounts = [5, 5, 2, 2, 2, 2]
+                point3f[] points = [(-1.1068, -1.54285, -1.0026), (1.1068, -1.54285, -1.0026), (1.1068, 1.54285, -1.0026), (-1.1068, 1.54285, -1.0026), (-1.1068, -1.54285, -1.0026), (-1.1068, -1.54285, 1.0026), (1.1068, -1.54285, 1.0026), (1.1068, 1.54285, 1.0026), (-1.1068, 1.54285, 1.0026), (-1.1068, -1.54285, 1.0026), (-1.1068, -1.54285, -1.0026), (-1.1068, -1.54285, 1.0026), (1.1068, -1.54285, -1.0026), (1.1068, -1.54285, 1.0026), (1.1068, 1.54285, -1.0026), (1.1068, 1.54285, 1.0026), (-1.1068, 1.54285, -1.0026), (-1.1068, 1.54285, 1.0026)]
+                color3f[] primvars:displayColor = [(0.2, 0.85, 0.35)] (
+                    interpolation = "constant"
+                )
+                uniform token type = "linear"
+                float[] widths = [0.005] (
+                    interpolation = "constant"
+                )
+            }
+        }
+
+        def Xform "controller_zone"
+        {
+            double xformOp:rotateZ = -11.28
+            double3 xformOp:translate = (-0.2272, 0.5735, 0.85)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "volume" (
+                doc = "the controller's own work area (WebApp interference zone, two-point: X -1620..950, Y -964..2000, Z 100..1600 mm: volvox_lab's X 594 widened 356 mm towards the cart for party_lr's scan, left to right and 0.3 m that way -- the controller must be set so before it runs). Set in the room-aligned workpiece frame (base turned -11.28 deg, same origin) -- confirmed by the user 2026-09-25. The controller stops the arm when the TCP leaves it (auto mode), so clips and moves keep the TCP inside"
+            )
+            {
+                custom string motionlab:role = "work"
+                uniform token purpose = "guide"
+                double size = 1
+                double3 xformOp:scale = (2.5700, 2.964, 1.5)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def BasisCurves "outline"
+            {
+                int[] curveVertexCounts = [5, 5, 2, 2, 2, 2]
+                point3f[] points = [(-1.285, -1.482, -0.75), (1.285, -1.482, -0.75), (1.285, 1.482, -0.75), (-1.285, 1.482, -0.75), (-1.285, -1.482, -0.75), (-1.285, -1.482, 0.75), (1.285, -1.482, 0.75), (1.285, 1.482, 0.75), (-1.285, 1.482, 0.75), (-1.285, -1.482, 0.75), (-1.285, -1.482, -0.75), (-1.285, -1.482, 0.75), (1.285, -1.482, -0.75), (1.285, -1.482, 0.75), (1.285, 1.482, -0.75), (1.285, 1.482, 0.75), (-1.285, 1.482, -0.75), (-1.285, 1.482, 0.75)]
+                color3f[] primvars:displayColor = [(0.2, 0.85, 0.35)] (
+                    interpolation = "constant"
+                )
+                uniform token type = "linear"
+                float[] widths = [0.005] (
+                    interpolation = "constant"
+                )
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "floor"
+        {
+            token outputs:surface.connect = </Room/Looks/floor/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.36, 0.24, 0.15)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+        }
+
+        def Material "base_plate"
+        {
+            token outputs:surface.connect = </Room/Looks/base_plate/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.78, 0.64, 0.45)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+        }
+
+        def Material "wall"
+        {
+            token outputs:surface.connect = </Room/Looks/wall/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.86, 0.85, 0.82)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "tv"
+        {
+            token outputs:surface.connect = </Room/Looks/tv/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.02, 0.02, 0.025)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.2
+                token outputs:surface
+            }
+        }
+
+        def Material "furniture"
+        {
+            token outputs:surface.connect = </Room/Looks/furniture/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.55, 0.4, 0.28)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.6
+                token outputs:surface
+            }
+        }
+
+        def Material "glass_face"
+        {
+            token outputs:surface.connect = </Room/Looks/glass_face/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.78, 0.86, 0.9)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.15
+                token outputs:surface
+            }
+        }
+
+        def Material "shelves"
+        {
+            token outputs:surface.connect = </Room/Looks/shelves/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.28, 0.28, 0.3)
+                float inputs:metallic = 0.7
+                float inputs:opacity = 1
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+
+        def Material "cart"
+        {
+            token outputs:surface.connect = </Room/Looks/cart/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.62, 0.08, 0.06)
+                float inputs:metallic = 0.2
+                float inputs:opacity = 1
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "plant"
+        {
+            token outputs:surface.connect = </Room/Looks/plant/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.42, 0.18)
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.8
+                token outputs:surface
+            }
+        }
+    }
+}
+

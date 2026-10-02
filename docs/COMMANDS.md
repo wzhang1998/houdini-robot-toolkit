@@ -20,6 +20,19 @@ uv run scripts/rehearse.py shows/party_bigwipe.json --speed 0.3   # the rehearsa
 uv run scripts/show.py build shows/party_bigwipe.json --scan-only --gap 0.035   # a scan 3.5 cm from the paper, to try
 ```
 
+The scan left to right instead (`shows/party_lr.json`, 2026-10-02): the strip
+upright, the area 0.3 m to the right (towards the cart), so the arm hides
+less of the fresh paint from the guests; the idle clips, hubs and moves as
+party's. Its room is `envs/volvox_lab_lr.usda`: the controller's zone X max
+**950 mm** (WebApp; 594 for party) -- set the controller so first. Pick it
+in show_ui's Show box, or `scan_test_ui.py shows/party_lr.json`. TD follows
+the show's direction itself (`/robot/scan/dir`: pixel_scan's Scan Direction).
+
+```bash
+uv run scripts/show.py build shows/party_lr.json
+uv run scripts/scan_test_ui.py shows/party_lr.json
+```
+
 Scan distances to try: `build --scan-only --gap M` writes the scan alone at
 another gap (the shade's rim to the paper) to `shows/scans/<show>_gap<mm>/`
 (in git, a few seconds each, checked as the show's). scan_test_ui's

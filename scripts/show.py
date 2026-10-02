@@ -46,6 +46,7 @@ OSC out: /robot/state s  /robot/clip s  /robot/hub s  /robot/progress f
          /robot/strip_a f*3  /robot/strip_b f*3 (the strip's ends, the robot's frame: TD's guest light)
          /robot/scan f (0..1 of the scan's time)  /robot/joints f*6
          /robot/scan/u f (across the opening, 0..1: the LEDs' column)  /robot/scan/led i  /robot/scan/speed f
+         /robot/scan/dir s (which way the show's scan goes: top_to_bottom, left_to_right ...; always sent)
 
 Backends (who moves): the dry-run clock here; Isaac Sim
 (scripts/isaac/run_show.py); SimMachine / the real FR20 next (a ServoJ
@@ -231,13 +232,16 @@ def canvas_boxes(c):
              "yaw_deg": p["yaw_deg"]} for p in canvas_parts(c)]
 
 
-def show_env(env, cfg, canvas_margin):
+def show_env(env, cfg, canvas_margin, scan=False):
     """The room for this show: the config's stage replaces the env's work zone
     of that name; the paper is an obstacle with canvas_margin; the ceiling
     keeps margins.ceiling_m from every motion (a sprinkler hangs from its
-    centre, 2026-09-28)."""
+    centre, 2026-09-28). scan: the room of the scan and its moves -- the
+    scan's own stage (scan.stage) instead, when it has one: a scan beyond
+    where the idle clips play (party_lr's, moved right), their library as
+    the show's without it."""
     objs = []
-    stage = cfg.get("stage")
+    stage = ((cfg.get("scan") or {}).get("stage") if scan else None) or cfg.get("stage")
     ceiling_m = (cfg.get("margins") or {}).get("ceiling_m")
     for o in env["objects"]:
         if stage and o["name"] == stage.get("name", "stage"):
@@ -522,7 +526,7 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
     model = C.load_model("fr20")
     env = C.load_env(os.path.join(ROOT, cfg["env"]))
     idle_env = show_env(env, cfg, cfg["margins"]["idle_canvas_m"])
-    scan_env = show_env(env, cfg, cfg["margins"]["scan_canvas_m"])
+    scan_env = show_env(env, cfg, cfg["margins"]["scan_canvas_m"], scan=True)
     import gestures as G
     rig = G.Rig()
     hubs = resolve_hubs(cfg, rig)
@@ -641,7 +645,7 @@ def build(cfg_path, log=print, scan_only=False, gap_m=None, scan_margin_m=None, 
         raise SystemExit("hubs not reachable from %s: %s" % (cfg["start_hub"], unreachable))
     if not scan_only:
         require_connected(g)
-    warn = tool_zone_report(segs, idle_env, model)
+    warn = build_warnings(segs, idle_env, scan_env, model)
     g.info["warnings"] = ["%s: %s" % w for w in warn]
     for w in g.info["warnings"]:
         log("  WARNING %s" % w)
@@ -711,6 +715,13 @@ def tool_zone_report(segs, env, model, prof=None):
             out.append((seg.name, "the LED tool point %.3f m outside %s (inset %.2f m)"
                         % (worst_work[0], worst_work[1], safe_move.WORK_INSET_M)))
     return out
+
+
+def build_warnings(segs, idle_env, scan_env, model):
+    """tool_zone_report with each motion in its own room: the scan and its moves in the scan's (scan_env: its
+    own stage, scan.stage, when it has one), the rest in the idle clips'."""
+    scan = [x for x in segs if x.kind in ("scan", "to_scan", "from_scan")]
+    return tool_zone_report([x for x in segs if x not in scan], idle_env, model) + tool_zone_report(scan, scan_env, model)
 
 
 def limit_breaches(segments, limits):
@@ -1486,6 +1497,8 @@ class Runner:
         self.hub_stay, self.sequences = hub_stay, sequences if sequences is not None else graph.info.get("sequences", {})
         # the showpieces (showpiece.py's big wipes): a trigger each, by name
         self.showpieces = [x.name for x in graph.idle() if "showpiece" in (x.labels.get("intent") or [])]
+        scans = [x for x in graph.segments if x.kind == "scan"]   # its direction: TD reads the image that way
+        self.scan_dir = (scans[0].labels or {}).get("direction") or "" if scans else ""
         self.rng = random.Random(seed)
         self.pending, self.queue, self.paused, self.fault_reason = [], [], False, None
         self.clock, self.seg_t, self.sequence = 0.0, 0.0, None
@@ -1669,7 +1682,7 @@ class Runner:
                 "beat": round(beat, 4), "bpm_now": round(bpm * rate, 2),
                 "progress": round(min(1.0, prog), 4),
                 "scan": round(min(1.0, prog), 4) if self.seg.kind == "scan" else -1.0,
-                "scan_u": u, "scan_led": led, "scan_mps": mps,
+                "scan_u": u, "scan_led": led, "scan_mps": mps, "scan_dir": self.scan_dir,
                 "time_left": round(max(0.0, self.seg.duration - self.seg_t), 2),
                 "next": self.next_up(), "queue": [self._label(x) for x in self.queue[:6]],
                 "pending": list(self.pending), "fault": self.fault_reason,
@@ -1712,7 +1725,7 @@ def osc_messages(s, q, eyes=None, canvas=None):
     return [("/robot/state", s["state"]), ("/robot/clip", s["clip"]), ("/robot/hub", s["hub"]),
             ("/robot/progress", float(s["progress"])), ("/robot/scan", float(s["scan"])),
             ("/robot/scan/u", float(s["scan_u"])), ("/robot/scan/led", int(s["scan_led"])),
-            ("/robot/scan/speed", float(s["scan_mps"])),
+            ("/robot/scan/speed", float(s["scan_mps"])), ("/robot/scan/dir", s.get("scan_dir") or ""),
             ("/robot/joints", [float(x) for x in q]),
             ("/robot/sequence", s.get("sequence") or ""), ("/robot/next", s.get("next", "")),
             ("/robot/queue", " | ".join(s.get("queue", []))), ("/robot/pending", ",".join(s.get("pending", []))),
@@ -2117,6 +2130,26 @@ def self_test():
     se = {o["name"]: o for o in show_env(room, {"margins": {"ceiling_m": 0.3}}, 0.15)["objects"]}
     check("the ceiling keeps margins.ceiling_m from every motion (the sprinkler), the floor its own",
           se["ceiling"].get("margin_m") == 0.3 and "margin_m" not in se["floor"], se)
+    staged = dict(room, objects=room["objects"] + [{"name": "stage", "type": "box", "center": [0.0, 0.0, 1.0],
+                                                    "size": [2.0, 2.0, 2.0], "yaw_deg": 0.0, "role": "work"}])
+    wide = {"name": "stage", "center": [0.2, 0.0, 1.0], "size": [2.4, 2.0, 2.0], "yaw_deg": 0.0}
+    cfg_ws = {"margins": {}, "scan": {"stage": wide}}
+    idle_st = next(o for o in show_env(staged, cfg_ws, 0.15)["objects"] if o["name"] == "stage")
+    scan_st = next(o for o in show_env(staged, cfg_ws, 0.15, scan=True)["objects"] if o["name"] == "stage")
+    check("the scan's own stage (scan.stage: a scan beyond where the idle clips play) bounds the scan alone; "
+          "the idle clips keep the room's (their library unchanged)",
+          idle_st["size"] == [2.0, 2.0, 2.0] and scan_st["size"] == [2.4, 2.0, 2.0] and scan_st["center"][0] == 0.2,
+          (idle_st, scan_st))
+    lr = os.path.join(ROOT, "shows", "party_lr.json")
+    if os.path.exists(compiled_path(lr)):
+        import collision as C
+        cfg_lr, g_lr = json.load(open(lr)), Graph.load(compiled_path(lr))
+        env_lr = C.load_env(os.path.join(ROOT, cfg_lr["env"]))
+        scan_segs = [x for x in g_lr.segments if x.kind in ("scan", "to_scan", "from_scan")]
+        w = build_warnings(scan_segs, show_env(env_lr, cfg_lr, 0.15),
+                           show_env(env_lr, cfg_lr, cfg_lr["margins"]["scan_canvas_m"], scan=True), C.load_model("fr20"))
+        check("the build's warnings take each motion in its own room: party_lr's scan inside its own stage "
+              "(scan.stage), not reported outside the idle clips'", w == [], w)
     ts, ss, (on, off) = scan_profile(1.0, 0.3, 0.5, 0.01)
     vs = [(b - a) / (t1 - t0) for a, b, t0, t1 in zip(ss, ss[1:], ts, ts[1:])]
     cruise = [v for v, t in zip(vs, ts) if on <= t <= off - 0.01]
@@ -2322,6 +2355,13 @@ def self_test():
           msgs["/robot/family"] == "wave" and msgs["/robot/clip_t"] == 0.75 and msgs["/robot/beat"] == st["beat"]
           and abs(msgs["/robot/facing"] - 1.0) < 1e-6 and "/robot/bpm_now" in msgs and "/robot/action" in msgs
           and "/robot/clip_len" in msgs, sorted(msgs))
+    pr = runner_for(party, seed=1)
+    check("OSC says which way the show's scan goes (/robot/scan/dir: TD's pixel_scan reads the image so), "
+          "outside the scan too",
+          pr.status()["scan_dir"] == "top_to_bottom"
+          and dict(osc_messages(pr.status(), q0))["/robot/scan/dir"] == "top_to_bottom"
+          and dict(osc_messages(dict(st, scan=-1.0, scan_u=-1.0, scan_led=0, scan_mps=0.0), q0))["/robot/scan/dir"] == "",
+          pr.status().get("scan_dir"))
     cv_ = {"center": [0.0, 1.0, 1.0], "normal": [0.0, 1.0, 0.0], "size": [2.0, 2.0]}
     R_, tcp_, d_ = tool_pose(q0)
     face_, _ = strip_face()

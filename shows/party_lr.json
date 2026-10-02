@@ -1,0 +1,351 @@
+{
+ "schema": "motionlab.show/3",
+ "name": "party_lr",
+ "note": "party with its scan left to right, the strip upright, the area 0.3 m to the right (towards the cart; the arm then hides less of the fresh paint from the guests: Isaac previews 2026-10-02). Its room is volvox_lab_lr: the controller's zone X max 950 mm (WebApp) -- set it so on the controller before this runs. The idle clips, hubs and moves as party's. Volvox party piece: the arm idles through a library generated for this stage and, on a trigger (TouchDesigner, OSC), plays a sequence or sweeps an LED strip across UV paper. Edited by hand or by the Houdini show scene. The canvas and the scan are PLACEHOLDERS until the paper and strip are decided (the canvas is the plane of the user's cat curve).",
+ "env": "envs/volvox_lab_lr.usda",
+ "start_hub": "rest",
+ "hubs": {
+  "rest": {
+   "q": [
+    -60.0,
+    -90.0,
+    90.0,
+    -90.0,
+    -90.0,
+    -15.0
+   ],
+   "clips": 12,
+   "generator": "choreo",
+   "zone": "idle",
+   "note": "the stage home; dance phrases (anticipation, overshoot, follow-through, breathing)"
+  },
+  "greet": {
+   "tcp": [
+    -0.1213,
+    -0.608,
+    1.28
+   ],
+   "look": [
+    -0.6659,
+    -1.8046,
+    1.5
+   ],
+   "near": [
+    64.0,
+    -100.0,
+    105.0,
+    -193.0,
+    -88.0,
+    4.0
+   ],
+   "clips": 22,
+   "generator": "gestures",
+   "zone": "greet",
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
+    "spin_sweep",
+    "window",
+    "mop",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ],
+   "note": "the tool looks at the audience; gestures and spatial paths"
+  },
+  "low": {
+   "clips": 18,
+   "generator": "gestures",
+   "zone": "low",
+   "tcp": [
+    -0.75,
+    -0.35,
+    0.55
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.5
+   ],
+   "near": [
+    6.3,
+    -69.1,
+    135.7,
+    -152.9,
+    34.1,
+    -96.6
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "broom",
+    "salute",
+    "spin_sweep",
+    "window",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
+  },
+  "high": {
+   "clips": 18,
+   "generator": "gestures",
+   "zone": "high",
+   "tcp": [
+    -0.95,
+    0.0,
+    1.45
+   ],
+   "look": [
+    -0.6561,
+    -1.7556,
+    1.35
+   ],
+   "near": [
+    -16.7,
+    -73.8,
+    62.2,
+    -175.6,
+    26.4,
+    -53.0
+   ],
+   "families": [
+    "look",
+    "wave",
+    "nod",
+    "reach",
+    "tilt",
+    "trace",
+    "peek",
+    "shy",
+    "stretch",
+    "bounce",
+    "search",
+    "rise",
+    "dive",
+    "sweep",
+    "pop",
+    "twirl",
+    "wipe",
+    "scoop",
+    "salute",
+    "spin_sweep",
+    "window",
+    "lissajous",
+    "figure8",
+    "spiral",
+    "helix",
+    "rose",
+    "spline"
+   ]
+  }
+ },
+ "library": {
+  "bars": [
+   1,
+   2
+  ],
+  "bpm": [
+   70,
+   140
+  ],
+  "duration_s": [
+   3.0,
+   12.0
+  ],
+  "seed": 11,
+  "tries": 6,
+  "actions": [],
+  "intensity": [
+   0.2,
+   1.0
+  ]
+ },
+ "sequences": {
+  "greet": {
+   "hub": "greet",
+   "count": 2
+  },
+  "calm": {
+   "hub": "rest",
+   "count": 2,
+   "mood": "float"
+  }
+ },
+ "canvas": {
+  "placeholder": true,
+  "center": [0.224, 1.1391, 0.9],
+  "normal": [
+   0.2032,
+   0.9791,
+   0.0
+  ],
+  "size": [
+   2.4,
+   1.8
+  ],
+  "thickness": 0.02,
+  "_note": "The fab team's canvas, standing on the floor: kept deliberately LARGE (2.4 x 1.8 m, floor to 1.8 m) -- the real one, smaller, sits inside it, and only collisions matter (the user, 2026-09-29). No frame. Its face on the old scan's plane (1.097 m out from J1's axis), centred on the arm: the plane's foot of J1's axis. The plane runs 1.76 m left and 1.85 m right of that between the TV wall and the back wall. Measured on the arm 2026-10-01: the bar laid flat on the wall by hand (joints -110.935 -72.548 50.41 -155.95 -80.795 89.134) -- its facing the wall's normal (0.6 deg off the earlier plane: 10 mm over the bar's 1 m), its front (the CAD's, the shade's rim) on the face, 2.5 mm nearer than before at 1.57 m high. Kept upright: the 37 mm face pressed by hand gives no trustworthy lean (it said 1.9 deg, which the 8 mm scan would have hit at the bottom). Then a tape at the scan's start put the 6.3 mm scan 8 mm from the paper: the bar pressed flat had sat a little in it -- the face 1.7 mm further, as the tape says (the user: the tape is the reference)."
+ },
+ "scan": {
+  "direction": "left_to_right",
+  "stage": {"name": "stage", "center": [-0.2152, 0.6328, 1.0026], "size": [2.5696, 3.0857, 2.0052], "yaw_deg": -11.28,
+   "_note": "the scan's own stage (show_env scan=True): the room's, 356 mm wider towards the cart as the controller's zone; the idle clips keep the room's (their library as party's)"},
+  "area": {
+   "center": [0.5179, 1.0788, 0.982],
+   "size": [
+    1.0,
+    1.0
+   ]
+  },
+  "speed_mps": 0.15,
+  "passes": [0.3, 0.272, 0.246, 0.223, 0.202, 0.183, 0.166, 0.15],
+  "accel_mps2": 1.2,
+  "led_gap_m": 0.002,
+  "lead_m": 0.02,
+  "safety": 0.5,
+  "from_hub": "rest",
+  "approach_m": 0.2,
+  "_note": "party_lr: the passes left to right and back, the strip upright (scan_roll 0: the end that is right when level is at the top), over the area 0.3 m to the right; the rest as party's, whose note follows. One pass down, the 1 m strip laid level (scan_roll 90), over a 1.0 x 1.0 m area: the strip's length wide, 0.5-1.5 m high, centred on J1's axis. The top is what the controller's work zone allows: its Z 1600 mm cap (a WebUI safety setting, not ours to change) less the ramp and lead above the area; the arm reaches from 0.2 m. Its middle 1.0 m high, 0.6 m under a standing guest's eyes. Speeds as the old scan's (write slower with show_stream --scan-speed). The LEDs' face 2 mm from the paper, the nearest the user asked for (2026-10-01: 3.5 cm too faint, 8 mm good, nearer better): the scan and its moves keep 0.8 mm from it (margins.scan_canvas_m), the bar's collision model 0.93 mm past its rim. At 0.15 m/s: on the arm 0.15 painted best of 0.15-0.4 (the user, 2026-10-01). The pigment fades in 10-20 s, so the scan is eight passes (passes: down, up, ... ), each slower, 0.3 to 0.15 (the user's pick: ping-pong, slowing; 4 passes were good, more better): ~51 s; the area 1.8 cm lower for the 0.3 pass's ramp, its top kept, the LEDs lit both ways; accel_mps2 the fastest pass's ramp peak, the slower ones gentler over the same ramp (show.scan_passes_profile)."
+ },
+ "margins": {
+  "idle_canvas_m": 0.15,
+  "scan_canvas_m": 0.0008,
+  "ceiling_m": 0.3
+ },
+ "transition_safety": 0.5,
+ "select": {
+  "no_repeat": 6,
+  "hub_stay": [
+   2,
+   4
+  ]
+ },
+ "osc": {
+  "listen_port": 9000,
+  "send_host": "127.0.0.1",
+  "send_port": 9001
+ },
+ "zones": {
+  "audience": {
+   "center": [
+    -0.6561,
+    -1.7556,
+    0.95
+   ],
+   "size": [
+    2.0,
+    1.0,
+    1.9
+   ],
+   "yaw_deg": -11.28,
+   "note": "where people stand: outside the left partition, out of reach (placeholder)"
+  },
+  "greet": {
+   "center": [
+    -0.2606,
+    -0.5395,
+    1.2
+   ],
+   "size": [
+    1.3,
+    0.5,
+    0.7
+   ],
+   "yaw_deg": -11.28,
+   "note": "where the TCP performs for them"
+  },
+  "idle": {
+   "center": [
+    -0.57,
+    0.66,
+    1.09
+   ],
+   "size": [
+    0.8,
+    0.8,
+    0.6
+   ],
+   "yaw_deg": -11.28,
+   "note": "around the rest hub"
+  },
+  "low": {
+   "center": [
+    -0.75,
+    -0.35,
+    0.62
+   ],
+   "size": [
+    0.9,
+    0.9,
+    0.55
+   ],
+   "yaw_deg": 0.0
+  },
+  "high": {
+   "center": [
+    -0.95,
+    0.0,
+    1.36
+   ],
+   "size": [
+    0.8,
+    0.8,
+    0.46
+   ],
+   "yaw_deg": 0.0
+  }
+ },
+ "range": {
+  "j1_deg": [
+   -150.0,
+   150.0
+  ],
+  "tcp_z": [
+   0.35,
+   1.9
+  ],
+  "speed": 0.85,
+  "_note": "the show's operating range: the directions the arm may face (J1), the TCP's height band, the fraction of the measured limits clips are made at"
+ }
+}
