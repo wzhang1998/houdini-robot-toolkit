@@ -24,6 +24,12 @@ so the stream is the Runner's joints, tick by tick:
      polls the controller's error code; an error is a FAULT;
   5. FAULT, Ctrl+C or OSC /robot/stop: StopMotion, ServoMoveEnd, report --
      a software stop, no substitute for the E-stop;
+     but a singular-pose stop (the FR20's main code 10: the wrist passing
+     J5 0 in a move between hubs) is recovered from by itself -- ResetAllError,
+     a checked MoveJ on to the hub the move was going to (never one through
+     J5 0 again), the show goes on in a new stream with its own log; at most
+     RECOVER_MAX a run, RECOVER_GAP_S apart, never in the scan (recoverable,
+     recover);
   6. the end (--minutes): the Runner pauses, the running clip finishes at a
      hub at rest, then the stream ends.
 
@@ -80,6 +86,9 @@ QUEUE_POLL_S = 1.0                 # the controller's motion queue, read once a 
 OPERATOR_STOPS = ("stop requested", "stopped by the operator (Ctrl+C)")    # a stop, not a fault
 LAG_WINDOW_S = 180.0               # the lag is also measured per window: a growing lag is a clock drift
 OSC_EVERY = 4                      # status out every 4 ticks (~31 Hz)
+SINGULAR_POSE = 10                 # the FR20's main fault code for a singular pose (FAIRINO's manual, appendix)
+RECOVER_MAX = 3                    # a run recovers from such a stop by itself at most this often ...
+RECOVER_GAP_S = 1800.0             # ... and this long apart
 MIN_SPEED = 0.05                   # the speed is set before the stream starts; it is not changed while it runs
 HARDWARE_SPEED = 0.3
 REST_TICKS = 25                    # a rest point: the same pose as the 25 points sent before it (0.2 s)
@@ -455,6 +464,54 @@ def start_env(cfg, canvas_margin=None):
     margin = cfg["margins"]["scan_canvas_m"] if canvas_margin is None else canvas_margin
     env = S.show_env(C.load_env(os.path.join(ROOT, cfg["env"])), cfg, margin, scan=True)
     return dict(env, objects=[dict(o, keep_margin=True) if o["name"] == "canvas" else o for o in env["objects"]])
+
+
+def recoverable(error, recoveries, now, seg, idle_hubs, max_n=None, gap_s=None):
+    """None when the stream may recover from this stop by itself, else why not. Only the controller's
+    singular-pose stop (main code SINGULAR_POSE: the wrist passing J5 0 in a move between hubs, show.py
+    wrist_singular_report -- 2026-10-02, once in 317 crossings, 3.4 h into an 8 h run), never a collision or
+    any other fault; only in a motion that ends at an idle hub (a move, an idle clip: not the scan); at most
+    RECOVER_MAX a run, RECOVER_GAP_S apart (recoveries: their times). error: the controller's [ret, main, sub]."""
+    max_n = RECOVER_MAX if max_n is None else max_n
+    gap_s = RECOVER_GAP_S if gap_s is None else gap_s
+    if not error or len(error) < 2 or int(error[1]) != SINGULAR_POSE:
+        return "not a singular-pose stop (%s)" % (error,)
+    if len(recoveries) >= max_n:
+        return "recovered %d times this run already" % len(recoveries)
+    if recoveries and now - recoveries[-1] < gap_s:
+        return "the last recovery %.0f s ago (at least %.0f s apart)" % (now - recoveries[-1], gap_s)
+    if seg.end not in idle_hubs:
+        return "in %s, which does not end at an idle hub" % seg.name
+    return None
+
+
+def recover(ctrl, runner, graph, env, move_vel, stop=None, log=print):
+    """After a singular-pose stop (recoverable): ResetAllError, then a checked MoveJ on to the hub the stopped
+    motion was going to (not back: the way back passes J5 0 again), and the show goes on from there
+    (Runner.restart_at). Nothing moves when the controller still reports an error, no clear route is found
+    or the route passes the wrist singularity. (ok, text)."""
+    hub = runner.seg.end
+    try:
+        ctrl.reset_errors()
+        err = list(ctrl.error_code())[:3]
+        if err != [0, 0, 0]:
+            return False, "the controller still reports %s after ResetAllError" % (err,)
+        cur = ctrl.joints()
+        path, line = P.move_plan(cur, graph.hubs[hub], None, "fr20", env)
+        if path is None:
+            return False, "no clear route to %s: %s" % (hub, line)
+        pts = [cur] + [list(w) for w in path]
+        if any((a[4] < 0) != (b[4] < 0) for a, b in zip(pts, pts[1:])):
+            return False, "the way on to %s passes the wrist singularity (J5 0) again" % hub
+        log("recovering: MoveJ to %s, %s" % (hub, line))
+        rep = {}
+        off = P.run_path(ctrl, path, move_vel, rep, stop)
+        if off is None:
+            return False, "the move to %s: %s" % (hub, rep.get("aborted"))
+    except Exception as e:                            # anything unexpected: stay stopped
+        return False, "%s: %s" % (type(e).__name__, e)
+    runner.restart_at(hub)
+    return True, "at %s (%.2f deg off), the show goes on" % (hub, off)
 
 
 def confirm(text, stdin=None, stdout=None):
@@ -1000,6 +1057,71 @@ def self_test():
         check("a scan variant's own (smaller) margin is the start move's: after it stops 8 mm from the paper the "
               "arm is not inside the show's margin, refused", near["margin_m"] == 0.003 and cv["margin_m"] ==
               pcfg["margins"]["scan_canvas_m"], (near["margin_m"], cv["margin_m"]))
+        # a singular-pose stop (the FR20's main code 10) recovered from by itself, within limits
+        mv = next(x for x in pg.segments if x.name == "move_rest_high")
+        idle = pg.idle_hubs()
+        check("a singular-pose stop in a move to an idle hub may be recovered from; anything else not",
+              recoverable([0, 10, 0], [], 1000.0, mv, idle) is None
+              and recoverable([0, 4, 1], [], 1000.0, mv, idle) is not None                  # a collision: never
+              and recoverable(None, [], 1000.0, mv, idle) is not None
+              and recoverable([0, 10, 0], [], 1000.0, pg.one("scan"), idle) is not None,    # mid-scan: stop
+              (recoverable([0, 4, 1], [], 1000.0, mv, idle), recoverable([0, 10, 0], [], 1000.0, pg.one("scan"), idle)))
+        check("at most RECOVER_MAX recoveries a run, RECOVER_GAP_S apart",
+              recoverable([0, 10, 0], [0.0, 2000.0, 4000.0][:RECOVER_MAX], 9000.0, mv, idle) is not None
+              and recoverable([0, 10, 0], [1000.0], 1000.0 + RECOVER_GAP_S - 1.0, mv, idle) is not None
+              and recoverable([0, 10, 0], [1000.0], 1000.0 + RECOVER_GAP_S + 1.0, mv, idle) is None)
+
+        class Faulted:
+            """The FR20 after a singular-pose stop: code 10 until ResetAllError; MoveJ goes straight there."""
+            def __init__(self, q):
+                self.q, self.err, self.calls = list(q), [0, 10, 0], []
+
+            def error_code(self):
+                return list(self.err)
+
+            def reset_errors(self):
+                self.calls.append("reset")
+                self.err = [0, 0, 0]
+
+            def frames(self):
+                return 0, 0
+
+            def prepare(self):
+                self.calls.append("enable")
+
+            def move_to(self, q, vel, tool=0, wobj=0):
+                self.calls.append("movej")
+                self.q = list(q)
+
+            def joints(self):
+                return list(self.q)
+
+        env = start_env(pcfg)
+        after = mv.at(1.5)                                   # stopped just past J5 0, on its way to high
+        rr = S.runner_for(pg, seed=2)
+        rr.seg, rr.seg_t = mv, 1.5
+        rr.fault("controller error [0, 10, 0]")
+        fc = Faulted(after)
+        ok, why = recover(fc, rr, pg, env, 10.0, log=lambda *x: None)
+        check("recovering: ResetAllError, a checked MoveJ on to the move's own end (high: no J5 0 again), the show "
+              "goes on from there", ok and fc.calls[0] == "reset" and "movej" in fc.calls and rr.state == "IDLE"
+              and rr.hub == "high" and max(abs(a - b) for a, b in zip(fc.q, pg.hubs["high"])) < 1e-6, (ok, why, fc.calls))
+        before = mv.at(1.0)                                  # J5 -22.5: on to high would pass J5 0 again
+        rr2 = S.runner_for(pg, seed=2)
+        rr2.seg, rr2.seg_t = mv, 1.0
+        rr2.fault("controller error [0, 10, 0]")
+        fc2 = Faulted(before)
+        ok2, why2 = recover(fc2, rr2, pg, env, 10.0, log=lambda *x: None)
+        check("not when the way on passes the wrist singularity again: nothing moves, it stays stopped",
+              not ok2 and "movej" not in fc2.calls and rr2.state == "FAULT", (ok2, why2, fc2.calls))
+        fc3 = Faulted(after)
+        fc3.reset_errors = lambda: None                      # the stop does not clear
+        rr3 = S.runner_for(pg, seed=2)
+        rr3.seg, rr3.seg_t = mv, 1.5
+        rr3.fault("controller error [0, 10, 0]")
+        ok3, why3 = recover(fc3, rr3, pg, env, 10.0, log=lambda *x: None)
+        check("not when the controller still reports an error after the reset", not ok3 and "movej" not in fc3.calls,
+              (ok3, why3))
         wide = {"name": "stage", "center": [0.0, 0.6, 1.0], "size": [3.0, 3.0, 2.0], "yaw_deg": -11.28}
         st = next(o for o in start_env(dict(pcfg, scan=dict(pcfg["scan"], stage=wide)))["objects"]
                   if o["name"] == "stage")
@@ -1384,36 +1506,64 @@ def main(argv=None):
                            cfg=cfg)
         print("OSC in :%d, out %s:%d" % (o["listen_port"], o["send_host"], o["send_port"]))
     guard = Guard(RP.velocity_limits(prof), RP.motion_limits(prof), dt, speed)     # J6: the tool cable's range
-    link = Link(ip)
+
+    def save(out, link, ticks_cmd, start):
+        """One stream's log and summary (each stream of a run its own, a recovery between)."""
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        # the data first: a report that is interrupted while it analyses still leaves the run behind
+        step = point_step(dt, playback_ppm)
+        base = write_log(a.log, stamp, out, ticks_cmd, step, link.samples, start)
+        print("log written: %s (the joints; tracking follows)" % (base + ".json"))
+        sys.stdout.flush()
+        add_tracking(out, start, step, ticks_cmd, link.samples)
+        out["playback_ppm_suggested"] = suggest_playback_ppm(out)
+        with open(base + ".json", "w", newline="\n") as f:
+            json.dump(out, f, indent=1)
+        summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
+                                           "speed",
+                                           "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
+                                           "send_ms_p95", "max_late_ms", "controller_error", "pacing", "playback_ppm",
+                                           "lag_ms_by_window", "playback_ppm_suggested")}
+        if out.get("lag_correction"):
+            summary["lag_correction"] = {k: v for k, v in out["lag_correction"].items() if k != "ticks"}
+        print(json.dumps(summary, indent=1))
+        if out.get("playback_ppm_suggested") is not None and abs(out["playback_ppm_suggested"] - (playback_ppm or 0.0)) > 50:
+            print('the lag drifted: set playback.toml [controller_playback_ppm] "%s" = %.1f (was %s)'
+                  % (ip, out["playback_ppm_suggested"], playback_ppm))
+        print("log:", base + ".json")
+
+    # A singular-pose stop (recoverable) is recovered from by itself: ResetAllError, a checked MoveJ on to the
+    # hub the move was going to, and the show goes on for the rest of the run -- a new stream, its own log.
+    recoveries, notes = [], []
+    run_end = time.monotonic() + minutes * 60.0
     try:
-        out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, minutes, osc=osc, analyse=False,
-                                       playback_ppm=playback_ppm, lag_correction=lag_fix)
+        while True:
+            link = Link(ip)
+            left = max(0.0, (run_end - time.monotonic()) / 60.0)
+            out, ticks_cmd, start = stream(ctrl, link, runner, cmds, guard, dt, speed, left, osc=osc, analyse=False,
+                                           playback_ppm=playback_ppm, lag_correction=lag_fix)
+            out.update(rep)
+            if notes:
+                out["recovered"] = list(notes)
+            save(out, link, ticks_cmd, start)
+            if out["ended"] != "fault" or not hasattr(runner, "restart_at") or cmds.stop_requested.is_set():
+                break
+            why = recoverable(out.get("controller_error"), recoveries, time.monotonic(), runner.seg,
+                              runner.g.idle_hubs())
+            if why is not None:
+                print("not recovering by itself: %s" % why)
+                break
+            print("RECOVERING from %s (%d of at most %d this run)" % (out["fault"], len(recoveries) + 1, RECOVER_MAX))
+            sys.stdout.flush()
+            ok, text = recover(ctrl, runner, graph, start_env(cfg, start_margin), move_vel, cmds.stop_requested)
+            print(("recovered: " if ok else "NOT recovered, stopped: ") + text)
+            if not ok:
+                break
+            recoveries.append(time.monotonic())
+            notes.append("%s %s: %s" % (time.strftime("%H:%M:%S"), out["fault"], text))
     finally:
         if osc is not None:
             osc.close()
-    out.update(rep)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    # the data first: a report that is interrupted while it analyses still leaves the run behind
-    step = point_step(dt, playback_ppm)
-    base = write_log(a.log, stamp, out, ticks_cmd, step, link.samples, start)
-    print("log written: %s (the joints; tracking follows)" % (base + ".json"))
-    sys.stdout.flush()
-    add_tracking(out, start, step, ticks_cmd, link.samples)
-    out["playback_ppm_suggested"] = suggest_playback_ppm(out)
-    with open(base + ".json", "w", newline="\n") as f:
-        json.dump(out, f, indent=1)
-    summary = {k: out.get(k) for k in ("ended", "fault", "duration_s", "sends", "skipped", "worst_step_of_limit",
-                                       "speed",
-                                       "tracking_after_lag_max_deg", "tracking_after_lag_rms_deg", "best_lag_ms",
-                                       "send_ms_p95", "max_late_ms", "controller_error", "pacing", "playback_ppm",
-                                       "lag_ms_by_window", "playback_ppm_suggested")}
-    if out.get("lag_correction"):
-        summary["lag_correction"] = {k: v for k, v in out["lag_correction"].items() if k != "ticks"}
-    print(json.dumps(summary, indent=1))
-    if out.get("playback_ppm_suggested") is not None and abs(out["playback_ppm_suggested"] - (playback_ppm or 0.0)) > 50:
-        print('the lag drifted: set playback.toml [controller_playback_ppm] "%s" = %.1f (was %s)'
-              % (ip, out["playback_ppm_suggested"], playback_ppm))
-    print("log:", base + ".json")
     return 0 if out["ended"] in ("at a hub", "stopped") else 1       # a stop by the operator is not an error
 
 

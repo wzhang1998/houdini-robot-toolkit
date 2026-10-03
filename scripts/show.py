@@ -719,9 +719,31 @@ def tool_zone_report(segs, env, model, prof=None):
 
 def build_warnings(segs, idle_env, scan_env, model):
     """tool_zone_report with each motion in its own room: the scan and its moves in the scan's (scan_env: its
-    own stage, scan.stage, when it has one), the rest in the idle clips'."""
+    own stage, scan.stage, when it has one), the rest in the idle clips'; and the motions through the wrist
+    singularity (wrist_singular_report)."""
     scan = [x for x in segs if x.kind in ("scan", "to_scan", "from_scan")]
-    return tool_zone_report([x for x in segs if x not in scan], idle_env, model) + tool_zone_report(scan, scan_env, model)
+    return (tool_zone_report([x for x in segs if x not in scan], idle_env, model)
+            + tool_zone_report(scan, scan_env, model) + wrist_singular_report(segs))
+
+
+WRIST_NEAR_DEG = 1.0      # J5 this near 0: the wrist singularity
+
+
+def wrist_singular_report(segs, near_deg=WRIST_NEAR_DEG):
+    """The motions through (or within near_deg of) the wrist singularity, J5 0 -- [(segment, text)]. In joint
+    space nothing is wrong there (ServoJ needs no inverse), but the FR20 may stop the arm as it passes: a
+    singular pose, its main fault code 10 (2026-10-02, party_lr on the arm: once in 317 crossings, 3.4 h in;
+    the hubs rest and greet have J5 < 0, low and high > 0, so the moves between them cross). show_stream
+    recovers from it by itself, a few times a run (RECOVER_MAX)."""
+    out = []
+    for seg in segs:
+        j5 = [q[4] for q in seg.q]
+        nearest = min(abs(x) for x in j5)
+        crosses = any((a < 0) != (b < 0) for a, b in zip(j5, j5[1:]))
+        if crosses or nearest < near_deg:
+            out.append((seg.name, "passes the wrist singularity (J5 %.2f deg at its nearest): the FR20 may stop "
+                                  "it there (singular pose, main code 10)" % nearest))
+    return out
 
 
 def limit_breaches(segments, limits):
@@ -1543,6 +1565,14 @@ class Runner:
         if self.state == "FAULT":
             self.state, self.fault_reason = "HOLD", None
 
+    def restart_at(self, hub):
+        """After a fault the stream recovered from (show_stream: the arm taken to hub by a checked MoveJ): the
+        show goes on from that idle hub -- the planned route dropped (it began elsewhere), the triggers still
+        waiting kept."""
+        self.hub, self.queue, self.sequence = hub, [], None
+        self.state, self.fault_reason, self.paused = "IDLE", None, False
+        self.seg, self.seg_t = self.sel.pick(hub, clock=self.clock), 0.0
+
     def _plan_next(self):
         """Fill the queue with what comes next, from self.hub."""
         if self.pending:
@@ -2140,6 +2170,23 @@ def self_test():
           "the idle clips keep the room's (their library unchanged)",
           idle_st["size"] == [2.0, 2.0, 2.0] and scan_st["size"] == [2.4, 2.0, 2.0] and scan_st["center"][0] == 0.2,
           (idle_st, scan_st))
+    wrist = [Segment("move_a_b", "move", [0.0, 1.0, 2.0], [[0, -90, 90, -90, -40, 0], [0, -90, 90, -120, 0.3, 0],
+                                                          [0, -90, 90, -150, 30, 0]], "a", "b"),
+             Segment("clip_a", "idle", [0.0, 1.0], [[0, -90, 90, -90, -40, 0], [0, -90, 90, -90, -20, 0]], "a", "a")]
+    ww = wrist_singular_report(wrist)
+    check("the build warns of a motion through the wrist singularity (J5 0): the FR20 may stop there "
+          "(singular pose, its main code 10; 2026-10-02, once in 317 crossings)",
+          len(ww) == 1 and ww[0][0] == "move_a_b" and "J5" in ww[0][1], ww)
+    pg = Graph.load(compiled_path(os.path.join(ROOT, "shows", "party.json")))
+    rr = runner_for(pg, seed=3)
+    rr.fault("controller error [0, 10, 0]")
+    other = [h for h in pg.idle_hubs() if h != rr.hub][0]
+    rr.restart_at(other)
+    q_after = rr.step(0.0)
+    check("after a recovered fault the show goes on from the hub the arm was taken to: idle there, a clip from "
+          "it, its pose the hub's",
+          rr.state == "IDLE" and rr.hub == other and rr.seg.start == other and rr.fault_reason is None
+          and max(abs(a - b) for a, b in zip(q_after, pg.hubs[other])) < 1e-6, (rr.state, rr.hub, rr.seg.name))
     lr = os.path.join(ROOT, "shows", "party_lr.json")
     if os.path.exists(compiled_path(lr)):
         import collision as C

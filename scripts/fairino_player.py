@@ -335,6 +335,10 @@ class Controller:
     def error_code(self):
         return self.rpc.GetRobotErrorCode()
 
+    def reset_errors(self):
+        """ResetAllError: clears the controller's fault (a protective stop), as the WebUI's reset does."""
+        self._ok(self.rpc.ResetAllError(), "ResetAllError")
+
     def joints(self):
         return list(self._ok(self.rpc.GetActualJointPosDegree(1), "GetActualJointPosDegree")[1:7])
 

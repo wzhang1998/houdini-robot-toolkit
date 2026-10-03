@@ -33,6 +33,15 @@ uv run scripts/show.py build shows/party_lr.json
 uv run scripts/scan_test_ui.py shows/party_lr.json
 ```
 
+A long run may stop on a **singular pose** (the controller's main fault code
+10, 2026-10-02: party_lr, 3.4 h in): the moves between rest / greet (J5 < 0)
+and low / high (J5 > 0) pass the wrist singularity, J5 0, and the FR20 stops
+there now and then (once in 317 crossings). show_stream recovers by itself:
+ResetAllError, a checked MoveJ on to the move's own end hub, the show goes on
+(a new log each time; at most 3 a run, 30 min apart; never in the scan, never
+any other fault -- a collision stays stopped). The build lists those moves
+(warnings: "passes the wrist singularity").
+
 Scan distances to try: `build --scan-only --gap M` writes the scan alone at
 another gap (the shade's rim to the paper) to `shows/scans/<show>_gap<mm>/`
 (in git, a few seconds each, checked as the show's). scan_test_ui's
