@@ -24,6 +24,18 @@
   "faces_audience": 0.96,
   "note": "The roll is in the frontal plane of AUDIENCE SIDE (ghosts fan from near level to upright): clearly seen. Strip lower end goes to 0.10 m over the floor at 1.0-2.0 s (room min 51 mm tool_strip_bottom_a / floor)."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.17, holds 2, still 32 %, dyn x3.75",
+   "timeline: rolls of different speeds (strip tips 1.39 m/s at ~2.2 s, 0.6 at ~3.6 s, 1.0 at ~7.5 s), each followed by a settle (O ~2.7 s, ~6.3 s), holds between",
+   "strip x4.14, joints 2, TCP extent 0.19 x 0.06 x 0.07 m: the strip and the wrist do everything"
+  ],
+  "note": "Settles and uneven timing as greet_04_tilt, with a lot more light and shade (too hard for the calm one, see awkward); nothing below the wrist joins in."
+ },
  "suggestions": [
   {
    "target": "shows/party.json library.intensity",

@@ -19,6 +19,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; but the loop's plane is edge-on to the audience: from the audience zone it is a 14 cm up-down line (AUDIENCE SIDE view)."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "follow_through",
+   "dynamics"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, dyn x1.88, holds 1, lag 0.00 s, show energy 0.07",
+   "timeline: the same two-hump loop and separate return as greet_05_trace, at 0.28 m/s and a third of its size (extent 0.02 x 0.13 x 0.14 m)",
+   "strip tips with the TCP (strip x1.2): the gaze does not trail"
+  ],
+  "note": "greet_05_trace's loop shrunk to 0.14 m and 0.28 m/s: one soft level with nothing trailing, it barely registers."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",

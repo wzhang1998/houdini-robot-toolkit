@@ -19,6 +19,19 @@
   "faces_audience": 0.97,
   "note": "The loop is 0.52 m tall and 0.2 m wide from AUDIENCE SIDE: legible as a narrow upright loop; its depth (TOP) is lost to the audience."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 1, dyn x1.92, holds 1, still 14 %, joints 3, lag 0.06 s",
+   "timeline: the loop as two humps with a notch to 0.12 m/s at ~2.1 s (top of the loop), a still, then a separate return at 0.60 m/s, the quickest part",
+   "strip tips stay with the TCP (strip x1.08): the gaze drifts with the path rather than trailing it"
+  ],
+  "note": "A loose loop through 0.5 m of height, fittingly sustained, but split at its top and topped by a louder return: pleasant filler, as greet_05_trace."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the notch at 2.1 s reads as a hitch in the flow"

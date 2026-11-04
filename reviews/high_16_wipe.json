@@ -24,6 +24,20 @@
   "faces_audience": 0.83,
   "note": "LEDs face the audience 0.83: the pane is turned, the strip seen foreshortened from the audience zone."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "dynamics",
+   "follow_through",
+   "overshoot"
+  ],
+  "evidence": [
+   "7 big moves, A 0 O 1, onset cv 0.29, holds 1, dyn x2.54, joints 4, lag -0.01 s",
+   "timeline: the strokes and the lifts are the same ~0.2-0.35 m/s bumps (2-9 s); the loudest moves are the strip turning to level and back (0.85 m/s at ~0.6 s and ~11.2 s) and two strip shakes",
+   "TCP extent 0.14 x 0.13 x 0.14 m"
+  ],
+  "note": "As greet_15_wipe: 7 s of one dynamic framed by louder set-up turns; pressing on and lifting off look alike and the blade does not trail."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",

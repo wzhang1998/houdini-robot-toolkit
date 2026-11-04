@@ -24,6 +24,19 @@
   "faces_audience": 0.98,
   "note": "Broadside and in front of the arm; the same side-to-side image at 0.5-0.7 m as low_01_wave and low_10_search."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "overshoot",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 1 O 0, onset cv 0.23, holds 2, dyn x2.24, lag -0.10 s (the gaze leads), joints 3",
+   "timeline: a small counter-move (A ~0.6 s), out (0.45 m/s), the arc across with the two strip tips peaking apart (the strip turning through the arc) and a long easing tail, a slow return",
+   "a shallow rainbow (z 0.48-0.62 m); no swing past the ends"
+  ],
+  "note": "A wind-up and the gaze leading the arc put it a shade above greet_12_sweep, but the arc stays low and stops cold at its ends."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the 4 mm strip-to-forearm gap on the real arm (strip mount, cable)"

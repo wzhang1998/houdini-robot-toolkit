@@ -19,6 +19,19 @@
   "faces_audience": 0.96,
   "note": "LEDs face the audience 0.96; the reach is towards the audience, so it is foreshortened in the audience-side view (reads mostly as a dip)."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "phrasing",
+   "anticipation"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 2, still 53 %, dyn x3.03, joints 5",
+   "timeline: a small lean back (A ~0.7 s), the offer out and down (0.47 m/s), a long hold (2.3-6.3 s) broken by a few-cm second offer with no lean back before it, then home is the loudest move (0.55 m/s, J3 78 % accel)",
+   "extent 0.09 x 0.19 x 0.19 m"
+  ],
+  "note": "As greet_03_reach: the first offer is shaped, then the clip waits more than half its length and the retreat outshouts the offer."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",

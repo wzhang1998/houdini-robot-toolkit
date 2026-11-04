@@ -19,6 +19,18 @@
   "faces_audience": 0.96,
   "note": "The lift is vertical in AUDIENCE SIDE (ghosts 4-7) and seen; it stays under 0.8 m."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, dyn x2.48, holds 1, still 24 %, joints 4, lag 0.04 s",
+   "timeline: a dip before the rise (A ~0.6 s), the rise (0.55 m/s, 0.5-1.5 s), a 0.4 s hold, then the settle at 0.70 m/s (J2 80 % accel) with a bump past the mark (O ~2.8 s)",
+   "the yawn's slow reach is as quick as a pop; extent 0.04 x 0.07 x 0.26 m"
+  ],
+  "note": "It has the dip before and the settle after, but the drop is louder than the stretch and the top is hardly held: the arc of a yawn is inverted."
+ },
  "suggestions": [
   {
    "target": "gestures.py clip_length (the always-long families tuple: wipe, broom, salute, twirl, spin_sweep)",

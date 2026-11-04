@@ -24,6 +24,19 @@
   "faces_audience": 0.89,
   "note": "LEDs face the audience 0.89; the retreat towards the robot is visible across the audience-side view."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics",
+   "timing_variety"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 3, still 44 %, dyn x2.14, joints 5, lag 0.00 s",
+   "timeline: the gaze drops away first (0.2-1.0 s, a busy wrist), then the retreat (0.56 m/s, ~2.2 s) and, after holds and a small look, the return (0.50 m/s, ~6.4 s): the same bell twice",
+   "the body takes part: 0.31 m back, 0.26 m down"
+  ],
+  "note": "As greet_07_shy: the eyes leading the retreat is good, but the look back is as quick and as shaped as the shrinking away, so there is no hesitation."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the wrist folded 3 mm from the forearm at ~3.8 s looks like a pinch on the arm",

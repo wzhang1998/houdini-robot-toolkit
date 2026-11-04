@@ -19,6 +19,19 @@
   "faces_audience": 0.81,
   "note": "From AUDIENCE SIDE the strip fans at ~45-60 deg and lifts; the scoop is meant to read in profile and nothing in the views shows a shovel digging."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "anticipation",
+   "body_involvement"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 2, still 32 %, dyn x3.75, joints 3",
+   "timeline: the strip turns to take it up, the scoop (0.4 m/s) with the two strip tips apart (the blade levelling, overlap), a flick (~4.3 s), a hold, the toss as the loudest move (0.68 m/s), a settle",
+   "the TCP only goes up (z 0.55-0.78 m): no dip before the toss"
+  ],
+  "note": "The toss is placed as the climax and the blade levels through the scoop, but without the dig there is no gathering down before it: half a scoop."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.low.tcp (z, metres) and zones.low center z",

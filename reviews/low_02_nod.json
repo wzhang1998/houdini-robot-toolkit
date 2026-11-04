@@ -24,6 +24,19 @@
   "faces_audience": 0.98,
   "note": "Seen from AUDIENCE SIDE, but the dominant image is the strip rolling in the frontal plane, the same image as low_04_tilt."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "body_involvement",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 0, dyn x2.69, joints 2, strip x3.45 (not a strip family)",
+   "timeline: the gaze drops first by the wrist (0.2-0.8 s), then one dip where the strip tips reach 1.25 m/s while the TCP makes 0.30 m/s, a settle (O ~3.4 s), a slow return",
+   "TCP extent 0.03 x 0.08 x 0.13 m: one dip, no smaller repeats"
+  ],
+  "note": "One dip in which the strip windmills while the body barely moves: the gaze leading is nice, but there is no dying-away nod-nod and the prop carries it."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.low.tcp (z, metres) and zones.low center z",

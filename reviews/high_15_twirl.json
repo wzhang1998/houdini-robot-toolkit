@@ -13,6 +13,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; the fan of strip ghosts is face on, the clearest strip clip at the hub."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "timing_variety",
+   "body_involvement"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 3, dyn x3.51, strip x5.52 (a strip family), joints 2",
+   "timeline: a drop to a level aim (0.4 m/s), a small strip turn, two swings (strip 1.07 and 1.0 m/s) braking past their marks (J6 accel bursts at ~3.9, ~6.4 s, not counted as O), home",
+   "the body only moves to set up and come home"
+  ],
+  "note": "A full face-on baton fan carried by the strip with braking, as the family wants, but only two alike swings: plainer than greet_14_twirl, like low_15_twirl."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the strip's light while it swings",

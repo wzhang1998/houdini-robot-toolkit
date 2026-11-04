@@ -24,6 +24,18 @@
   "faces_audience": 0.83,
   "note": "LEDs face the audience 0.83 (100 % of the time over 0.5); the arc is drawn across the audience-side view, face on."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "overshoot"
+  ],
+  "evidence": [
+   "3 big moves, A 1 O 0, onset cv 0.32, holds 2, dyn x2.43, joints 6, lag -0.06 s",
+   "timeline: a counter-move (A ~0.5 s), quick out (0.82 m/s), a hold, the 3 s arc across through heights with the two strip tips alternating (the strip turning through the arc), a hold, quick back",
+   "extent 0.65 x 0.18 x 0.29 m: the whole arm in it; the ends stop without swinging past"
+  ],
+  "note": "A wind-up, quick-slow-quick, the strip turning through a real rainbow and every joint in it: well above greet_12_sweep; the swings stop cold at their ends."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the fast first swing out (J2 75 %) looks like a lurch in perspective"

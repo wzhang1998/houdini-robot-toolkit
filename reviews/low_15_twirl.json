@@ -13,6 +13,19 @@
   "faces_audience": 0.98,
   "note": "AUDIENCE SIDE shows a full starburst of the strip in the frontal plane: the clearest strip image at the hub."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "timing_variety"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.43, holds 3, still 32 %, dyn x3.0, strip x7.81 (a strip family), joints 2",
+   "timeline: two strip swings (1.05 and 0.97 m/s, 2.8-5.0 and 5.3-7.7 s) each braking past its mark (O), framed by a quiet set-up and settle (strip <= 0.17 m/s) that take ~5.5 s of the 11.6 s",
+   "TCP 0.16 m/s peak: the body stays out (right for a twirl)"
+  ],
+  "note": "The strip carries a braking baton swing as it should, but there are two alike swings at k 0.27 and half the clip is quiet set-up, so it is plainer than greet_14_twirl (four swings of different speeds)."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the 2.8 s wind-up and settle feel alive",

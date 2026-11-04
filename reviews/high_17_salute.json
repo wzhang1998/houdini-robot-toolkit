@@ -24,6 +24,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; face on, but the raise and the bow read backwards."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement",
+   "timing_variety"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 4, still 35 %, dyn x3.54, strip x4.74, joints 3, lag 0.07 s",
+   "timeline: the 'raise' is a sink of 0.28 m with the strip stood upright (0.4 m/s, O ~2.0 s), a held sabre, two strip swings of the same 1.3 m/s (the cut), then home is the loudest TCP move (0.57 m/s)",
+   "the flourish and the bow are the strip alone"
+  ],
+  "note": "Holds and strip swings with braking give it some shape, as greet_16_salute, but the raise sinks, the two swings are alike and the body sits out the flourish: a weaker twirl."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.families",

@@ -24,6 +24,19 @@
   "faces_audience": 0.94,
   "note": "Vertical in AUDIENCE SIDE and seen; peaks at 0.72 m, the strip's upper end ~1.07 m."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, holds 3, still 26 %, dyn x2.45, strip x2.71, joints 3, TCP peak 0.21 m/s",
+   "timeline: the gather (a strip roll and a 0.1 m sink, 0.5-1.6 s) is the rise's wind-up across a hold (not counted), the rise eases out long (2.4-5 s), the top held, a small twitch of the strip (~6.6 s), a settle",
+   "the strip turning up does more than the TCP (0.28 m of height)"
+  ],
+  "note": "The arc is the right way round (gather, rise, held top, quiet home), unlike greet_10_rise, but at k 0.33 everything is one soft level and the strip outshines the body."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the wrist spike mid-rise at 3.45 s on the arm",

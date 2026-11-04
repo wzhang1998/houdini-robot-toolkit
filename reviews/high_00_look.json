@@ -19,6 +19,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99 (100 % of the time over 0.5); the strip's swing is in the audience-side view, the arrow on the audience in the TOP view."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "anticipation",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.57, holds 3, still 43 %, dyn x3.3, joints 4, strip x2.04",
+   "timeline: two quick glances (strip 0.6 m/s at ~0.4 and ~2.2 s), each with a settle (O), then slower wrist looks (4.0-6.1 s, TCP ~0.05 m/s) and a slow drift to end",
+   "TCP extent 0.04 x 0.11 x 0.10 m: the lean and bob towards each point are small"
+  ],
+  "note": "More varied in timing than greet_00_look (quick glances, then slow ones), but the second half is the wrist alone at a murmur and nothing winds up a glance."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the J4/J6 spike at ~5.05 s reads as a hitch at the strip's ends",

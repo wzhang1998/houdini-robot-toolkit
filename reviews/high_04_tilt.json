@@ -19,6 +19,20 @@
   "faces_audience": 1.0,
   "note": "LEDs face the audience 1.00, but the roll is too small to see as a head tilt from the audience zone."
  },
+ "expression": {
+  "score": 1,
+  "lacks": [
+   "dynamics",
+   "body_involvement",
+   "phrasing"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, but peaks of 0.18 m/s (TCP) and 0.30 m/s (strip), show energy 0.04",
+   "J6 range 13 deg, TCP extent 0.05 x 0.04 x 0.03 m: the strip ghosts in the audience-side view nearly coincide",
+   "3.6 s short form, one side only"
+  ],
+  "note": "Near stillness: a 13 degree roll is nothing an audience can read as a head tilt."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",

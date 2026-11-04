@@ -19,6 +19,19 @@
   "faces_audience": 0.92,
   "note": "LEDs face the audience 0.92; the strip's roll fans face on, the lean is mostly towards the audience (foreshortened)."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "body_involvement"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 1, dyn x2.47, lag 0.08 s, strip x2.45, joints 4",
+   "timeline: a counter-move (A ~0.7 s), a slow 1.8 s lean with the strip fanning (yawn-like), a hold, a quicker return (0.35 m/s) with a settle (O ~4.4 s), then a busy wrist settle (4.6-5.7 s)",
+   "TCP extent 0.11 x 0.19 x 0.06 m: no room above, the reach is small"
+  ],
+  "note": "The slow stretch with the wrist rolling has the yawn's feel and a wind-up, but it is small and the busiest part is the settle at the end, as low_08_stretch."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",

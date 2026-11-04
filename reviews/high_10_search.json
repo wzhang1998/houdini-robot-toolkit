@@ -19,6 +19,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; the scan runs across the audience-side view."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "anticipation",
+   "phrasing"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 1, onset cv 0.49, holds 0, still 27 %, dyn x2.42, lag -0.08 s (the gaze leads)",
+   "timeline: two scans at 0.4 m/s, a small settle (O ~2.2 s), a slower scan (0.17 m/s), a last lean to one person: energy falling, no held look",
+   "z 1.44-1.48 m: the search stays on one level"
+  ],
+  "note": "Short and level: the scans start cold and run into each other without the quick-look-and-hold that makes greet_09_search and low_10_search look curious."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether a 0.21 m scan with a 9 deg gaze reads as searching in perspective"

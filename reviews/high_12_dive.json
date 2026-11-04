@@ -19,6 +19,16 @@
   "faces_audience": 0.96,
   "note": "LEDs face the audience 0.96; the swoop is face on in the audience-side view."
  },
+ "expression": {
+  "score": 5,
+  "lacks": [],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 2, dyn x3.12, lag -0.07 s (the gaze leads), TCP extent 0.53 m vertical (z 1.00-1.54 m)",
+   "timeline: a small lift (0.3-0.8 s) then a still: the dive's wind-up across a hold (not counted); the swoop down (0.58 m/s) with strip tip a peaking before tip b (the gaze leading), a hold at the bottom, the burst back up past the hub (0.92 m/s), a settle (O ~5.3 s), a breath, home",
+   "J4 range 93, J6 70 deg: body and wrist together"
+  ],
+  "note": "The fullest clip at the hub, like greet_11_dive: wind-up, a swoop the gaze leads, a burst past the hub, a settle and breaths between; a little shallower than greet's 0.77 m."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the burst back up reads as a swoop or a jerk (timing feel)"

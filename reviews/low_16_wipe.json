@@ -24,6 +24,19 @@
   "faces_audience": 0.87,
   "note": "The stroke pattern is legible in AUDIENCE SIDE and FRONT; the face 0.87 towards the audience."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "overshoot"
+  ],
+  "evidence": [
+   "6 big moves, A 0 O 0, onset cv 0.21, holds 1, dyn x2.34, joints 5, strip x1.19, lag 0.01 s",
+   "timeline: strokes (~0.8 m/s) alternate with lifts (~0.35 m/s) on the beat, slowing a little (rit), then a strip-only shake (9-10 s) and home",
+   "the strip tips ride with the TCP: the blade neither trails nor presses"
+  ],
+  "note": "Unlike greet_15_wipe the strokes are clearly louder than the lifts and the rit and the shake give it an end, so it reads as an even routine; the blade itself is rigid."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the even strokes read as wiping or as mechanical",

@@ -19,6 +19,18 @@
   "faces_audience": 0.97,
   "note": "AUDIENCE SIDE: the TCP rise and the arrows turning are in front of the column; the 1 m strip reaches 1.25 m, so the low tool is seen over the paper's foot."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 1 O 2, dyn x3.27, holds 2, still 28 %, onset cv 0.05, lag 0.03 s",
+   "timeline: a quick glance up (0.69 m/s at ~0.5 s) with a settle bump (O ~1.1 s), a slow drift across (0.17 m/s, 1.9-3.4 s), a small counter-turn (A ~3.7 s) before the last glance",
+   "wrist share 77 %, joints 3, extent 0.04 x 0.10 x 0.26 m: the lean is small; glances start evenly spaced but differ in speed and length"
+  ],
+  "note": "Quick, slow, quick glances with a settle after the first and a counter-turn before the last: livelier than greet_00_look (A 0, all glances alike); the wrist does most of it."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the holds between glances read as looking (breathing) or as pauses",

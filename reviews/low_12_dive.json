@@ -24,6 +24,20 @@
   "faces_audience": 0.97,
   "note": "Seen, but from AUDIENCE SIDE it is a 0.25 m up-and-down with the strip fanning, not a swoop."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "anticipation",
+   "body_involvement",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 0, dyn x3.5, strip x2.38, joints 3",
+   "timeline: no small lift first; the 'swoop' down is a strip roll (tips 1.0 m/s, TCP 0.2) over 0.6-2.2 s, then the rise is the burst (0.66 m/s), a settle (O ~3.4 s)",
+   "TCP extent 0.01 x 0.15 x 0.24 m vs greet_11_dive's 0.77 m vertical"
+  ],
+  "note": "A floor-bound dip: no wind-up, the descent carried by the strip and the burst on the way up, so none of greet_11_dive's swoop survives here."
+ },
  "suggestions": [
   {
    "target": "shows/party.json hubs.low.families",

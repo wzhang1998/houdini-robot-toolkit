@@ -19,6 +19,18 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; the bob is seen face on."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "5 big moves, A 0 O 0, onset cv 0.16, holds 0, dyn x2.49, joints 3, lag 0.05 s",
+   "timeline: five bobs on the beat (0.34, 0.27, 0.43, 0.28, 0.22 m/s) with the groove sinking 0.19 m",
+   "strip x1.02, J6 range 4.5 deg: the strip rides the bob rigidly, no lag or snap"
+  ],
+  "note": "An even groove that sinks, as greet_08_bounce, with a little more variety in the bobs; the strip never lags or snaps with them."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the bobs sit on the beat (timing feel)"

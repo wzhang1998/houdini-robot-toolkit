@@ -19,6 +19,18 @@
   "faces_audience": 0.99,
   "note": "AUDIENCE SIDE: the bobs and the strip sway are frontal and seen; the groove sits at 0.45-0.64 m."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "9 big moves, A 0 O 0, onset cv 0.29, holds 1, still 17 %, dyn x2.26, joints 4, strip x2.0",
+   "timeline: four bobs on the beat where the strip sways (tips 0.6-0.8 m/s, alternating) while the TCP makes 0.25-0.3, a step aside (~5.5 s), then four tighter bobs with the body (TCP 0.35-0.4 m/s, accel)",
+   "two grooves and a break between: a change of feel, even beat within each"
+  ],
+  "note": "Livelier than greet_08_bounce: the strip rocks against the bob in the first groove and the second is tighter and quicker; the first half is carried by the strip more than the body."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the bobs sit on the beat",

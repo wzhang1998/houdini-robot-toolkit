@@ -13,6 +13,18 @@
   "faces_audience": 0.96,
   "note": "The duck and pop are vertical in AUDIENCE SIDE (ghosts 3-6) and seen; the creep towards the person is in depth only. At the duck the strip's lower end is 0.11 m over the floor."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "overshoot"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 1, onset cv 0.16, holds 3, still 37 %, dyn x3.13, joints 5",
+   "timeline: a slow creeping duck (0.2 m/s, 0.3-1.9 s), still, the pop up (0.64 m/s, ~2.6 s), a strip-only wrist cock (~3.5 s), a pause, the dart back (0.55 m/s) with its settle (O ~5.9 s), a slow way home",
+   "the duck is the pop's wind-up across a hold (not counted); the pop itself ends on a symmetric bell"
+  ],
+  "note": "The same little story as greet_06_peek (creep, still, burst, cocked wrist, dart), deeper (0.34 m) and with a settle after the dart; only the pop lands softly."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the 'still' before the pop reads as suspense or as a stop",
