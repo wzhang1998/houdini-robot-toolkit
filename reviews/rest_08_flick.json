@@ -24,6 +24,18 @@
   "faces_audience": 0.0,
   "note": "From AUDIENCE SIDE the strip does not visibly change (ghosts overlap); a guest sees nothing for 3 s."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "anticipation"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 1, lag 0.20 s (the strip trails the TCP), dyn x3.04",
+   "timeline: TCP 0.19 m/s and strip tips peaking after it (follow-through), then a settle; TCP extent 0.02 x 0.015 x 0.035 m, show energy 0.01",
+   "ghosts 1-10 overlap in every view"
+  ],
+  "note": "The flick's ingredients are there (a release, the strip trailing, a settle) but at 3 cm it is a tremor, and it starts with no counter-move."
+ },
  "suggestions": [
   {
    "target": "choreo phrase spec size (flick accents)",

@@ -19,6 +19,20 @@
   "faces_audience": 0.0,
   "note": "From AUDIENCE SIDE the strip barely tilts (ghost strips overlap); from 2 m it reads as a twitch of the strip, not a tap."
  },
+ "expression": {
+  "score": 1,
+  "lacks": [
+   "anticipation",
+   "overshoot",
+   "dynamics"
+  ],
+  "evidence": [
+   "TCP extent 0.003 x 0.033 x 0.009 m, peak 0.10 m/s, show energy 0.03, wrist share 94 %",
+   "2 big moves, A 0 O 0, dyn x2.2, lag 0.03 s",
+   "timeline: the 'tap' is a 0.5 s symmetric bell (strip 0.30 m/s), then a slow home bell: no snap"
+  ],
+  "note": "A barely visible tick with neither wind-up nor snap: rest_07_dab does the same action alive."
+ },
  "suggestions": [
   {
    "target": "choreo phrase spec size (dab accents)",

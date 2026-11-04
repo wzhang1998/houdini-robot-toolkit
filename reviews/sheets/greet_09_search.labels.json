@@ -165,6 +165,20 @@
   "wrist_share": 0.66,
   "action": "punch"
  },
+ "expression": {
+  "lag_s": -0.005,
+  "accents_per_min": 76.5,
+  "still_share": 0.354,
+  "holds": 4,
+  "dynamic_range": 3.45,
+  "big_moves": 3,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": 0.51,
+  "bar_contrast": 0.92,
+  "strip_ratio": 1.56,
+  "joints_used": 4
+ },
  "image": "reviews/sheets/greet_09_search.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

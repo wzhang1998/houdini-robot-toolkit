@@ -153,6 +153,20 @@
   "wrist_share": 0.66,
   "action": "slash"
  },
+ "expression": {
+  "lag_s": 0.031,
+  "accents_per_min": 47.2,
+  "still_share": 0.173,
+  "holds": 1,
+  "dynamic_range": 1.83,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 1.4,
+  "joints_used": 5
+ },
  "image": "reviews/sheets/greet_05_trace.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

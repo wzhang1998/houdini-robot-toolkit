@@ -13,6 +13,19 @@
   "faces_audience": 0.0,
   "note": "Visible from AUDIENCE SIDE: the strip, broadside, sinks 0.3 m on a gentle curve; 0.80-1.09 m high."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, still 4 %, dyn x1.71, lag 0.04 s",
+   "timeline: one smooth bell sink (0.21 m/s) and one home bell; the strip tips cross mildly in the first",
+   "the path bows ~5 cm (AUDIENCE SIDE, ghosts 3-6), the strip fans in TOP"
+  ],
+  "note": "A gentle float, as light and even as it should be, with a little bow; it wanders hardly at all and the strip barely trails: plain."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether it reads as weightless/wandering rather than as the same sink as rest_06_glide",

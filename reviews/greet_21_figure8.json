@@ -1,6 +1,7 @@
 {
  "id": "greet_21_figure8",
- "verdict": "keep",
+ "verdict": "fix",
+ "verdict_before_expression": "keep",
  "confidence": "medium",
  "readability": {
   "reads_as": "figure8",
@@ -19,7 +20,34 @@
   "faces_audience": 1.0,
   "note": "LEDs face the audience 1.00; the upright strip carries the eight face on."
  },
- "suggestions": [],
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "follow_through",
+   "phrasing",
+   "body_involvement"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, holds 0, still 0 %, dyn x2.21, lag 0.00 s, bar contrast 0.29",
+   "strip x1.0, J6 range 4 deg (orient fixed): the strip translates rigidly with the TCP, the wrist adds no look, lean or roll",
+   "timeline: regular two-thirds-law surges 0.15-0.58 m/s, two loops alike; extent 0.22 x 0.12 x 0.15 m"
+  ],
+  "note": "A small eight traced like a plotter: the fixed orientation leaves the wrist and strip out and nothing breathes; it reads but it is the flattest clip at the hub."
+ },
+ "suggestions": [
+  {
+   "target": "paths.make orient (figure8 at the greet hub)",
+   "change": "draw orient 'look' or 'tangent' instead of 'fixed'",
+   "why": "expression 2: with 'fixed' the strip translates rigidly (strip_ratio 1.0, lag 0); in look / tangent the tool leans or looks and rolls with the figure's rhythm, so the strip trails the eight",
+   "scope": "this clip"
+  },
+  {
+   "target": "paths.make intensity (figure8 at the greet hub)",
+   "change": "draw at intensity >= 0.6 (here 0.42)",
+   "why": "extent (0.2-0.6 m) and speed (v ~ k^1.5) grow with intensity: a bigger eight with stronger surges than 0.22 m",
+   "scope": "this clip"
+  }
+ ],
  "needs_live_check": [
   "whether the J3 spikes at the crossing (t ~3 s) show as a hitch at the strip's ends",
   "whether a 0.22 m eight reads from the audience zone"

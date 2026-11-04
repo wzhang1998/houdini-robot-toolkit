@@ -165,6 +165,20 @@
   "wrist_share": 0.75,
   "action": "slash"
  },
+ "expression": {
+  "lag_s": 0.018,
+  "accents_per_min": 86.2,
+  "still_share": 0.443,
+  "holds": 0,
+  "dynamic_range": 3.75,
+  "big_moves": 3,
+  "anticipated": 1,
+  "overshot": 1,
+  "onset_cv": 0.26,
+  "bar_contrast": 1.76,
+  "strip_ratio": 3.06,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/greet_04_tilt.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

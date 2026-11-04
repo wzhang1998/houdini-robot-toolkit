@@ -19,6 +19,18 @@
   "faces_audience": 0.0,
   "note": "The sink is visible in AUDIENCE SIDE (ghosts 5-8); the first 3 s show nothing from there."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, dyn x1.88, lag 0.07 s, joints 3",
+   "timeline: flat for 3.2 s (the 'look' segment, strip tip < 0.01 m/s), then one glide bell (0.26 m/s) and one home bell",
+   "still 7 % by the detector, but the first third of the clip shows nothing"
+  ],
+  "note": "The glide itself is smooth and even as it should be, but a third of the clip is a dead wait before it: nothing to watch, then one move."
+ },
  "suggestions": [
   {
    "target": "choreo phrase spec bars[].moves (glide at the rest hub)",

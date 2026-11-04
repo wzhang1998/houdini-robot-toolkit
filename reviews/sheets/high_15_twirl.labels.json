@@ -179,6 +179,20 @@
   "wrist_share": 0.84,
   "action": "punch"
  },
+ "expression": {
+  "lag_s": -0.009,
+  "accents_per_min": 57.3,
+  "still_share": 0.244,
+  "holds": 3,
+  "dynamic_range": 3.51,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": 1.76,
+  "strip_ratio": 5.52,
+  "joints_used": 2
+ },
  "image": "reviews/sheets/high_15_twirl.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

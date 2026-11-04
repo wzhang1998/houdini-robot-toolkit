@@ -19,6 +19,20 @@
   "faces_audience": 0.96,
   "note": "LEDs face the audience 0.96; the reach direction (towards the audience) is foreshortened in the audience-side view, so the small out-move is even less visible from there."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "phrasing",
+   "body_involvement",
+   "anticipation"
+  ],
+  "evidence": [
+   "still 60 % (holds 2, t 2.2-5.2 s and 5.6-7.2 s), 2 big moves in 9.1 s",
+   "A 1 O 1 on the first offer (A ~0.7 s, O ~1.6 s); the second offer at ~7.5 s has no lean back before it",
+   "wrist-led: J6 59 % speed vs J1/J2 13 %, joints 4, TCP extent 0.14 x 0.10 x 0.19 m; bar contrast 1.91 comes from the holds"
+  ],
+  "note": "The first offer is well shaped (lean back, out, settle) but the clip is mostly held and the offers are carried by the wrist, so it reads as waiting rather than offering."
+ },
  "suggestions": [
   {
    "target": "shows/party.json zones.greet",
@@ -31,6 +45,12 @@
    "change": "if the zone cannot grow: remove 'reach' (trace and dive already carry the body towards the audience at this hub)",
    "why": "a reach that cannot travel out reads as a wrist turn",
    "scope": "this family"
+  },
+  {
+   "target": "gestures.make intensity (reach at the greet hub)",
+   "change": "draw reach at intensity >= 0.6 (here 0.40)",
+   "why": "expression 2, still 60 %: a calmer draw takes the longer form with longer holds; a livelier one shortens the holds and enlarges the offer",
+   "scope": "this clip"
   }
  ],
  "needs_live_check": [

@@ -19,6 +19,18 @@
   "faces_audience": 0.92,
   "note": "LEDs face the audience 0.92; the dip is in plain view, the strip near upright in front of the column."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, dyn x3.23, lag 0.08 s (the wrist trails the dip), holds 1",
+   "timeline: a small first dip, then the main dip with its wind-up (A ~1.7 s) and settle (O ~3.6 s), then a strip-only roll at ~4.1 s and a small return",
+   "the dips do not get smaller each time: one nod and a tilt rather than a diminishing nod-nod-nod"
+  ],
+  "note": "The main nod has a wind-up, a settle and a trailing wrist, but there is only one real dip followed by a strip roll, so the nod lacks the dying-away repeats that make it read as agreement."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the bottom of the nod (t ~2.7 s) turns smoothly or hitches",

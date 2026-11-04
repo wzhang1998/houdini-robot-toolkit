@@ -19,6 +19,18 @@
   "faces_audience": 0.0,
   "note": "Readable from AUDIENCE SIDE: the strip tips up and down by ~15 deg (ghost strips fan around 1.0-1.2 m), near eye height."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 2 O 1, onset cv 0.01, holds 2, dyn x4.02, still 32 %",
+   "timeline: two small taps (~0.9 s, ~2.3 s), each with a wind-up (A) and the second settling (O ~2.6 s), syncopated, holds between",
+   "joints 3, wrist share 84 %: the wrist alone, fine for a dab"
+  ],
+  "note": "Two crisp taps with wind-ups, a settle and holds between: a lively dab; only the body stays out, which the dab hardly needs."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the 0.9 deg wind-up at 1.9 s reads as anticipation or as a hiccup on the arm",

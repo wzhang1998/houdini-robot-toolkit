@@ -13,6 +13,18 @@
   "faces_audience": 1.0,
   "note": "LEDs face the audience 1.00; the loop is drawn in the audience-side plane, legible as a shape."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, dyn x1.83, holds 1, joints 5, lag 0.03 s",
+   "timeline: the loop is two humps with a dip to 0.15 m/s at ~1.9 s (a corner, ghosts 2/5/8), then a still and a separate quicker return at ~4.2 s",
+   "strip tips stay with the TCP through the loop (strip x1.4): the gaze drifts with the path rather than trailing it"
+  ],
+  "note": "A loose path through the whole body, fittingly sustained, but its corners and the separate return break the flow and the gaze does not trail: pleasant filler."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the corner at ghost 5 (t 1.9 s) reads as a pause or a flowing turn",

@@ -155,6 +155,20 @@
   "wrist_share": 0.8,
   "action": "punch"
  },
+ "expression": {
+  "lag_s": 0.019,
+  "accents_per_min": 58.1,
+  "still_share": 0.168,
+  "holds": 0,
+  "dynamic_range": 3.5,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 2.38,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/low_12_dive.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

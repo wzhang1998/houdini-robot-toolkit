@@ -161,6 +161,20 @@
   "wrist_share": 0.79,
   "action": "press"
  },
+ "expression": {
+  "lag_s": -0.075,
+  "accents_per_min": 51.2,
+  "still_share": 0.383,
+  "holds": 2,
+  "dynamic_range": 3.12,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 0.61,
+  "strip_ratio": 1.21,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/high_12_dive.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

@@ -19,6 +19,20 @@
   "faces_audience": 0.0,
   "note": "From the audience side only the strip's slight tilt changes (ghost strips within ~10 deg); a guest would read it as the arm standing still."
  },
+ "expression": {
+  "score": 1,
+  "lacks": [
+   "dynamics",
+   "phrasing",
+   "body_involvement"
+  ],
+  "evidence": [
+   "TCP extent 0.02 x 0.04 x 0.04 m in 9.7 s, peak 0.05 m/s, show energy 0.00",
+   "3 big moves, A 0 O 0, onset cv 0.07, still 49 %, dyn x1.73",
+   "ghosts nearly coincide in all three views; the timeline peaks at 0.05 m/s"
+  ],
+  "note": "Near stillness: nothing to express."
+ },
  "suggestions": [
   {
    "target": "choreo phrase spec levels / size (glide bars at the rest hub)",

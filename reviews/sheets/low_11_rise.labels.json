@@ -173,6 +173,20 @@
   "wrist_share": 0.82,
   "action": "wring"
  },
+ "expression": {
+  "lag_s": -0.009,
+  "accents_per_min": 35.1,
+  "still_share": 0.261,
+  "holds": 3,
+  "dynamic_range": 2.45,
+  "big_moves": 3,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": 0.48,
+  "bar_contrast": 1.52,
+  "strip_ratio": 2.71,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/low_11_rise.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

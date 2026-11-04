@@ -13,6 +13,18 @@
   "faces_audience": 0.01,
   "note": "Readable from AUDIENCE SIDE: a 0.5 m sink and rise, strip tilting (ghosts 3-7); 0.61-1.11 m high."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, holds 2, still 24 %, dyn x2.87, bar contrast 0.8",
+   "timeline: a quicker sink (0.46 m/s, bound, measured wring) then a breath, a wandering rise where the two strip tips peak at different times (overlap), a breath, home",
+   "lag -0.06 s: in bar 1 the wrist leads rather than trails; onset cv 0.02"
+  ],
+  "note": "The most phrased clip at the hub: two bars of different character with breaths between and a wandering second bar; the first bar is bound, without the trailing wrist a float wants."
+ },
  "suggestions": [
   {
    "target": "choreo random_spec: flow for float bars",

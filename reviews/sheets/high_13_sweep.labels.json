@@ -165,6 +165,20 @@
   "wrist_share": 0.49,
   "action": "slash"
  },
+ "expression": {
+  "lag_s": -0.056,
+  "accents_per_min": 49.9,
+  "still_share": 0.366,
+  "holds": 2,
+  "dynamic_range": 2.43,
+  "big_moves": 3,
+  "anticipated": 1,
+  "overshot": 0,
+  "onset_cv": 0.32,
+  "bar_contrast": 1.56,
+  "strip_ratio": 1.22,
+  "joints_used": 6
+ },
  "image": "reviews/sheets/high_13_sweep.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

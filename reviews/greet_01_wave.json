@@ -19,6 +19,19 @@
   "faces_audience": 0.99,
   "note": "LEDs face the audience 0.99; the swing is across the audience-side view at ~1.4 m, eye height."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "5 big moves, A 0 O 1, onset cv 0.24, holds 0, still 19 %, dyn x2.4, lag 0.01 s",
+   "timeline: swings rise 0.33 -> 0.68 m/s and fade to a small last swing (a swell and fade), no breath between them",
+   "strip tips track the TCP closely after the first swing (strip x1.74): the roll goes with the swing rather than trailing it"
+  ],
+  "note": "An even wave that swells and fades, which suits the family, but the hand never pauses and the roll does not lag the swing: friendly, plain."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",

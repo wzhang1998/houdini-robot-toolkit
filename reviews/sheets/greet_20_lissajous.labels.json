@@ -203,6 +203,20 @@
   "wrist_share": 0.72,
   "action": "wring"
  },
+ "expression": {
+  "lag_s": 0.163,
+  "accents_per_min": 11.7,
+  "still_share": 0.026,
+  "holds": 0,
+  "dynamic_range": 1.89,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": 0.87,
+  "strip_ratio": 2.18,
+  "joints_used": 4
+ },
  "image": "reviews/sheets/greet_20_lissajous.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

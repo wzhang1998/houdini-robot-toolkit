@@ -174,6 +174,20 @@
   "wrist_share": 0.79,
   "action": "slash"
  },
+ "expression": {
+  "lag_s": 0.008,
+  "accents_per_min": 52.5,
+  "still_share": 0.318,
+  "holds": 2,
+  "dynamic_range": 3.75,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 1.32,
+  "strip_ratio": 1.95,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/low_17_scoop.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

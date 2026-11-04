@@ -139,6 +139,20 @@
   "clearance_m": 0.0606,
   "action": "float"
  },
+ "expression": {
+  "lag_s": -0.101,
+  "accents_per_min": 27.6,
+  "still_share": 0.078,
+  "holds": 0,
+  "dynamic_range": 2.08,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 0.04,
+  "strip_ratio": 1.42,
+  "joints_used": 4
+ },
  "image": "reviews/sheets/rest_00_float-float.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

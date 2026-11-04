@@ -24,6 +24,19 @@
   "faces_audience": 0.17,
   "note": "LEDs face the audience 0.17 (the face is down by design, a floor family); the strokes at ~0.55 m are low for guests' eyes, in front of the column."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "anticipation"
+  ],
+  "evidence": [
+   "4 big moves, A 0 O 1, holds 2, dyn x2.93, onset cv 0.44, joints 4, TCP extent 0.52 x 0.16 x 0.71 m",
+   "timeline: the way down (TCP 1.1, strip 2.3 m/s at ~0.9 s) and up (~9.7 s) are the loud parts; the two strokes are quiet 0.4 m/s with the head swivelling (strip tips apart), then three wring shakes",
+   "lag 0.01 s"
+  ],
+  "note": "Body and strip work together in the strokes and the wring is a good accent, but the light and shade is inverted: the travel to and from the floor is louder than the mopping."
+ },
  "suggestions": [
   {
    "target": "gestures.make mop way down / up",

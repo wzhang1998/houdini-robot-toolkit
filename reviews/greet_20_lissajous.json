@@ -19,6 +19,19 @@
   "faces_audience": 0.95,
   "note": "LEDs face the audience 0.95; the figure is drawn face on and at 1.2-1.5 m."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "dynamics"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, holds 0, still 3 %, accents 11.7/min, dyn x1.89",
+   "lag 0.16 s: the look trails the figure (the best follow-through at the hub)",
+   "timeline: the knot is drawn at a near-even 0.15-0.3 m/s for 7 s; the strip's turn to level and back (1.1-1.2 m/s at 0.7 s and 9.5 s) are the loudest moves"
+  ],
+  "note": "The knot flows and the gaze trails it, but 7 s at one speed with no breath and set-up turns louder than the figure make it a calm doodle."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",

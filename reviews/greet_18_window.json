@@ -13,6 +13,19 @@
   "faces_audience": 0.98,
   "note": "LEDs face the audience 0.98; the pane is face on, the eight legible from the audience."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics",
+   "follow_through"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, holds 1, dyn x2.44, onset cv 0.22, joints 5, lag 0.01 s, bar contrast 1.72",
+   "timeline: one lying eight at an even 0.3-0.45 m/s (3.6-8.5 s), then three quick strip shakes (dab bar) as an accent",
+   "the turn to level and back are the fastest moves (J6 78 %, strip 1.24 m/s), i.e. the set-up"
+  ],
+  "note": "The eight flows and the shake at the end gives it a full stop, but the stroke itself has one speed and the face does not trail: fine filler, the better of the two pane clips."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",

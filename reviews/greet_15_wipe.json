@@ -24,6 +24,20 @@
   "faces_audience": 0.98,
   "note": "LEDs face the audience 0.98; the pane faces the audience, the level 1 m blade is wide in view, but its 0.18 m strokes are small."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "dynamics",
+   "overshoot",
+   "follow_through"
+  ],
+  "evidence": [
+   "7 big moves, A 0 O 0, dyn x2.43, onset cv 0.4, holds 1, lag -0.01 s",
+   "timeline: the strokes and the lifts are the same ~0.3 m/s bumps (2-10 s): pressing on and lifting off look alike",
+   "the loudest moves are the strip turning to level and back (J6 81 %, strip 1.36 m/s at 0.2-1.4 s and 10.1-11.2 s), i.e. the set-up"
+  ],
+  "note": "One dynamic for 8 s of strokes, framed by louder set-up turns: the blade neither presses nor trails, so it reads as mechanical cleaning."
+ },
  "suggestions": [
   {
    "target": "gestures.make wipe stroke length",

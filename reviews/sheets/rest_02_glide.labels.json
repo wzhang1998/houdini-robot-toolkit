@@ -133,6 +133,20 @@
   "clearance_m": 0.0607,
   "action": "glide"
  },
+ "expression": {
+  "lag_s": 0.047,
+  "accents_per_min": 30.0,
+  "still_share": 0.298,
+  "holds": 1,
+  "dynamic_range": 1.92,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 1.22,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/rest_02_glide.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

@@ -167,6 +167,20 @@
   "wrist_share": 0.77,
   "action": "punch"
  },
+ "expression": {
+  "lag_s": 0.071,
+  "accents_per_min": 70.2,
+  "still_share": 0.347,
+  "holds": 4,
+  "dynamic_range": 3.54,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 1.7,
+  "strip_ratio": 4.74,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/high_17_salute.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

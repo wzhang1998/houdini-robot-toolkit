@@ -167,6 +167,20 @@
   "wrist_share": 0.9,
   "action": "glide"
  },
+ "expression": {
+  "lag_s": 0.019,
+  "accents_per_min": 55.1,
+  "still_share": 0.27,
+  "holds": 3,
+  "dynamic_range": 3.54,
+  "big_moves": 5,
+  "anticipated": 0,
+  "overshot": 2,
+  "onset_cv": 0.56,
+  "bar_contrast": 1.55,
+  "strip_ratio": 8.14,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/greet_16_salute.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

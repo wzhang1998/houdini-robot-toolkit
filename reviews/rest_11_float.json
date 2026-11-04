@@ -19,6 +19,19 @@
   "faces_audience": 0.0,
   "note": "Visible from AUDIENCE SIDE: strip broadside, a 0.4 m sink; 0.70-1.10 m high."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, still 1 %, dyn x1.8, lag 0.02 s",
+   "timeline: one smooth bell sink (0.23 m/s), one home bell, strip tips crossing slightly",
+   "path nearly straight; the indirectness is in the strip fanning (TOP, J4 range 24)"
+  ],
+  "note": "Light and even as a float should be, but straight and without breath or trailing wrist: much like rest_09 and rest_06."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether it reads as a float or as the same sink as rest_06_glide",

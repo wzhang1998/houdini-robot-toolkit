@@ -24,6 +24,18 @@
   "faces_audience": 0.93,
   "note": "LEDs face the audience 0.93; the scan runs across the audience-side view at eye height."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "anticipation"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 1, onset cv 0.51, holds 4, still 35 %, dyn x3.45",
+   "timeline: quick scans (0.74 m/s at ~1.9 s, J1 50 %) alternate with slow wrist looks (TCP 0.1 m/s, strip 0.5 m/s at ~3.7 s) and holds; ends with a slower lean to one person",
+   "no counter-move before the scans; heights barely change (z 1.20-1.32 m)"
+  ],
+  "note": "Varied timing, quick looks and holds, light and shade: it searches; the scans start cold and it stays on one level, so it is not quite alive."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",

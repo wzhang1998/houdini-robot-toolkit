@@ -173,6 +173,20 @@
   "wrist_share": 0.91,
   "action": "glide"
  },
+ "expression": {
+  "lag_s": -0.01,
+  "accents_per_min": 54.1,
+  "still_share": 0.141,
+  "holds": 2,
+  "dynamic_range": 3.44,
+  "big_moves": 4,
+  "anticipated": 0,
+  "overshot": 2,
+  "onset_cv": 0.33,
+  "bar_contrast": 0.69,
+  "strip_ratio": 7.57,
+  "joints_used": 1
+ },
  "image": "reviews/sheets/greet_14_twirl.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

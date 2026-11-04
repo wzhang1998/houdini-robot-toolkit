@@ -133,6 +133,20 @@
   "clearance_m": 0.0607,
   "action": "flick"
  },
+ "expression": {
+  "lag_s": 0.205,
+  "accents_per_min": 60.0,
+  "still_share": 0.25,
+  "holds": 0,
+  "dynamic_range": 3.04,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 2.2,
+  "joints_used": 4
+ },
  "image": "reviews/sheets/rest_08_flick.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

@@ -133,6 +133,20 @@
   "clearance_m": 0.0607,
   "action": "dab"
  },
+ "expression": {
+  "lag_s": 0.025,
+  "accents_per_min": 92.2,
+  "still_share": 0.323,
+  "holds": 2,
+  "dynamic_range": 4.02,
+  "big_moves": 3,
+  "anticipated": 2,
+  "overshot": 1,
+  "onset_cv": 0.01,
+  "bar_contrast": null,
+  "strip_ratio": 2.48,
+  "joints_used": 3
+ },
  "image": "reviews/sheets/rest_07_dab.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",

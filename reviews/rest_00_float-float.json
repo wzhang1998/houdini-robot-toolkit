@@ -19,6 +19,19 @@
   "faces_audience": 0.0,
   "note": "Expected low facing (rest hub faces away by design). The vertical sink and the strip fanning are both readable in AUDIENCE SIDE (strip broadside, ghosts 4-7 at 0.6-0.7 m). Lives at 0.64-1.11 m, below eye height but not low."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 0, dyn x2.08, bar contrast 0.04 (two float bars alike)",
+   "timeline: two near-equal humps (sink 0.32, rise 0.34 m/s), strip tips diverging in both (the strip fanning), a small home move",
+   "lag -0.10 s: the wrist leads the arm rather than trailing it; TCP path near-vertical (extent 0.08 x 0.13 x 0.47 m)"
+  ],
+  "note": "A smooth, weightless sink and rise, right in effort, but the two bars are mirror images with no breath between and the wandering is only in the strip."
+ },
  "suggestions": [],
  "needs_live_check": [
   "whether the float feels weightless/wandering or reads as a plain sink-and-rise",

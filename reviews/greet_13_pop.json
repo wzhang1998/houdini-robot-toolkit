@@ -19,6 +19,19 @@
   "faces_audience": 0.96,
   "note": "LEDs face the audience 0.96; the pop up is in front of the column."
  },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics",
+   "overshoot"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 0, dyn x1.91, holds 1, still 36 %",
+   "timeline: the flick the other way (A, ~0.4 s) then the snap up as a 1.2 s symmetric bell (slowed 1.35), a freeze 1.8-2.9 s, back",
+   "a pop calls for a stop dead: the bell decelerates as slowly as it accelerates"
+  ],
+  "note": "The counter-flick and the freeze are there, but the snap is a soft symmetric swell (dyn 1.91), so the pop has no punch."
+ },
  "suggestions": [],
  "needs_live_check": [
   "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",

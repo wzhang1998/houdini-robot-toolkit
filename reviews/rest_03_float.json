@@ -24,6 +24,18 @@
   "faces_audience": 0.0,
   "note": "Small from the audience side: the TCP moves 0.15 m, the strip sways (J6 range 17) at ~1.1-1.2 m, near eye level but barely changing."
  },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, holds 1, still 32 %, dyn x2.02, lag 0.06 s",
+   "timeline: the TCP stops dead at ~1.4 s between two humps while strip tip b keeps 0.14 m/s through the notch (overlap only in the strip)",
+   "TCP extent 0.02 x 0.07 x 0.15 m, flow -0.81 (bound)"
+  ],
+  "note": "A small, bound rise that stops in the middle: the float's drift and follow-through are missing from the body, left to the strip."
+ },
  "suggestions": [
   {
    "target": "choreo random_spec: flow for float bars",

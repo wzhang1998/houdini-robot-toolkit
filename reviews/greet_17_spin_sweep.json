@@ -24,6 +24,18 @@
   "faces_audience": 0.98,
   "note": "LEDs face the audience 0.98; the arc and strip loops are face on in the audience-side view."
  },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "5 big moves, A 1 O 1, onset cv 0.38, holds 1, dyn x2.46, strip x4.04 (a strip family), joints 3",
+   "timeline: the wind-up (A ~0.7 s), then three swings growing 0.85 -> 0.95 -> 1.1 m/s along the 0.38 m arc (a crescendo), the brake (O ~7.6 s), a hold",
+   "the unwind at 8.4-9.5 s is the fastest move of the clip (strip 1.26 m/s, J6 82 % accel)"
+  ],
+  "note": "Body and strip work together, with a wind-up, a growing crescendo and a brake; the phrase's loudest moment is the unwind on the way out, which spoils the ending."
+ },
  "suggestions": [
   {
    "target": "gestures.make spin_sweep unwind",

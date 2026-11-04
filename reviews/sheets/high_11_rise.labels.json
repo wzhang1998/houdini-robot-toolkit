@@ -161,6 +161,20 @@
   "wrist_share": 0.85,
   "action": "glide"
  },
+ "expression": {
+  "lag_s": -0.011,
+  "accents_per_min": 46.8,
+  "still_share": 0.288,
+  "holds": 2,
+  "dynamic_range": 2.43,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": 1.12,
+  "strip_ratio": 1.65,
+  "joints_used": 2
+ },
  "image": "reviews/sheets/high_11_rise.png",
  "show": "shows/party.json",
  "model": "URDF STL, vertex clustering 15 mm",
