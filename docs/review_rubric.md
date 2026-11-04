@@ -8,7 +8,9 @@ ran at build time; a clip in the library passed them. This rubric is about
 whether it is worth an audience's attention, and what to change in its
 **generator** when it is not.
 
-The skill `.claude/skills/review-clips` applies it and writes
+Each clip is judged on readability, awkwardness, the audience's view and
+expressiveness (scored 1-5), then given a verdict. The skill
+`.claude/skills/review-clips` applies it and writes
 `reviews/<clip_id>.json` and `reviews/SUMMARY.md`.
 
 ## What a reviewer looks at
@@ -18,7 +20,8 @@ The skill `.claude/skills/review-clips` applies it and writes
 | FRONT, AUDIENCE SIDE, TOP | ghost poses 1..N (pale early, dark late, numbered at the tool), the LED strip (magenta, an arrow where its LEDs face), the TCP path coloured by bar, the room as wireframes (keep-out red, slow orange, work zones dashed, the paper gold, the audience zone and the hub's zone dotted blue) |
 | timeline, top | TCP and strip-tip speed (m/s) over the bars, each bar labelled `intent -> measured` (red when they differ); ghost times marked |
 | timeline, middle / bottom | each joint's speed and acceleration as % of its limit (dashed line: 100 %) |
-| number panel | generator, hub, family, bpm; intent / measured per bar; peak speed / accel (/ jerk) % per joint; room and self clearance; flags: J5 and J3 zero crossings, J4 / J6 ranges, twitches per joint, wrist share, how much the LEDs face the audience; TCP height and extent |
+| timeline marks | **A** a big move's wind-up, **O** its overshoot (section 4) |
+| number panel | generator, hub, family, bpm; intent / measured per bar; peak speed / accel (/ jerk) % per joint; room and self clearance; flags: J5 and J3 zero crossings, J4 / J6 ranges, twitches per joint, wrist share, how much the LEDs face the audience; TCP height and extent; the expression measures (section 4) |
 
 Laban colours (as render_clip_review.py): punch red, slash orange, press dark
 red, wring purple, dab yellow, flick cyan, glide green, float light blue; grey
@@ -97,7 +100,56 @@ towards the base); the TOP view puts the audience at the bottom.
 - Clips at the same hub should not all look the same from there (note it
   across the summary, not per clip).
 
-## 4. The verdict
+## 4. Expressiveness (表现力): does it look alive?
+
+Readability asks whether the clip says what it claims; expressiveness asks
+whether it says it **like a performer** or like a machine moving between
+points. Score it 1-5, against what its action or family calls for, not
+against one ideal: a bounce *should* keep an even beat, a float *should* have
+little light and shade, a dab *should* be small.
+
+The sheet's number panel has two `expression:` lines (also
+`labels.expression`), and the timeline marks each big move's wind-up **A** (at
+its start) and overshoot **O** (at its end). They are hints measured on the
+TCP's path, not verdicts:
+
+| measure | what it hints at | flat when |
+|---|---|---|
+| `lag_s` | follow-through: the wrist trailing the arm (successive flow) | ~0 in a slash, flick, float, wave (everything at once) |
+| `anticipated` / `big_moves` | a wind-up against a big move just before it | 0 for sudden actions and families that strike (punch, slash, dab, flick, pop, reach, dive) |
+| `overshot` / `big_moves` | passing the mark and settling back | 0 for sudden strikes and swings |
+| `accents_per_min`, `holds` | phrasing: surges, dips, breaths | no holds and few accents in a long clip; or mostly holds (`still_share` over ~0.6) |
+| `dynamic_range` | light and shade: the peak speed over the mean while moving | under ~1.8 for anything but sustained actions |
+| `onset_cv` | timing variety between big moves | under ~0.1 over 3+ moves: metronomic (right for bounce, nod, wave swings) |
+| `bar_contrast` | the change of effort between bars of a phrase (or a gesture's 4-beat bars) | under ~0.5 in a phrase of different actions |
+| `strip_ratio` | how much the LED strip carries the motion (its tips' path over the TCP's) | over ~3 outside the strip families: the prop flails while the body stands |
+| `joints_used` | the whole body taking part (joints with >10 % of the travel) | 1-2 for a whole-arm action or family |
+
+The detector sees a wind-up or overshoot only as a separate short counter-move
+of the TCP. A wind-up done in the wrist alone, or a lean that curves rather
+than reverses, is not counted: look at the sheet before calling it missing.
+
+| score | reads as |
+|---|---|
+| 5 | alive: clear phrasing, light and shade, the anticipation / overshoot / follow-through its character calls for, the body and the strip working together, something unexpected in the timing |
+| 4 | expressive with one thing missing (e.g. no wind-up on a strike, or even timing) |
+| 3 | fine but plain: it reads, evenly; good filler, nothing a guest remembers |
+| 2 | flat: metronomic, one dynamic throughout, or the body still while only the strip moves (outside the strip families), or a long clip mostly held |
+| 1 | inert or mechanical: near stillness, or point-to-point moves with hard stops |
+
+Write the score with its evidence (the measures and what the sheet shows) and
+what it `lacks` (anticipation, overshoot, follow_through, phrasing, dynamics,
+contrast, timing_variety, body_involvement). Expressiveness feeds the verdict
+but does not override readability or the awkwardness above:
+
+- a clip that reads but scores 1-2 is a **fix** when a parameter would liven
+  it (`intensity`, choreo `principles`, `tempo`, `syncopate`, `flow`, a
+  gesture's form), otherwise keep with a note;
+- of two clips that duplicate each other, drop the less expressive;
+- timing feel itself (whether a wind-up *reads*) stays a live check: the score
+  is about what the motion contains, not how it lands on an audience.
+
+## 5. The verdict
 
 - **keep**: reads as its family / actions; nothing awkward a guest would
   notice. Notes are allowed.
@@ -113,7 +165,7 @@ When in doubt between keep and fix, keep and note it. When the sheet cannot
 show it (timing feel, the strip's light, the shadow on the paper), say so in
 `needs_live_check` instead of guessing.
 
-## 5. Suggestions are generator parameters, never joint angles
+## 6. Suggestions are generator parameters, never joint angles
 
 A suggestion names **where** (a file and key, or a generator's argument) and
 **what** to change. Never write joint angles, never a pose in degrees, never
@@ -136,7 +188,7 @@ Prefer the narrowest target: this clip's family at this hub (`hubs.<hub>.familie
 or the family's own constant) over the whole library's ranges. A suggestion
 for a module constant changes every clip of that family: say so.
 
-## 6. What a static sheet cannot judge
+## 7. What a static sheet cannot judge
 
 The sheet is a few frozen poses and some curves. Mark these as
 `needs_live_check` (Houdini's review video, Isaac Sim, or the arm) rather than
@@ -164,6 +216,8 @@ deciding them from the image:
   "awkward": [{"kind": "wrist_flip | elbow_flip | twitch | too_hard | strip_orientation | mechanical | crowding",
                "where": "t 3.1-3.8 s, ghosts 4-5", "evidence": "J5 crosses 0 once (labels.flags)"}],
   "audience": {"seen": true, "faces_audience": 0.42, "note": "..."},
+  "expression": {"score": 3, "lacks": ["anticipation", "timing_variety"],
+                 "evidence": ["4 big moves, A 0 O 0; onset cv 0.06"], "note": "..."},
   "suggestions": [{"target": "shows/party.json hubs.greet.families", "change": "...", "why": "...",
                    "scope": "this clip | this family | library"}],
   "needs_live_check": ["..."],

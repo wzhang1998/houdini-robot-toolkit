@@ -1,6 +1,6 @@
 ---
 name: review-clips
-description: Review motion clips of the FR20 show library for looks, without Houdini. Renders review sheets (three views, ghost poses, TCP path by bar intent, joint peaks, room clearance) with scripts/review_render.py, judges each against docs/review_rubric.md, and writes reviews/<clip_id>.json plus reviews/SUMMARY.md (fix and drop first). Use when asked to review, audit or judge clips, gestures, phrases or a show's library for aesthetics, readability or awkward motion.
+description: Review motion clips of the FR20 show library for looks, without Houdini. Renders review sheets (three views, ghost poses, TCP path by bar intent, joint peaks, room clearance, expressiveness measures) with scripts/review_render.py, judges each against docs/review_rubric.md, and writes reviews/<clip_id>.json plus reviews/SUMMARY.md (fix and drop first). Use when asked to review, audit or judge clips, gestures, phrases or a show's library for aesthetics, readability, expressiveness or awkward motion.
 ---
 
 # Review clips
@@ -61,12 +61,15 @@ limit, a clearance). Then, from the rubric:
    the view shows).
 3. **The audience's view**: the AUDIENCE SIDE view first, then TOP (the
    audience at the bottom).
-4. **Verdict** keep / fix / drop, and a **confidence**: high when the numbers
+4. **Expressiveness**, a score 1-5 (rubric 4): against what the action or
+   family calls for; the `expression:` lines and the timeline's A / O marks
+   are hints, the sheet decides; write the evidence and what it `lacks`.
+5. **Verdict** keep / fix / drop, and a **confidence**: high when the numbers
    and the picture agree, low when only the picture says it.
-5. **Suggestions** for fix and drop: generator parameters only (rubric 5),
+6. **Suggestions** for fix and drop: generator parameters only (rubric 6),
    the narrowest target that would do it; for a module constant, say every
    clip of the family changes. Never joint angles, never a hub's `q` / `near`.
-6. **needs_live_check**: what a still sheet cannot show (rubric 6).
+7. **needs_live_check**: what a still sheet cannot show (rubric 7).
 
 Compare clips of the same family across hubs (`greet_*_wave`, `low_*_wave`,
 `high_*_wave`) and clips at one hub against each other: a duplicate or a

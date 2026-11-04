@@ -614,6 +614,114 @@ def twitches(qs, v, dt):
     return out
 
 
+# --------------------------------------------------------------------------
+# expressiveness: what makes a motion read as alive rather than mechanical
+# --------------------------------------------------------------------------
+
+MOVE_FLOOR = 0.05                # a frame moves when the TCP is faster than this share of its peak (a slow wind-up too)
+BIG_MOVE = 0.35                  # a move is big at this share of the longest (and BIG_MOVE_M at least)
+BIG_MOVE_M = 0.03
+COUNTER_SHARE = (0.03, 0.4)      # a counter-move (wind-up, overshoot) is this share of its big move's length
+COUNTER_GAP_S = 0.45             # ... and this near to it in time (between the speed floor's crossings)
+HOLD_S = 0.4                     # a stillness inside the clip this long counts as a hold
+
+
+def moves(t, path, speed):
+    """[(i0, i1, length m, displacement)]: spans where the point moves
+    (speed over MOVE_FLOOR of its peak), split where it turns back (two
+    steps more than ~100 degrees apart: a reversal 24 fps samples can step
+    over without a dip in speed)."""
+    peak = max(speed) or 1e-9
+    mov = [v > max(L.STILL_TCP_M_S, MOVE_FLOOR * peak) for v in speed]
+    step = [None] + [[path[i][j] - path[i - 1][j] for j in range(3)] for i in range(1, len(path))]
+    out, k = [], 0
+    while k < len(mov):
+        if not mov[k]:
+            k += 1
+            continue
+        i0 = max(0, k - 1)
+        k += 1
+        while k < len(mov) and mov[k] and not (step[k] and step[k - 1] and _cos(step[k], step[k - 1]) < -0.2):
+            k += 1
+        i1 = min(len(path) - 1, k if k >= len(mov) or not mov[k] else k - 1)
+        ln = sum(math.dist(path[i], path[i - 1]) for i in range(i0 + 1, i1 + 1))
+        out.append((i0, i1, ln, [path[i1][j] - path[i0][j] for j in range(3)]))
+    return out
+
+
+def _cos(a, b):
+    na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(x * x for x in b))
+    return sum(x * y for x, y in zip(a, b)) / (na * nb) if na > 1e-9 and nb > 1e-9 else 0.0
+
+
+def expression(clip, t, tcp, v_tcp, tips, bars):
+    """The measures behind the rubric's expressiveness (docs/review_rubric.md, 4):
+
+    lag_s            the wrist trailing the arm (motion_labels.successive_lag): follow-through
+    accents_per_min  speed dips between surges (motion_labels): phrasing
+    still_share      the share of the clip held still; holds: stillnesses of HOLD_S inside it
+    dynamic_range    the TCP's peak over its mean speed while moving: light and shade
+    big_moves        moves of BIG_MOVE of the longest; for them:
+      anticipated    a short counter-move just before, against its direction (a wind-up)
+      overshot       a short move just after, back against it (past the mark and settle)
+      onset_cv       how much the times between their starts vary: ~0 metronomic
+    bar_contrast     the largest spread of one effort (weight, time, space, flow) over the bars
+    strip_ratio      the strip tips' path over the TCP's: how much the prop carries the motion
+    joints_used      joints with over 10 % of the travel
+
+    Heuristics on the TCP's path: a counter-move is found only when the speed
+    dips between it and its move, as at a reversal."""
+    q = [p["q"] for p in clip["points"]]
+    lab = L.label(dict(clip, tcp=tcp))
+    d = lab["descriptors"]
+    mv = moves(t, tcp, v_tcp)
+    longest = max((m[2] for m in mv), default=0.0)
+    big = [k for k, m in enumerate(mv) if m[2] >= max(BIG_MOVE * longest, BIG_MOVE_M)]
+    ant, ovs, marks = 0, 0, []
+    for k in big:
+        i0, i1, ln, disp = mv[k]
+        if k > 0 and k - 1 not in big:
+            p0, p1, pl, pd = mv[k - 1]
+            if (t[i0] - t[p1] <= COUNTER_GAP_S and COUNTER_SHARE[0] * ln <= pl <= COUNTER_SHARE[1] * ln
+                    and _cos(pd, disp) < -0.3):
+                ant += 1
+                marks.append(("A", t[i0]))
+        if k + 1 < len(mv) and k + 1 not in big:
+            n0, n1, nl, nd = mv[k + 1]
+            if (t[n0] - t[i1] <= COUNTER_GAP_S and COUNTER_SHARE[0] * ln <= nl <= COUNTER_SHARE[1] * ln
+                    and _cos(nd, disp) < -0.3):
+                ovs += 1
+                marks.append(("O", t[i1]))
+    starts = [t[mv[k][0]] for k in big]
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    cv = (math.sqrt(sum((g - sum(gaps) / len(gaps)) ** 2 for g in gaps) / len(gaps)) / (sum(gaps) / len(gaps))
+          if len(gaps) >= 2 and sum(gaps) > 0 else None)
+    moving = [v for v in v_tcp if v > max(L.STILL_TCP_M_S, MOVE_FLOOR * (max(v_tcp) or 1e-9))]
+    first, last = (mv[0][0], mv[-1][1]) if mv else (0, 0)
+    holds = sum(1 for a, b in zip(mv, mv[1:]) if t[b[0]] - t[a[1]] >= HOLD_S and a[1] >= first and b[0] <= last)
+    efforts = []
+    for b in bars:
+        if b[1] - b[0] > 0.3:
+            e = L.label_span(dict(clip, tcp=tcp), b[0], b[1])
+            if e.get("action"):
+                efforts.append(e)
+    contrast = (round(max(max(e[k] for e in efforts) - min(e[k] for e in efforts)
+                          for k in ("weight", "time", "space", "flow")), 2) if len(efforts) >= 2 else None)
+    tcp_path = sum(math.dist(tcp[i], tcp[i - 1]) for i in range(1, len(tcp))) or 1e-9
+    tip_path = max(sum(math.dist(p[i], p[i - 1]) for i in range(1, len(p))) for p in tips)
+    share = d.get("joint_share") or []
+    return {
+        "lag_s": d.get("successive_lag_s"), "accents_per_min": d.get("accents_per_min"),
+        "still_share": (lab["measured"].get("raw") or {}).get("still_fraction"), "holds": holds,
+        "dynamic_range": round(max(moving) / (sum(moving) / len(moving)), 2) if moving else None,
+        "big_moves": len(big), "anticipated": ant, "overshot": ovs,
+        "onset_cv": round(cv, 2) if cv is not None else None,
+        "bar_contrast": contrast, "strip_ratio": round(tip_path / tcp_path, 2),
+        "joints_used": sum(1 for x in share if x > 0.1),
+        "_marks": marks,
+    }
+
+
 def measure_clip(clip, cfg, env, model):
     """Everything the sheet shows, as a dict (the labels.json)."""
     import numpy as np
@@ -699,7 +807,9 @@ def measure_clip(clip, cfg, env, model):
         "show_labels": {k: show_lab.get(k) for k in ("energy", "clearance_m", "wrist_share", "action")
                         if show_lab.get(k) is not None},
     }
-    series = {"t": t, "v_tcp": v_tcp, "v_tips": v_tips, "watched": watched, "ts": ts,
+    expr = expression(clip, t, tcp, v_tcp, tips, bars)
+    out["expression"] = {k: v for k, v in expr.items() if not k.startswith("_")}
+    series = {"t": t, "v_tcp": v_tcp, "v_tips": v_tips, "watched": watched, "ts": ts, "marks": expr["_marks"],
               "vel_pct": (np.abs(v) / np.array(vel) * 100.0), "acc_pct": (np.abs(a) / np.array(acc) * 100.0),
               "tcp": tcp, "strip": strip, "face": face}
     return out, series
@@ -794,6 +904,9 @@ def render_sheet(clip, info, series, cfg, env, model, path, n_ghosts=GHOSTS, cap
     for n, k in enumerate(gk):
         ax1.axvline(t[k], color="#555555", lw=0.5, ls=":")
         ax1.text(t[k], 0.02, "%d" % (n + 1), transform=ax1.get_xaxis_transform(), fontsize=6.5, ha="center")
+    for letter, tt in series.get("marks", []):           # a wind-up (A) before a move, an overshoot (O) after it
+        ax1.text(tt, 0.80, letter, transform=ax1.get_xaxis_transform(), fontsize=8, weight="bold",
+                 color="#1565c0", ha="center")
     ax1.set_ylabel("m/s", fontsize=7)
     ax1.legend(handles=[Line2D([0], [0], color=c, lw=2, label=l) for c, l in
                         (("black", "TCP"), ((0.85, 0.1, 0.55), "strip tip a"), ((0.55, 0.1, 0.85), "strip tip b"))],
@@ -911,6 +1024,14 @@ def text_lines(info):
     out.append(("TCP z %.2f-%.2f m  extent %s m  peak %.2f m/s  strip tip %.2f m/s" % (
         tc["z_min"], tc["z_max"], "x".join("%.2f" % e for e in tc["extent_m"]), tc["peak_mps"],
         tc["strip_tip_peak_mps"]), "#111111", 7))
+    x = info.get("expression")
+    if x:
+        out.append(("expression: lag %.2f s  accents %s/min  still %s  holds %d  dyn x%s" % (
+            x["lag_s"] or 0.0, x["accents_per_min"], "%.0f%%" % (100 * x["still_share"]) if x["still_share"] is not None
+            else "-", x["holds"], x["dynamic_range"]), "#1565c0", 7.5))
+        out.append(("  %d big moves: A %d  O %d  onset cv %s  bar contrast %s  strip x%s  joints %d" % (
+            x["big_moves"], x["anticipated"], x["overshot"], x["onset_cv"], x["bar_contrast"], x["strip_ratio"],
+            x["joints_used"]), "#1565c0", 7.5))
     if info.get("show_labels", {}).get("energy") is not None:
         out.append(("show energy %.2f" % info["show_labels"]["energy"], "#444444", 7))
     out.append(("ghosts at " + " ".join("%.1f" % x for x in info.get("ghost_times_s", [])) + " s", "#444444", 7))
@@ -1033,6 +1154,31 @@ def self_test():
     check(twitches(qs, vv, 0.008)[0] >= 5, "a jitter counts as twitches")
     gt = pick_ghosts(series["t"], series["watched"], 10)
     check(len(gt) == 10 and gt[0] == 0.0 and gt == sorted(gt), "10 ghosts, the start first")
+    # expression: a move with a wind-up before it and an overshoot after it is found as such
+    tt = [k / 24.0 for k in range(24 * 6)]
+
+    def ease(u):
+        u = max(0.0, min(1.0, u))
+        return u * u * u * (10 - 15 * u + 6 * u * u)
+    xs = []
+    for x_ in tt:
+        x = -0.04 * ease((x_ - 0.6) / 0.4)                          # back 4 cm
+        x += 0.54 * ease((x_ - 1.1) / 0.8)                          # out 54 cm
+        x -= 0.06 * ease((x_ - 1.95) / 0.4)                         # settle back 6 cm
+        x += -0.44 * ease((x_ - 3.5) / 1.0)                         # home, plainly
+        xs.append(x)
+    path = [(x, 0.0, 1.0) for x in xs]
+    sp = [0.0] + [abs(xs[i] - xs[i - 1]) * 24.0 for i in range(1, len(xs))]
+    pts_ = [{"t": a, "q": list(qh)} for a in tt]
+    ex = expression({"points": pts_, "tcp": path}, tt, path, sp, [path, path], [])
+    check(ex["big_moves"] == 2 and ex["anticipated"] == 1 and ex["overshot"] == 1 and ex["holds"] == 1,
+          "expression: a wind-up and an overshoot found (%s)" % {k: ex[k] for k in ("big_moves", "anticipated",
+                                                                                     "overshot", "holds")})
+    even = [(0.1 * (1.0 - math.cos(2 * math.pi * x_)), 0.0, 1.0) for x_ in tt]   # the same swing, the same beat
+    sp2 = [0.0] + [math.dist(even[i], even[i - 1]) * 24.0 for i in range(1, len(even))]
+    ex2 = expression({"points": pts_, "tcp": even}, tt, even, sp2, [even, even], [])
+    check(ex2["onset_cv"] is not None and ex2["onset_cv"] < 0.05 and ex2["anticipated"] == 0,
+          "expression: an even swing is metronomic (onset cv %s)" % ex2["onset_cv"])
     # family bars: 4 beats at the bpm
     gb = gesture_bars(clip, {"bpm": 120, "family": "wave"})
     check(len(gb) == 4 and all(abs((b[1] - b[0]) - 2.0) < 1e-6 for b in gb), "a gesture's 4-beat bars")
