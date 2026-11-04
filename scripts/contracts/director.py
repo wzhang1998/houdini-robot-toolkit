@@ -95,8 +95,21 @@ class Intent:
             kind = IntentKind(d.get("kind"))
         except ValueError:
             raise ValueError("kind %r is not one of %s" % (d.get("kind"), [k.value for k in IntentKind]))
-        return Intent(kind, d.get("clip"), d.get("action"), d.get("family"), d.get("energy"), d.get("trigger"),
-                      str(d.get("reason", ""))[:REASON_MAX])
+        for k in ("clip", "action", "family", "trigger", "reason"):
+            if d.get(k) is not None and not isinstance(d[k], str):
+                raise ValueError("%s must be a string, got %s" % (k, type(d[k]).__name__))
+        e = d.get("energy")
+        if e is not None:
+            if isinstance(e, str):                         # a model's "0.8": taken if it is a number
+                try:
+                    e = float(e)
+                except ValueError:
+                    raise ValueError("energy %r is not a number" % (e,))
+            elif isinstance(e, bool) or not isinstance(e, (int, float)):
+                raise ValueError("energy must be a number, got %s" % type(e).__name__)
+            e = float(e)
+        return Intent(kind, d.get("clip"), d.get("action"), d.get("family"), e, d.get("trigger"),
+                      (d.get("reason") or "")[:REASON_MAX])
 
     @staticmethod
     def defer(reason=""):
@@ -234,9 +247,11 @@ FALLBACK_REASONS = ("timeout", "error", "invalid", "busy", "defer")
 
 
 class GuardedDirector:
-    """Runs a Director with a time budget on a worker thread. decide() -> (intent or None, outcome);
-    None means fall back, outcome["fallback"] says why (FALLBACK_REASONS). A Director still running
-    after its budget is left to finish; until it does every call is "busy" (calls never pile up)."""
+    """Runs a Director with a time budget on a worker thread. decide() -> (intent or None, outcome).
+    Carry out the intent only when outcome["fallback"] is None; otherwise it says why not
+    (FALLBACK_REASONS): the intent is None then, except DEFER (returned as given). An answer refused as
+    invalid is kept in outcome["rejected"] (its dict) for the log, never returned. A Director still
+    running after its budget is left to finish; until it does every call is "busy" (no pile-up)."""
 
     def __init__(self, director, budget_s=DEFAULT_BUDGET_S):
         self.director, self.budget_s = director, float(budget_s)
@@ -245,7 +260,7 @@ class GuardedDirector:
 
     def decide(self, inp):
         out = {"latency_ms": 0.0, "budget_ms": round(self.budget_s * 1000.0, 3), "fallback": None, "errors": [],
-               "raw": None}
+               "raw": None, "rejected": None}
         if self.running is not None and not self.running.done():
             out["fallback"] = "busy"
             return None, out
@@ -273,7 +288,9 @@ class GuardedDirector:
         errs = validate_intent(ans, inp)
         if errs:
             out["fallback"], out["errors"] = "invalid", errs
-            return (ans if isinstance(ans, Intent) else None), out
+            if isinstance(ans, Intent):
+                out["rejected"] = ans.to_dict()
+            return None, out
         if ans.kind == IntentKind.DEFER:
             out["fallback"] = "defer"
         return ans, out
@@ -282,17 +299,41 @@ class GuardedDirector:
         self.pool.shutdown(wait=False, cancel_futures=True)
 
 
+@dataclass
+class TriggerPolicy:
+    """Limits on what a Director (never the operator) may trigger. The defaults are the safe answers:
+    the paper is exposed once (show.Runner's own guard only refuses a scan while one runs or waits,
+    so a Director asking at every pick would start one as soon as the last ended)."""
+    scan_per_run: int = 1             # Director-issued scans in a run
+    cooldown_s: float = 120.0         # show seconds between two Director triggers of the same name
+    enforce_no_repeat: bool = True    # PLAY_CLIP of a clip within the last no_repeat is refused (as the
+                                      # Selector's pool excludes it), unless every clip here is that recent
+
+    def refuse(self, name, issued, clock):
+        """Why a Director's trigger of name is refused now, or None. issued: [(clock, name)] so far."""
+        mine = [t for t, n in issued if n == name]
+        if name == "scan" and len(mine) >= self.scan_per_run:
+            return "trigger scan refused: %d Director scan(s) a run (TriggerPolicy.scan_per_run)" % self.scan_per_run
+        if mine and clock - mine[-1] < self.cooldown_s:
+            return "trigger %s refused: %.0f s since the last, cooldown %.0f s" % (name, clock - mine[-1],
+                                                                                 self.cooldown_s)
+        return None
+
+
 class DirectorSelector(S.Selector):
     """show.Selector whose pick() asks a Director first and falls back to its own weighted random
     pick (the inherited one) -- what show.Runner calls, so the Runner, its routes, its triggers'
     checks and every built clip stay as they are.
 
     scene_fn(clock) -> SceneSummary or None; log: a decision_log.DecisionLog (or None);
-    on_trigger(name): what a TRIGGER intent calls (the Runner's trigger, wired by attach())."""
+    on_trigger(name): what a TRIGGER intent calls (the Runner's trigger, wired by attach());
+    policy: TriggerPolicy (the default: one Director scan a run, a cooldown per trigger, no_repeat held)."""
 
     def __init__(self, clips, director, graph, no_repeat=6, seed=None, arc=None, budget_s=DEFAULT_BUDGET_S,
-                 scene_fn=None, log=None):
+                 scene_fn=None, log=None, policy=None):
         super().__init__(clips, no_repeat, seed, arc)
+        self.policy = policy or TriggerPolicy()
+        self.issued = []                                     # [(clock, name)] of the Director's triggers
         self.guard = GuardedDirector(director, budget_s)
         self.director = director
         self.library = LibraryIndex.from_graph(graph, clips)
@@ -339,15 +380,26 @@ class DirectorSelector(S.Selector):
         chosen, trig = None, None
         if out["fallback"] is None:
             if intent.kind == IntentKind.PLAY_CLIP:
-                chosen = self.by_name[intent.clip]
+                window = self.recent[-self.no_repeat:] if self.no_repeat else []
+                fresh = [c for c in at if c.name not in window]
+                if self.policy.enforce_no_repeat and intent.clip in window and fresh:
+                    out["fallback"], out["errors"] = "invalid", [
+                        "clip %s repeats within the last %d (no_repeat)" % (intent.clip, self.no_repeat)]
+                else:
+                    chosen = self.by_name[intent.clip]
             elif intent.kind == IntentKind.PLAY_LIKE:
                 chosen = self._like(intent, at, mood, clock)
                 if chosen is None:
                     out["fallback"], out["errors"] = "invalid", ["nothing at %s matches %s" % (hub, intent.to_dict())]
             elif intent.kind == IntentKind.TRIGGER:
-                trig = intent.trigger
-                if self.on_trigger is not None:
-                    self.on_trigger(trig)                    # the Runner checks and routes it, after this clip
+                why = self.policy.refuse(intent.trigger, self.issued, clock)
+                if why:
+                    out["fallback"], out["errors"] = "invalid", [why]
+                else:
+                    trig = intent.trigger
+                    self.issued.append((clock, trig))
+                    if self.on_trigger is not None:
+                        self.on_trigger(trig)                # the Runner checks and routes it, after this clip
         if chosen is not None:
             self.recent.append(chosen.name)                  # show.Selector.pick's bookkeeping
             self.recent_segs = list(self.recent_segs)[-5:] + [chosen]
@@ -366,16 +418,17 @@ class DirectorSelector(S.Selector):
         self.guard.close()
 
 
-def selector_for(graph, director, seed=None, budget_s=DEFAULT_BUDGET_S, scene_fn=None, log=None):
+def selector_for(graph, director, seed=None, budget_s=DEFAULT_BUDGET_S, scene_fn=None, log=None, policy=None):
     """A DirectorSelector over the graph's idle clips, with the show's own select settings (as show.runner_for)."""
     sel = graph.info.get("select", {})
     return DirectorSelector(graph.idle(), director, graph, sel.get("no_repeat", 6), seed=seed, arc=sel.get("arc"),
-                            budget_s=budget_s, scene_fn=scene_fn, log=log)
+                            budget_s=budget_s, scene_fn=scene_fn, log=log, policy=policy)
 
 
-def runner_with(graph, director, seed=None, budget_s=DEFAULT_BUDGET_S, scene_fn=None, log=None, run_log=None):
+def runner_with(graph, director, seed=None, budget_s=DEFAULT_BUDGET_S, scene_fn=None, log=None, run_log=None,
+                policy=None):
     """show.runner_for with a Director: the same Runner, hub_stay and seeds; the Selector a DirectorSelector."""
-    sel = selector_for(graph, director, seed, budget_s, scene_fn, log)
+    sel = selector_for(graph, director, seed, budget_s, scene_fn, log, policy)
     r = S.Runner(graph, sel, hub_stay=tuple(graph.info.get("select", {}).get("hub_stay", (2, 4))), seed=seed,
                  log=run_log)
     return r, sel.attach(r)
@@ -409,6 +462,15 @@ def self_test():
     check("unknown trigger refused; a known one taken",
           validate_intent(Intent(IntentKind.TRIGGER, trigger="dance"), inp) != []
           and validate_intent(Intent(IntentKind.TRIGGER, trigger="scan"), inp) == [])
+    for bad in ({"kind": "play_like", "energy": True}, {"kind": "play_clip", "clip": 3},
+                {"kind": "play_like", "energy": "lots"}, {"kind": "trigger", "trigger": ["scan"]}):
+        try:
+            Intent.from_dict(bad)
+            check("a field of the wrong type is not parsed: %s" % bad, False)
+        except ValueError as e:
+            check("a field of the wrong type is not parsed: %s" % bad, True, e)
+    check("... but a number given as a string is taken (energy \"0.8\")",
+          Intent.from_dict({"kind": "play_like", "energy": "0.8"}).energy == 0.8)
     check("an intent round-trips through JSON",
           Intent.from_dict(json.loads(json.dumps(Intent(IntentKind.PLAY_LIKE, action="float", energy=0.2).to_dict())))
           == Intent(IntentKind.PLAY_LIKE, action="float", energy=0.2))
@@ -441,7 +503,17 @@ def self_test():
     check("... once it has finished, it is asked again", gd.decide(inp)[1]["fallback"] == "timeout")
     gd.close()
     check("an exception: error", GuardedDirector(Boom()).decide(inp)[1]["fallback"] == "error")
-    check("a clip that does not exist: invalid", GuardedDirector(Liar()).decide(inp)[1]["fallback"] == "invalid")
+    a, o = GuardedDirector(Liar()).decide(inp)
+    check("a clip that does not exist: invalid, nothing returned to carry out", a is None and o["fallback"] == "invalid")
+
+    class WrongHub:
+        name, version = "wrong_hub", "0"
+
+        def decide(self, inp):
+            return Intent(IntentKind.PLAY_CLIP, clip=other)
+    a, o = GuardedDirector(WrongHub()).decide(inp)
+    check("... an Intent refused is kept in the outcome (for the log), not returned",
+          a is None and o["rejected"] == {"schema": INTENT_SCHEMA, "kind": "play_clip", "clip": other}, o)
 
     sel, _ = None, None
     r, sel = runner_with(g, Boom(), seed=3)

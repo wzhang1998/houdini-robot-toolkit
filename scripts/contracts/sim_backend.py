@@ -100,7 +100,10 @@ class SimArm:
         import urdf_rig as U
         if self._chain is None:
             self._chain = U.parse_urdf(os.path.join(ROOT, urdf))["chain"]
-        Rm, p6 = ur_ik.pose_of(self._chain, list(self.q if q is None else q))
+        if q is None:
+            with self.lock:
+                q = list(self.q)
+        Rm, p6 = ur_ik.pose_of(self._chain, list(q))
         return U._add(p6, U._mat_vec(Rm, (0.0, 0.0, float(self.prof["rig"].get("flange_offset_m", 0.0)))))
 
 

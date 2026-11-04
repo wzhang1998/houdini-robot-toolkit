@@ -8,8 +8,12 @@ python scripts/contracts/coupling_audit.py            # the tables
 python scripts/contracts/coupling_audit.py --sites    # every site, file:line
 ```
 
-which reads the source with `ast` and imports none of it. Rerun it before
-trusting a number here: the code moves faster than this page.
+which reads the source with `ast` and imports none of it. **The numbers on this
+page are a snapshot of 2026-11-04; the script is the source of truth.** Rerun
+it before trusting one, and after any merge that adds code — the open
+`review-loop` PR, for one, adds `scripts/review_render.py`, which imports
+`fairino_player.Path` and hard-codes `"fr20"` (`RP.load`, `M._tcp_path`,
+`M.from_csv`); whichever of the two merges second should refresh the counts.
 
 The question this page answers: **to put a UF850 / xArm, or an OAK-D, under
 the existing show, what has to change, and where should each change live?**

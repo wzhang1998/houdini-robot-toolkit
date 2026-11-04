@@ -56,7 +56,7 @@ Every line carries `"schema": "motionlab.decision/1"` and the run's `run_id`.
 | `director` | `{name, version}` | who was asked |
 | `input` | object | the **input snapshot** (`DirectorInput.to_dict()`, `motionlab.director_input/1`): `scene` (SceneSummary), `library` (digest + triggers only), `show` (ShowState), `candidates` |
 | `input_digest` | str | sha256[:16] of `input` — equal digests are the same question |
-| `output.intent` | object \| null | the parsed answer (`motionlab.intent/1`), null if none (timeout, error, unparsable) |
+| `output.intent` | object \| null | the parsed answer (`motionlab.intent/1`) — also when it was refused as invalid (it is logged, never carried out); null if none (timeout, error, unparsable) |
 | `output.raw` | str \| null | the raw answer when it came as a dict (≤ 500 chars) — what a model actually said |
 | `validation` | `{ok, errors[]}` | `validate_intent`'s verdict; errors name the field |
 | `fallback` | `{used, reason}` | `reason` ∈ `timeout`, `error`, `invalid`, `busy`, `defer`, or null; `used` ⇔ `reason` not null |

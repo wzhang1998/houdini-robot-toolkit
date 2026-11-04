@@ -356,6 +356,60 @@ def director_suite(make_director, graph, report, budget_s=D.DEFAULT_BUDGET_S, mi
                  len(r.history) > 5 and sel.counts["error"] == 0 and sel.counts["invalid"] == 0, sel.counts)
 
 
+def policy_suite(graph, report, minutes=30.0):
+    """The TriggerPolicy defaults against Directors that push them: one that asks for the scan (and
+    every other trigger) at every pick, one that asks for the clip just played at every pick."""
+    from contracts import decision_log as DL
+    report.section("director policy (adversarial Directors)")
+
+    class Spammer:
+        name, version = "trigger_spammer", "0"
+
+        def __init__(self):
+            self.k = 0
+
+        def decide(self, inp):
+            self.k += 1
+            return D.Intent(D.IntentKind.TRIGGER, trigger=inp.library.triggers[self.k % len(inp.library.triggers)])
+
+    class Repeater:
+        name, version = "repeater", "0"
+
+        def decide(self, inp):
+            here = [c for c in reversed(inp.show.recent) if c in inp.candidates]
+            return D.Intent(D.IntentKind.PLAY_CLIP, clip=here[0] if here else inp.candidates[0])
+
+    for d, label in ((Spammer(), "spammer"), (Repeater(), "repeater")):
+        log = DL.DecisionLog()
+        r, sel = D.runner_with(graph, d, seed=1, budget_s=1.0, log=log)
+        t, dt = 0.0, 0.05
+        while t < minutes * 60.0:
+            t += dt
+            r.step(dt)
+        sel.close()
+        decs = [x for x in log.records if x["kind"] == "decision"]
+        if label == "spammer":
+            scans = sum(1 for _, n in r.history if graph_kind(graph, n) == "scan")
+            issued = [(x["show_clock"], x["applied"]["trigger"]) for x in decs if x["applied"]["trigger"]]
+            gaps_ok = all(b[0] - a[0] >= 120.0 for i, a in enumerate(issued) for b in issued[i + 1:] if a[1] == b[1])
+            report.check("a Director asking for a trigger at every pick: the paper exposed once in %g min" % minutes,
+                         scans == 1, scans)
+            report.check("... each trigger name at most once every 120 s; the rest refused as invalid, logged",
+                         gaps_ok and sel.counts["invalid"] > 0
+                         and all(x["validation"]["errors"] for x in decs if x["fallback"]["reason"] == "invalid"),
+                         (len(issued), sel.counts))
+        else:
+            bad = [x for x in decs if x["applied"]["clip_by"] == "director"
+                   and x["applied"]["clip"] in x["input"]["show"]["recent"][-6:]
+                   and any(c not in x["input"]["show"]["recent"][-6:] for c in x["input"]["candidates"])]
+            report.check("a Director asking for the clip just played: never played within no_repeat",
+                         not bad and sel.counts["invalid"] > 0, (len(bad), sel.counts))
+
+
+def graph_kind(graph, name):
+    return next((s.kind for s in graph.segments if s.name == name), None)
+
+
 def baseline_equivalence(graph, report, minutes=15.0, seeds=(1, 2, 3)):
     """BaselineDirector through DirectorSelector plays exactly what show.Selector plays: the same
     clips, routes and triggers, tick for tick, with the operator's mood and energy changing."""
@@ -446,6 +500,7 @@ def main(argv=None):
     perception_suite(lambda: RecordedPerception(rec, loop=True), rep, horizon_s=25.0)
     director_suite(lambda g, seed: BaselineDirector.from_graph(g, seed), graph, rep)
     baseline_equivalence(graph, rep)
+    policy_suite(graph, rep)
     profiles_report(rep)
     return rep.done()
 

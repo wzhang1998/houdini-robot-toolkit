@@ -24,7 +24,8 @@ A Director's output is an `Intent` of one of four kinds — `play_clip` (an idle
 clip at the current hub, by id), `play_like` (an action / family / energy the
 Selector resolves at this hub), `trigger` (a name `/robot/trigger` already
 accepts), `defer` — plus a short reason. Nothing else parses
-(`Intent.from_dict` rejects unknown kinds and fields). There is no way to say
+(`Intent.from_dict` refuses unknown kinds, unknown fields, and fields of the
+wrong type). There is no way to say
 a joint angle, a Cartesian pose, a speed, a duration, or a route.
 
 ## Consequences

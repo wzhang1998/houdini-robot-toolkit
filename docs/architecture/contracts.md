@@ -321,13 +321,16 @@ the next idle clip (`Selector.pick`).
 | `show` | `ShowState`: `clock`, `hub`, `state`, `sequence`, `mood` (asked), `operator_mood`, `operator_energy`, `energy_target` (the arc's or the operator's), `recent`, `recent_picks`, `pending` |
 | `candidates` | the idle clip ids at the current hub — the only ones `PLAY_CLIP` may name |
 
-**Output** (`motionlab.intent/1`) — one of four kinds, nothing else parses:
+**Output** (`motionlab.intent/1`) — one of four kinds, nothing else parses
+(unknown kinds or fields, and fields of the wrong type — `clip` / `action` /
+`family` / `trigger` / `reason` strings, `energy` a number, not a bool; a
+number sent as a string is taken):
 
 | Kind | Fields | Carried out as |
 |---|---|---|
 | `play_clip` | `clip` | that clip, if it is in `candidates` |
 | `play_like` | `action` / `family` / `energy` (0..1) | the Selector's weighted pick restricted to matching clips at this hub |
-| `trigger` | `trigger` ∈ `library.triggers` (scan, a sequence, a showpiece) | `Runner.trigger(name)` — routed and refused exactly as an operator's `/robot/trigger`; this pick itself is the Selector's |
+| `trigger` | `trigger` ∈ `library.triggers` (scan, a sequence, a showpiece) | `Runner.trigger(name)` — routed and refused exactly as an operator's `/robot/trigger`, after the `TriggerPolicy` (§4.6); this pick itself is the Selector's |
 | `defer` | — | the Selector picks |
 
 Every kind may carry `reason` (≤ 200 chars) for the log. No joint angles,
@@ -337,13 +340,16 @@ checked before the show began ([ADR 001](../adr/001-director-outputs-intent-not-
 ### 4.2 The Runner keeps the final say
 
 `GuardedDirector` runs the Director on a worker thread with a budget
-(default 50 ms) and falls back to the existing `show.Selector` when:
+(default 50 ms) and falls back to the existing `show.Selector` when the
+outcome's `fallback` is set — callers check that, not the intent (an answer
+refused as invalid is never returned; it is kept in `outcome["rejected"]` for
+the log):
 
 | Fallback | When |
 |---|---|
 | `timeout` | no answer within the budget (the call is left to finish; until it does, the next calls are `busy` — calls never pile up) |
 | `error` | the Director raised |
-| `invalid` | the answer does not parse as an Intent, names a field its kind does not take, a clip not at this hub, a trigger the show does not have, an energy outside [0, 1], or a `play_like` nothing matches |
+| `invalid` | the answer does not parse as an Intent, names a field its kind does not take, a clip not at this hub, a trigger the show does not have, an energy outside [0, 1], or a `play_like` nothing matches; or the `TriggerPolicy` refuses it (a clip within `no_repeat`, a second Director scan, a trigger inside its cooldown) |
 | `busy` | the previous call is still running |
 | `defer` | the Director said so |
 
@@ -377,7 +383,8 @@ read a ready answer or fall back in microseconds. That is [migration step 6](mig
 | Slow (an LLM, a network) | budget | fallback `timeout`, then `busy` | next pick after it returns | `latency_ms`, `fallback.reason` |
 | Crash / exception | worker future | fallback `error` | next pick | `validation.errors` |
 | Hallucinated or out-of-contract answer | `Intent.from_dict`, `validate_intent` | fallback `invalid` | next pick | the raw answer (≤ 500 chars) |
-| Valid but bad (always the same clip, trigger spam) | **not by the guard**: `decision_log.metrics` (repeats, `same_family_twice`, `triggers_issued`) | the Runner ignores a scan while one is pending; unknown triggers refused; every clip is a built, checked clip | replace the Director; or add a policy rule (see open questions) | the log and its metrics |
+| Trigger spam, repeats | `TriggerPolicy` in `DirectorSelector` | refused as `invalid`: one Director scan a run, 120 s per trigger name, `play_clip` within `no_repeat` (conformance: a Director asking for a trigger / the last clip at every pick, 30 min: the paper exposed once, no repeat played) | next pick | `validation.errors` |
+| Valid but poor taste (dull, off-energy) | **not by the guard**: `decision_log.metrics` (`same_family_twice`, `energy_abs_error_mean`, variety) | every clip is a built, checked clip | replace the Director | the log and its metrics |
 | Wrong scene (stale perception) | `scene.stale` in the input | the Director's problem; the baseline ignores the scene | — | logged with every decision |
 
 What the Director **cannot** cause, whatever it returns: a motion that was not
@@ -392,10 +399,24 @@ minor (Directors ignore what they do not know). Adding an `IntentKind` is
 safe direction, but the kind does nothing until the guard is updated. Removing
 or reinterpreting a kind is major.
 
-### 4.6 Open questions (yours to decide)
+### 4.6 Policy defaults (`TriggerPolicy`)
 
-- Should `no_repeat` be **enforced** on `play_clip` (today only the baseline
-  honours it; a Director may repeat, and the metrics show it)?
-- A rate limit on `trigger` per Director (e.g. one per minute)?
+Settled in review as the safe defaults, applied by `DirectorSelector` to the
+Director's answers only (the operator's `/robot/trigger` is unchanged):
+
+- **`scan_per_run = 1`** — a Director may start at most one scan a run.
+  `Runner.trigger` only refuses a scan while one runs or waits, so without
+  this a Director asking at every pick would re-expose the paper after every
+  scan (show.py: "the paper is exposed once").
+- **`cooldown_s = 120`** — show seconds between two Director triggers of the
+  same name (sequences, showpieces).
+- **`enforce_no_repeat = True`** — a `play_clip` of a clip within the last
+  `no_repeat` is refused, as the Selector's own pool excludes it, unless every
+  clip at the hub is that recent.
+
+Changing a default is a decision for the show, recorded here.
+
+Still open:
+
 - `GO_HUB` (change hub now) is deliberately absent: `Runner` has no public
   method for it; it would need one, and it is a larger motion than any clip.

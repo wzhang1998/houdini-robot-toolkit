@@ -34,9 +34,11 @@ the show for hours on the real arm and is the behaviour everyone has seen.
   the 125 Hz stream**: there the Director must be asked during the running
   clip and `pick()` must only read a ready answer. Until that is built
   ([migration step 6](../architecture/migration.md)), Directors run offline only.
-- A Director that is valid but poor is not stopped by the guard — only by
-  metrics and review. Hard policy rules (enforce no-repeat, rate-limit
-  triggers) are open questions in contracts.md §4.6.
+- Two kinds of valid-but-harmful answer are refused by default
+  (`TriggerPolicy`, contracts.md §4.6): a second Director scan in a run (the
+  paper is exposed once), a trigger repeated inside 120 s, and a `play_clip`
+  within `no_repeat`. Anything else valid but poor is not stopped by the
+  guard — only by metrics and review.
 
 ## Alternatives considered
 
