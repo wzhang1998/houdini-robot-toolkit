@@ -1,0 +1,179 @@
+{
+ "id": "high_11_rise",
+ "source": "geo/rebuild/party/high_11_rise.json",
+ "hub": "high",
+ "generator": "gestures.py",
+ "family": "rise",
+ "duration_s": 6.417,
+ "bpm": 73,
+ "intensity": 0.42,
+ "params": {
+  "tempo": "steady",
+  "accents": [
+   "burst"
+  ],
+  "family": "rise",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.83,
+  "space": {
+   "zone": "high",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 73,
+  "intensity": 0.424,
+  "size": 1.0,
+  "slowed": 1.22,
+  "reach_m": 0.211
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 4.011,
+   "intent": "rise",
+   "measured": "wring"
+  },
+  {
+   "t0": 4.011,
+   "t1": 6.417,
+   "intent": "rise",
+   "measured": "glide"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "glide",
+  "weight": -0.101,
+  "time": -0.689,
+  "space": 0.222,
+  "flow": -0.718
+ },
+ "peak_vel_deg_s": [
+  10.7,
+  13.1,
+  16.3,
+  104.3,
+  15.9,
+  56.2
+ ],
+ "peak_acc_deg_s2": [
+  39.6,
+  51.6,
+  153.5,
+  329.1,
+  80.6,
+  168.4
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  8.9,
+  10.9,
+  13.6,
+  57.9,
+  8.8,
+  31.2
+ ],
+ "peak_acc_pct": [
+  13.2,
+  17.2,
+  51.2,
+  54.9,
+  13.4,
+  28.1
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0571,
+  "closest": {
+   "frame": 30,
+   "t": 1.25,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0126,
+  "closest_self": {
+   "frame": 103,
+   "t": 4.2917,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 26.4,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 77.0,
+  "j6_range_deg": 57.1,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.85,
+  "facing_audience_mean": 0.95,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.241,
+  "z_max": 1.535,
+  "extent_m": [
+   0.051,
+   0.115,
+   0.294
+  ],
+  "peak_mps": 0.392,
+  "strip_tip_peak_mps": 0.667
+ },
+ "show_labels": {
+  "energy": 0.319,
+  "clearance_m": 0.0571,
+  "wrist_share": 0.85,
+  "action": "glide"
+ },
+ "image": "reviews/sheets/high_11_rise.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.58,
+  1.17,
+  1.75,
+  2.0,
+  2.92,
+  3.5,
+  4.17,
+  4.96,
+  5.83
+ ]
+}

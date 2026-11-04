@@ -1,0 +1,51 @@
+{
+ "id": "greet_19_mop",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "mop",
+  "matches_intent": true,
+  "note": "From the 1.28 m hub the TCP drops 0.7 m to z 0.57 for two wide strokes (stroke_m 0.64) with the head swivelling (swivel 42 deg): the mop itself reads. The way down (0.2-1.5 s) and back up (9.3-10.3 s) are the most violent motion at the hub: TCP 1.1-1.2 m/s, strip tips 2.5 m/s (twice any other greet clip), J1 79 %, J6 82 % accel, the last in a sustained (press) bar. MOP_HUB_TOP_M 1.35 lets the 1.28 m greet hub in, and the travel takes the 2 beats it is given."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 0.2-1.5 s (ghosts 1-2) and 9.3-10.3 s (ghosts 9-10)",
+   "evidence": "J6 82 %, J1 79 % accel; strip tips 2.51 m/s, TCP 1.18 m/s (labels.tcp); the end is in a press bar"
+  },
+  {
+   "kind": "twitch",
+   "where": "t ~8-9 s (the wring)",
+   "evidence": "J6 twitch 1"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.17,
+  "note": "LEDs face the audience 0.17 (the face is down by design, a floor family); the strokes at ~0.55 m are low for guests' eyes, in front of the column."
+ },
+ "suggestions": [
+  {
+   "target": "gestures.make mop way down / up",
+   "change": "the way down 2.0 beats -> 3.0 beats and the lift back as long (every mop changes)",
+   "why": "the 0.7 m drop and lift in 2 beats drive the strip's end to 2.5 m/s, harder than anything else at the hub",
+   "scope": "this family"
+  },
+  {
+   "target": "gestures.py MOP_HUB_TOP_M",
+   "change": "1.35 -> 1.2 (the mop is then refused from the greet hub; it is already refused at low and high, so the family leaves the show)",
+   "why": "only if the slower travel does not fit the clip: from 1.28 m the way down and back is most of the clip, as the constant's own comment warns",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "the speed impression of the 2.5 m/s strip end swooping to the floor near guests",
+  "whether the low strokes are hidden by the paper or the room from the audience"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_19_mop.png",
+  "labels": "reviews/sheets/greet_19_mop.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

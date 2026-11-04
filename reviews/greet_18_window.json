@@ -1,0 +1,26 @@
+{
+ "id": "greet_18_window",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "window",
+  "matches_intent": true,
+  "note": "Level blade on a pane facing the audience, one lying figure eight 0.55 m wide (width_m 0.549) drawn at t 3.6-8.5 s, the blade tipping with it: visible as an eight in the audience-side view. The strip's turn to level (0-1.3 s) and back (10.5-11.6 s) are the fastest moves (J6 78 % speed, strip tips 1.24 m/s); one eight in 11.8 s is a lot of setup for one stroke."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "LEDs face the audience 0.98; the pane is face on, the eight legible from the audience."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the turn-in / turn-out strip spins overshadow the single eight (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_18_window.png",
+  "labels": "reviews/sheets/greet_18_window.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

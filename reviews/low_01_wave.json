@@ -1,0 +1,25 @@
+{
+ "id": "low_01_wave",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "wave: the hand goes up and swings side to side, the strip rolling with the swing",
+  "matches_intent": true,
+  "note": "Rises 0.55 -> 0.73 m, then swings 0.35 m across (AUDIENCE SIDE ghosts 4-8) with the strip fanning (J6 range 55, strip tip 1.32 m/s vs TCP 0.75), aim kept on one person (facing 0.94). Same shape as greet_01_wave (0.35 m across), 0.6 m lower."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.94,
+  "note": "The swing is broadside to the audience and in front of the arm; the hand is at 0.73 m (under the guests' eyes) but the strip's upper end waves at ~1.25 m."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a wave at knee-to-waist height reads as greeting from 2 m"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_01_wave.png",
+  "labels": "reviews/sheets/low_01_wave.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

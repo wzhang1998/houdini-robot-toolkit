@@ -1,0 +1,183 @@
+{
+ "id": "greet_04_tilt",
+ "source": "geo/rebuild/party/greet_04_tilt.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "tilt",
+ "duration_s": 6.958,
+ "bpm": 134,
+ "intensity": 0.84,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "tilt",
+  "form": "long",
+  "length_s": [
+   5.486,
+   7.986
+  ],
+  "tempo_factor": 0.828,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 134,
+  "intensity": 0.837,
+  "size": 0.6,
+  "slowed": 1.268,
+  "reach_m": 0.075
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.271,
+   "intent": "tilt",
+   "measured": "slash"
+  },
+  {
+   "t0": 2.271,
+   "t1": 4.542,
+   "intent": "tilt",
+   "measured": "slash"
+  },
+  {
+   "t0": 4.542,
+   "t1": 6.958,
+   "intent": "tilt",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.479,
+  "time": 0.867,
+  "space": -0.79,
+  "flow": -0.961
+ },
+ "peak_vel_deg_s": [
+  23.2,
+  14.9,
+  11.6,
+  24.6,
+  73.7,
+  70.3
+ ],
+ "peak_acc_deg_s2": [
+  121.3,
+  85.5,
+  82.3,
+  134.4,
+  390.5,
+  339.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  19.4,
+  12.4,
+  9.6,
+  13.7,
+  40.9,
+  39.1
+ ],
+ "peak_acc_pct": [
+  40.4,
+  28.5,
+  27.4,
+  22.4,
+  65.1,
+  56.6
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0594,
+  "closest": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0088,
+  "closest_self": {
+   "frame": 123,
+   "t": 5.125,
+   "link": "forearm_link",
+   "with": "tool_bracket_d"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 87.1,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 8.9,
+  "j6_range_deg": 43.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.75,
+  "facing_audience_mean": 0.96,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.247,
+  "z_max": 1.282,
+  "extent_m": [
+   0.07,
+   0.092,
+   0.035
+  ],
+  "peak_mps": 0.22,
+  "strip_tip_peak_mps": 0.738
+ },
+ "show_labels": {
+  "energy": 0.275,
+  "clearance_m": 0.0594,
+  "wrist_share": 0.75,
+  "action": "slash"
+ },
+ "image": "reviews/sheets/greet_04_tilt.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.83,
+  1.25,
+  1.96,
+  2.71,
+  3.17,
+  4.17,
+  4.75,
+  5.33,
+  6.04
+ ]
+}

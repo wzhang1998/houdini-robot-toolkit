@@ -1,0 +1,25 @@
+{
+ "id": "greet_07_shy",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "shy",
+  "matches_intent": true,
+  "note": "The gaze drops away first (strip turn at 1.8 s, TCP still), then the TCP shrinks back and down towards the robot (to z 1.01, ghosts 5-7), then returns. Intensity 0.94: the return at 4.6-5.5 s is as quick as the retreat (TCP 0.6 m/s both), so the 'slowly looks back' is not slow; reads as shy, a confident one."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.85,
+  "note": "LEDs face the audience 0.85; the retreat is towards the base, visible in the audience-side and top views."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the quick return undoes the shyness (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_07_shy.png",
+  "labels": "reviews/sheets/greet_07_shy.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

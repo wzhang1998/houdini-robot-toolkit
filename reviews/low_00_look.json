@@ -1,0 +1,32 @@
+{
+ "id": "low_00_look",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "look: a quick glance up, a slow drift across, a last glance, the gaze leading",
+  "matches_intent": true,
+  "note": "Glance up 0.55 -> 0.81 m at 0.2-1.0 s (TCP 0.69 m/s), slow drift 1.9-3.4 s (0.17 m/s), last glance 3.8-4.6 s; LED arrows swing between points in the audience (facing 0.97). Wrist share 0.77: the wrist carries it. Short form, 4.8 s: two to three glances, few holds."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 0.2-1.2 s, ghosts 1-3",
+   "evidence": "jagged accel cluster J2 64 % / J4 71 % with a spike ~65 % at 1.15 s on a small after-bump (TCP 0.2 m/s); twitches 0, at k 0.22 a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.97,
+  "note": "AUDIENCE SIDE: the TCP rise and the arrows turning are in front of the column; the 1 m strip reaches 1.25 m, so the low tool is seen over the paper's foot."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the holds between glances read as looking (breathing) or as pauses",
+  "the after-bump at 1.0-1.2 s on the arm"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_00_look.png",
+  "labels": "reviews/sheets/low_00_look.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,44 @@
+{
+ "id": "greet_17_spin_sweep",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "spin_sweep",
+  "matches_intent": true,
+  "note": "TCP on an arc across 0.38 m (arc_m 0.395) with three strip swings along it (spin 94 deg), face on: reads. But after the brake the end is the hardest part: a J6 blip at 7.7-7.9 s (accel spike to ~80 % over ~30 % neighbours, strip tips 0.5 m/s in a hold) and the unwind at 8.4-9.5 s at J6 80 % speed / 82 % accel, strip tips 1.26 m/s, quicker than any swing, in a calm draw (k 0.33) and a sustained (press) bar."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 8.4-9.5 s (ghosts 9-10, the unwind)",
+   "evidence": "J6 82 % accel in a press bar (labels.bars: 7.55-11.2 s press); strip tips 1.26 m/s"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 7.7-7.9 s (ghost 9, the brake)",
+   "evidence": "isolated J6 accel spike to ~80 % at a 0.1 m/s TCP move"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "LEDs face the audience 0.98; the arc and strip loops are face on in the audience-side view."
+ },
+ "suggestions": [
+  {
+   "target": "gestures.make spin_sweep unwind",
+   "change": "the unwind key 1.0 beat -> 2.0 beats (every spin_sweep changes)",
+   "why": "the unwind turns the strip back over the whole spin in one beat: the clip's hardest motion comes in its calm ending",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the brake at 7.7 s reads as a deliberate stop or a hitch"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_17_spin_sweep.png",
+  "labels": "reviews/sheets/greet_17_spin_sweep.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

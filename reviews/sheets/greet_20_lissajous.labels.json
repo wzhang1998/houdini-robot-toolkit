@@ -1,0 +1,221 @@
+{
+ "id": "greet_20_lissajous",
+ "source": "geo/rebuild/party/greet_20_lissajous.json",
+ "hub": "greet",
+ "generator": "paths.py",
+ "family": "lissajous",
+ "duration_s": 10.292,
+ "bpm": 107,
+ "intensity": 0.38,
+ "params": {
+  "family": "lissajous",
+  "orient": "look",
+  "plane": "audience",
+  "normal": [
+   -0.4224,
+   -0.9064,
+   0.0
+  ],
+  "zone": "greet",
+  "extent_m": 0.3504,
+  "aspect": 0.9897,
+  "depth": 0.0489,
+  "bpm": 107,
+  "intensity": 0.385,
+  "ramp": 0.2625,
+  "offset": [
+   -0.0371,
+   0.0081,
+   0.0827
+  ],
+  "ratio": [
+   2,
+   1
+  ],
+  "phase_deg": 30.0,
+  "look_points": [
+   [
+    0.011,
+    -2.201,
+    1.515
+   ],
+   [
+    -0.083,
+    -1.967,
+    1.633
+   ]
+  ],
+  "max_look_deg": 34.7856,
+  "roll_deg": 10.5175,
+  "roll_phase_deg": 111.3122,
+  "roll_cycles": 2.0,
+  "v_mps": 0.2213,
+  "a_mps2": 1.5236,
+  "power_law": 0.757,
+  "tempo": "accel",
+  "ease_s": 0.561,
+  "form": "long",
+  "cycles": 1,
+  "strip_roll_deg": 90.0,
+  "beats": 17,
+  "cruise_s": 9.5327,
+  "slowed": 1.147,
+  "slowed_all": 1.0
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.573,
+   "intent": "lissajous",
+   "measured": "wring"
+  },
+  {
+   "t0": 2.573,
+   "t1": 5.145,
+   "intent": "lissajous",
+   "measured": "wring"
+  },
+  {
+   "t0": 5.145,
+   "t1": 7.718,
+   "intent": "lissajous",
+   "measured": "wring"
+  },
+  {
+   "t0": 7.718,
+   "t1": 10.292,
+   "intent": "lissajous",
+   "measured": "wring"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "wring",
+  "weight": 0.684,
+  "time": -0.592,
+  "space": -1.0,
+  "flow": 0.707
+ },
+ "peak_vel_deg_s": [
+  33.9,
+  5.5,
+  13.8,
+  23.7,
+  54.8,
+  135.9
+ ],
+ "peak_acc_deg_s2": [
+  226.5,
+  62.1,
+  78.3,
+  322.3,
+  224.7,
+  325.5
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  28.2,
+  4.6,
+  11.5,
+  13.2,
+  30.4,
+  75.5
+ ],
+ "peak_acc_pct": [
+  75.5,
+  20.7,
+  26.1,
+  53.7,
+  37.4,
+  54.3
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0593,
+  "closest": {
+   "frame": 117,
+   "t": 4.875,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0119,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 31.4,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 50.7,
+  "j6_range_deg": 102.5,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.72,
+  "facing_audience_mean": 0.95,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.189,
+  "z_max": 1.536,
+  "extent_m": [
+   0.322,
+   0.137,
+   0.347
+  ],
+  "peak_mps": 0.309,
+  "strip_tip_peak_mps": 1.209
+ },
+ "show_labels": {
+  "energy": 0.841,
+  "clearance_m": 0.0593,
+  "wrist_share": 0.72,
+  "action": "wring"
+ },
+ "image": "reviews/sheets/greet_20_lissajous.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  1.29,
+  2.25,
+  3.88,
+  4.67,
+  5.62,
+  6.54,
+  7.58,
+  8.42,
+  9.38
+ ]
+}

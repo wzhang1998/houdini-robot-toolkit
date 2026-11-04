@@ -1,0 +1,32 @@
+{
+ "id": "rest_00_float-float",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "float-float: a slow sink 1.11 -> 0.64 m and a rise back, strip fanning",
+  "matches_intent": true,
+  "note": "2/2 bars agree (float, space -0.99, time -1.00, flow +0.48). Two smooth speed humps 0.72-3.61 s and 3.61-6.51 s (peak 0.34 m/s), accel < 9 %. The TCP path itself is near-vertical (extent 0.08 x 0.13 x 0.47 m); the indirectness is mostly the strip fanning ~30 deg in TOP (J4 range 25, J6 16). Same sink-and-return shape as rest_06/09/10/11."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 8.33 s (end, back at the hub pose)",
+   "evidence": "self clearance 7.8 mm forearm_link / tool_strip_bottom_b; the hub pose itself is ~7.5 mm, not visible from the audience"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Expected low facing (rest hub faces away by design). The vertical sink and the strip fanning are both readable in AUDIENCE SIDE (strip broadside, ghosts 4-7 at 0.6-0.7 m). Lives at 0.64-1.11 m, below eye height but not low."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the float feels weightless/wandering or reads as a plain sink-and-rise",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_00_float-float.png",
+  "labels": "reviews/sheets/rest_00_float-float.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,31 @@
+{
+ "id": "high_10_search",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "search",
+  "matches_intent": true,
+  "note": "Short form (5.2 s): the TCP scans 0.21 m sideways (x extent 0.211 m, out to ghost 3 and back) with quick moves and holds, the gaze turning a little (J4 14, J6 9 deg), ending towards one person. 'Travelling and bending low and high' is missing: z 1.44-1.48 (0.04 m) - the TCP cap is just above the hub. Weaker than greet_09_search (0.33 m) but reads."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~3.4 s (ghost 7)",
+   "evidence": "a J6 accel spike to ~48 % over ~15 % neighbours mid-move; no twitch counted (labels.flags), a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; the scan runs across the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a 0.21 m scan with a 9 deg gaze reads as searching in perspective"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_10_search.png",
+  "labels": "reviews/sheets/high_10_search.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

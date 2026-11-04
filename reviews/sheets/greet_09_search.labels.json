@@ -1,0 +1,183 @@
+{
+ "id": "greet_09_search",
+ "source": "geo/rebuild/party/greet_09_search.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "search",
+ "duration_s": 8.625,
+ "bpm": 108,
+ "intensity": 0.47,
+ "params": {
+  "tempo": "accel",
+  "accents": [],
+  "family": "search",
+  "form": "long",
+  "length_s": [
+   6.704,
+   9.204
+  ],
+  "tempo_factor": 1.342,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 108,
+  "intensity": 0.47,
+  "size": 1.0,
+  "slowed": 1.138,
+  "reach_m": 0.222
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.529,
+   "intent": "search",
+   "measured": "punch"
+  },
+  {
+   "t0": 2.529,
+   "t1": 5.058,
+   "intent": "search",
+   "measured": "dab"
+  },
+  {
+   "t0": 5.058,
+   "t1": 8.625,
+   "intent": "search",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "punch",
+  "weight": 0.697,
+  "time": 0.651,
+  "space": 0.507,
+  "flow": -0.875
+ },
+ "peak_vel_deg_s": [
+  60.3,
+  8.8,
+  24.0,
+  52.4,
+  69.6,
+  35.9
+ ],
+ "peak_acc_deg_s2": [
+  253.1,
+  65.7,
+  77.9,
+  255.4,
+  444.0,
+  142.3
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  50.3,
+  7.4,
+  20.0,
+  29.1,
+  38.7,
+  19.9
+ ],
+ "peak_acc_pct": [
+  84.4,
+  21.9,
+  26.0,
+  42.6,
+  74.0,
+  23.7
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0594,
+  "closest": {
+   "frame": 197,
+   "t": 8.2083,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0117,
+  "closest_self": {
+   "frame": 108,
+   "t": 4.5,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 66.6,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 41.7,
+  "j6_range_deg": 32.7,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   1,
+   0
+  ],
+  "wrist_share": 0.66,
+  "facing_audience_mean": 0.93,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.198,
+  "z_max": 1.321,
+  "extent_m": [
+   0.328,
+   0.151,
+   0.123
+  ],
+  "peak_mps": 0.736,
+  "strip_tip_peak_mps": 0.795
+ },
+ "show_labels": {
+  "energy": 0.435,
+  "clearance_m": 0.0594,
+  "wrist_share": 0.66,
+  "action": "punch"
+ },
+ "image": "reviews/sheets/greet_09_search.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.79,
+  1.54,
+  2.54,
+  3.08,
+  3.92,
+  4.58,
+  5.17,
+  6.38,
+  7.21
+ ]
+}

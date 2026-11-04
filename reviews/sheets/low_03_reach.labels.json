@@ -1,0 +1,177 @@
+{
+ "id": "low_03_reach",
+ "source": "geo/rebuild/party/low_03_reach.json",
+ "hub": "low",
+ "generator": "gestures.py",
+ "family": "reach",
+ "duration_s": 8.125,
+ "bpm": 88,
+ "intensity": 0.86,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "reach",
+  "form": "long",
+  "length_s": [
+   5.599,
+   8.099
+  ],
+  "tempo_factor": 0.791,
+  "space": {
+   "zone": "low",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 88,
+  "intensity": 0.863,
+  "size": 0.8,
+  "slowed": 1.307,
+  "reach_m": 0.569
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 3.565,
+   "intent": "reach",
+   "measured": "press"
+  },
+  {
+   "t0": 3.565,
+   "t1": 8.125,
+   "intent": "reach",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "press",
+  "weight": 0.87,
+  "time": -0.235,
+  "space": 0.554,
+  "flow": -0.822
+ },
+ "peak_vel_deg_s": [
+  15.3,
+  32.6,
+  78.5,
+  149.5,
+  48.8,
+  93.7
+ ],
+ "peak_acc_deg_s2": [
+  58.7,
+  122.4,
+  225.7,
+  462.7,
+  266.7,
+  464.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  12.7,
+  27.2,
+  65.5,
+  83.0,
+  27.1,
+  52.0
+ ],
+ "peak_acc_pct": [
+  19.6,
+  40.8,
+  75.2,
+  77.1,
+  44.4,
+  77.5
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0534,
+  "closest": {
+   "frame": 24,
+   "t": 1.0,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0123,
+  "closest_self": {
+   "frame": 83,
+   "t": 3.4583,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 32.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 149.3,
+  "j6_range_deg": 81.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.73,
+  "facing_audience_mean": 0.86,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.489,
+  "z_max": 1.056,
+  "extent_m": [
+   0.179,
+   0.225,
+   0.567
+  ],
+  "peak_mps": 0.91,
+  "strip_tip_peak_mps": 1.081
+ },
+ "show_labels": {
+  "energy": 0.609,
+  "clearance_m": 0.0534,
+  "wrist_share": 0.73,
+  "action": "press"
+ },
+ "image": "reviews/sheets/low_03_reach.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.75,
+  1.04,
+  2.21,
+  2.96,
+  3.54,
+  4.62,
+  5.17,
+  5.83,
+  7.08
+ ]
+}

@@ -1,0 +1,26 @@
+{
+ "id": "greet_11_dive",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "dive",
+  "matches_intent": true,
+  "note": "A small lift, then a swoop down to z 0.72 in front and back up past the hub to 1.49 (extent 0.77 m vertical), the gaze leading. The biggest body motion at the hub; reads like a bird dipping."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.83,
+  "note": "LEDs face the audience 0.83; the swoop is in front of the column in the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "the 1.1 m/s TCP / 1.67 m/s strip tip swoop: speed impression at full size"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_11_dive.png",
+  "labels": "reviews/sheets/greet_11_dive.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

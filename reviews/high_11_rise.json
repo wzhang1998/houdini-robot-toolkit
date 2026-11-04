@@ -1,0 +1,25 @@
+{
+ "id": "high_11_rise",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "rise",
+  "matches_intent": true,
+  "note": "Gathers low with the gaze on the floor (t 0.2-1.5 s, z to 1.24, ghosts 3-4), still (1.5-2.0 s), rises with the burst to z 1.535 looking up and out (t 2.0-3.5 s, J4 58 % speed; ghosts 5-8), holds, a small settle (4.5 s), home (5.0-6.2 s). The rise is 0.29 m but only 0.09 m above the hub (the 1.6 m TCP cap): the 'high' is made by the wrist looking up (J4 range 77 deg). Like greet_10_rise, reads."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.95,
+  "note": "LEDs face the audience 0.95; the strip fans from down to up in the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether 'rises high' reads when the tool ends barely above where it started (perspective)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_11_rise.png",
+  "labels": "reviews/sheets/high_11_rise.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,44 @@
+{
+ "id": "high_05_trace",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a small dip and back",
+  "matches_intent": false,
+  "note": "Drawn at size 0.45 (the last of SIZES; slowed 1.29): one loop of extent 0.02 x 0.13 x 0.14 m drawn in the plane through the hub and the audience (a small triangle in the FRONT view), a still at 2.5-3.1 s, a separate return at 3.2-3.8 s. Not a 'loose, flowing path through its space': greet_05_trace draws 0.43 m. The draw shrank to its last size at this hub (edge of reach, TCP cap above)."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 2.5-3.1 s (ghosts 7-8), then 3.2-3.8 s",
+   "evidence": "the loop stops, then a separate return (two TCP speed bumps 0.28 and 0.21 m/s with a dead stop between), not one flowing path"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; but the loop's plane is edge-on to the audience: from the audience zone it is a 14 cm up-down line (AUDIENCE SIDE view)."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",
+   "change": "[-0.95, 0.0, 1.45] -> [-0.85, 0.15, 1.35] (metres; zones.high centre [-0.95, 0.0, 1.36] -> [-0.85, 0.15, 1.26]); every high clip is drawn again",
+   "why": "the hub tool tip is 1.56 m from the shoulder against REACH_M 1.6 and 0.15 m under the controller's 1.6 m TCP cap, and its solved wrist sits near the singularity so wrist_safe turns rolls and gazes back. At the new point (checked with gestures.hub_pose and hub_clear: clear of the room) the tip is 1.43 m from the shoulder, 0.25 m under the cap, and wrist_safe keeps ~73 % of a tilt's drawn roll instead of ~35 %. The audience is 0.15 m further away.",
+   "scope": "library"
+  },
+  {
+   "target": "shows/party.json hubs.high.families",
+   "change": "if a redraw is still at size 0.45: remove 'trace'",
+   "why": "a 14 cm trace reads as a twitch; high_13_sweep and high_12_dive carry the body through space at this hub",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the wrist comes within ~13 deg of its singularity (min |J5| 13.9 at t 2.7 s deg; the hub itself is at 26): whether the FR20 raises its singular-pose fault or the wrist visibly speeds up there"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_05_trace.png",
+  "labels": "reviews/sheets/high_05_trace.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

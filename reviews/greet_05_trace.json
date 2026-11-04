@@ -1,0 +1,26 @@
+{
+ "id": "greet_05_trace",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "trace",
+  "matches_intent": true,
+  "note": "One loose loop down to z 0.90 and back (extent 0.20 x 0.12 x 0.43 m), the gaze drifting with it, then a still at t 3.3-3.7 s and a separate quick return (J1 49 % speed). The loop has corners at ghosts 2, 5 and 8 (TCP speed dips to 0.15 m/s at 1.9 s) so it reads more as a triangle than a flowing path, and the return is a second, separate gesture; still a trace."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 1.0,
+  "note": "LEDs face the audience 1.00; the loop is drawn in the audience-side plane, legible as a shape."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the corner at ghost 5 (t 1.9 s) reads as a pause or a flowing turn",
+  "whether the still at 3.3-3.7 s splits the clip in two"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_05_trace.png",
+  "labels": "reviews/sheets/greet_05_trace.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

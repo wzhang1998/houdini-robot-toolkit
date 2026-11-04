@@ -1,0 +1,31 @@
+{
+ "id": "low_05_trace",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "trace: one loose flowing loop up through the space and back, the gaze drifting",
+  "matches_intent": true,
+  "note": "A loop 0.55 -> 1.07 m and down (FRONT and AUDIENCE SIDE, ghosts 3-9), curved throughout (slash), wrist share 0.68, facing 0.97. A speed notch to 0.12 m/s at 2.1 s (ghost 5, top of the loop) splits the flow into two strokes; the way home (3.8-4.8 s, 0.60 m/s) is the quickest part."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 2.0-2.3 s, ghost 5",
+   "evidence": "J3 63 % / J4 70 % accel spikes at the speed notch (TCP 0.12 m/s) in a flowing family; twitches 0, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.97,
+  "note": "The loop is 0.52 m tall and 0.2 m wide from AUDIENCE SIDE: legible as a narrow upright loop; its depth (TOP) is lost to the audience."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the notch at 2.1 s reads as a hitch in the flow"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_05_trace.png",
+  "labels": "reviews/sheets/low_05_trace.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

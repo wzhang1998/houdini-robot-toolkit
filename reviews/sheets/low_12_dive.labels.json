@@ -1,0 +1,173 @@
+{
+ "id": "low_12_dive",
+ "source": "geo/rebuild/party/low_12_dive.json",
+ "hub": "low",
+ "generator": "gestures.py",
+ "family": "dive",
+ "duration_s": 5.167,
+ "bpm": 82,
+ "intensity": 0.52,
+ "params": {
+  "tempo": "steady",
+  "accents": [
+   "burst"
+  ],
+  "family": "dive",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.794,
+  "space": {
+   "zone": "low",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 82,
+  "intensity": 0.516,
+  "size": 1.0,
+  "slowed": 1.177,
+  "reach_m": 0.209
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 5.167,
+   "intent": "dive",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "punch",
+  "weight": 0.625,
+  "time": 0.729,
+  "space": 0.525,
+  "flow": -0.09
+ },
+ "peak_vel_deg_s": [
+  17.9,
+  42.9,
+  12.5,
+  84.9,
+  38.4,
+  95.2
+ ],
+ "peak_acc_deg_s2": [
+  95.1,
+  231.8,
+  66.0,
+  285.3,
+  287.8,
+  456.4
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  14.9,
+  35.8,
+  10.4,
+  47.2,
+  21.4,
+  52.9
+ ],
+ "peak_acc_pct": [
+  31.7,
+  77.3,
+  22.0,
+  47.5,
+  48.0,
+  76.1
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0544,
+  "closest": {
+   "frame": 55,
+   "t": 2.2917,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0125,
+  "closest_self": {
+   "frame": 80,
+   "t": 3.3333,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 22.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 45.4,
+  "j6_range_deg": 63.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   1,
+   0,
+   0
+  ],
+  "wrist_share": 0.8,
+  "facing_audience_mean": 0.97,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.414,
+  "z_max": 0.656,
+  "extent_m": [
+   0.012,
+   0.154,
+   0.242
+  ],
+  "peak_mps": 0.658,
+  "strip_tip_peak_mps": 1.358
+ },
+ "show_labels": {
+  "energy": 0.754,
+  "clearance_m": 0.0544,
+  "wrist_share": 0.8,
+  "action": "punch"
+ },
+ "image": "reviews/sheets/low_12_dive.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.46,
+  0.96,
+  1.46,
+  2.17,
+  2.83,
+  3.21,
+  3.75,
+  4.21,
+  4.71
+ ]
+}

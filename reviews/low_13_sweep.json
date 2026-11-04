@@ -1,0 +1,36 @@
+{
+ "id": "low_13_sweep",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "sweep: a low arc across ~0.5 m and back, the gaze leading",
+  "matches_intent": true,
+  "note": "Size 0.6: an arc 0.51 m across (AUDIENCE SIDE ghosts 3-8), a shallow rainbow (z 0.48-0.62, 0.14 m), the strip turning with it (J6 104 deg, strip tip 1.29 m/s vs TCP 0.48). 'Through heights' is weak, as greet_12_sweep (0.12 m)."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 4.4 s, ghost 7",
+   "evidence": "self clearance 4 mm forearm_link / tool_strip_bottom_a (labels.room); at the wrist, not visible from the audience"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 5.8-5.9 s, ghosts 8-9",
+   "evidence": "isolated J6 accel spike 66 % (neighbours < 30 %) at the end of the return"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "Broadside and in front of the arm; the same side-to-side image at 0.5-0.7 m as low_01_wave and low_10_search."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the 4 mm strip-to-forearm gap on the real arm (strip mount, cable)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_13_sweep.png",
+  "labels": "reviews/sheets/low_13_sweep.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

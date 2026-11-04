@@ -1,0 +1,26 @@
+{
+ "id": "high_15_twirl",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "twirl",
+  "matches_intent": true,
+  "note": "The hub's own aim leaves 20 deg one way (room_deg [20, 130]), so it drops 0.2 m to a level aim first (t 0.2-1.0 s), then two big swings of the strip (t 2.1-4.1 and 4.2-6.4 s), braking past the mark (J6 accel bursts ~60 % at 3.9 and 6.4 s), and home. J6 range 140 deg, strip tips 1.09 m/s vs TCP ~0.05 in the swings: the strip carries it, a full face-on fan in the audience-side view. Spin 120 deg is TWIRL_MIN_DEG, as greet_14_twirl."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; the fan of strip ghosts is face on, the clearest strip clip at the hub."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the strip's light while it swings",
+  "the strip's ends at ~1.1 m/s in front of guests (perspective, speed impression)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_15_twirl.png",
+  "labels": "reviews/sheets/high_15_twirl.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

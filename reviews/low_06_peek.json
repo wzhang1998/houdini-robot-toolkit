@@ -1,0 +1,26 @@
+{
+ "id": "low_06_peek",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "peek: ducks low, still, pops up, cocks the strip, darts back",
+  "matches_intent": true,
+  "note": "Ducks 0.55 -> 0.41 m (0.3-1.9 s), still, pops up to 0.75 m (2.3-3.0 s, 0.64 m/s), cocks the wrist (J6 only, 3.3-3.9 s, strip tip 0.6 m/s), holds, darts back down to 0.56 m (4.8-5.5 s), home. Measured punch in every bar: the sudden parts read."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "The duck and pop are vertical in AUDIENCE SIDE (ghosts 3-6) and seen; the creep towards the person is in depth only. At the duck the strip's lower end is 0.11 m over the floor."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the 'still' before the pop reads as suspense or as a stop",
+  "the creep forward in 3D"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_06_peek.png",
+  "labels": "reviews/sheets/low_06_peek.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

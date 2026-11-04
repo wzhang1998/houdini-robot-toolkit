@@ -1,0 +1,39 @@
+{
+ "id": "low_08_stretch",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a quick lift and a quicker drop: a pop-up more than a yawn",
+  "matches_intent": false,
+  "note": "Short form (4.0 s) at k 0.21: rises 0.55 -> 0.78 m (0.5-1.5 s, 0.55 m/s), a 0.4 s hold, then the settle 2.0-2.7 s is the fastest move of the clip (0.70 m/s; J2 80 % accel at 2.5 s). Nothing goes out or across (extent 0.04 x 0.07 x 0.26 m), the wrist roll is small (J6 range 24). A stretch is 'a big slow reach up and out ... then settles': here the settle is a drop."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 2.1-2.7 s, ghosts 7-8 (the settle)",
+   "evidence": "J2 80 % accel, TCP 0.70 m/s, the peak of the clip, in a calm (k 0.21) stretch"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "The lift is vertical in AUDIENCE SIDE (ghosts 4-7) and seen; it stays under 0.8 m."
+ },
+ "suggestions": [
+  {
+   "target": "gestures.py clip_length (the always-long families tuple: wipe, broom, salute, twirl, spin_sweep)",
+   "change": "add 'stretch' so it is always drawn in the long form",
+   "why": "the short form gives the settle 1.5 beats instead of 2 and the yawn 2 beats instead of 3; at 116 bpm the settle becomes the quickest, hardest move",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the rise reads as a yawn at full speed",
+  "the settle's weight on the arm (J2 at 80 %)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_08_stretch.png",
+  "labels": "reviews/sheets/low_08_stretch.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

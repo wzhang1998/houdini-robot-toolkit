@@ -1,0 +1,26 @@
+{
+ "id": "greet_06_peek",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "peek",
+  "matches_intent": true,
+  "note": "Ducks (z to 1.15, only 0.13 m under the hub), still, pops up (burst at 1.8-2.3 s, J3 81 % accel), a small wrist cock (ghosts 7-8) and back. The duck is shallow (extent 0.10 x 0.10 x 0.20 m; low_06_peek travels 0.34 m) but the pop-and-cock sequence is there."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the pop is in front of the column in the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a 0.13 m duck reads as hiding from 2 m",
+  "timing of the pop (burst accent)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_06_peek.png",
+  "labels": "reviews/sheets/greet_06_peek.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

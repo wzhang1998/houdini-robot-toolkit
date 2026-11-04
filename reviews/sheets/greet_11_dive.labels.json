@@ -1,0 +1,179 @@
+{
+ "id": "greet_11_dive",
+ "source": "geo/rebuild/party/greet_11_dive.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "dive",
+ "duration_s": 8.458,
+ "bpm": 76,
+ "intensity": 0.92,
+ "params": {
+  "tempo": "steady",
+  "accents": [
+   "burst"
+  ],
+  "family": "dive",
+  "form": "long",
+  "length_s": [
+   5.0,
+   6.342
+  ],
+  "tempo_factor": 0.715,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 76,
+  "intensity": 0.918,
+  "size": 1.0,
+  "slowed": 1.405,
+  "reach_m": 0.594
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 4.437,
+   "intent": "dive",
+   "measured": "wring"
+  },
+  {
+   "t0": 4.437,
+   "t1": 8.458,
+   "intent": "dive",
+   "measured": "press"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "press",
+  "weight": 0.857,
+  "time": -0.257,
+  "space": 0.083,
+  "flow": -0.569
+ },
+ "peak_vel_deg_s": [
+  20.1,
+  46.5,
+  64.5,
+  80.6,
+  89.3,
+  136.2
+ ],
+ "peak_acc_deg_s2": [
+  81.6,
+  203.4,
+  153.6,
+  465.2,
+  313.9,
+  442.3
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  16.8,
+  38.8,
+  53.7,
+  44.8,
+  49.6,
+  75.6
+ ],
+ "peak_acc_pct": [
+  27.2,
+  67.8,
+  51.2,
+  77.5,
+  52.3,
+  73.7
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0586,
+  "closest": {
+   "frame": 46,
+   "t": 1.9167,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0118,
+  "closest_self": {
+   "frame": 79,
+   "t": 3.2917,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 38.7,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 42.5,
+  "j6_range_deg": 111.2,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.76,
+  "facing_audience_mean": 0.83,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.724,
+  "z_max": 1.489,
+  "extent_m": [
+   0.128,
+   0.224,
+   0.765
+  ],
+  "peak_mps": 1.114,
+  "strip_tip_peak_mps": 1.669
+ },
+ "show_labels": {
+  "energy": 0.986,
+  "clearance_m": 0.0586,
+  "wrist_share": 0.76,
+  "action": "press"
+ },
+ "image": "reviews/sheets/greet_11_dive.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.75,
+  1.54,
+  1.96,
+  3.08,
+  4.33,
+  5.38,
+  6.0,
+  7.0,
+  7.71
+ ]
+}

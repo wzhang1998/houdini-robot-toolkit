@@ -1,0 +1,51 @@
+{
+ "id": "greet_15_wipe",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a small level blade stepping down a pane (a weak wipe)",
+  "matches_intent": true,
+  "note": "Level blade on a pane facing the audience, 3 strokes top to bottom, but stroke_m 0.18 (the floor of the stroke length; the level blade's strokes are drawn at 0.7 of the upright ones, then size 0.8): TCP extent 0.21 x 0.15 x 0.16 m, strokes at ~0.3 m/s. The strokes and the lifts between have the same speed bumps, so the 'pressed on, lifted off' rhythm reads flat. The most visible motion is the strip turning to level at 0.2-1.4 s and back at 10.1-11.2 s (J6 81 % speed, strip tips 1.36 m/s). greet_18_window does the same pane, larger and better."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 1.4-9.5 s (ghosts 2-9)",
+   "evidence": "strokes and lifts equal ~0.3 m/s bumps (timeline); stroke_m 0.18, step_m 0.124 (labels.params)"
+  },
+  {
+   "kind": "twitch",
+   "where": "t ~4.3 s and ~7.3 s (stroke starts)",
+   "evidence": "twitches J1 1, J5 1; J3/J4 accel spikes to ~70 % at the press-on of strokes 2 and 3"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "LEDs face the audience 0.98; the pane faces the audience, the level 1 m blade is wide in view, but its 0.18 m strokes are small."
+ },
+ "suggestions": [
+  {
+   "target": "gestures.make wipe stroke length",
+   "change": "the stroke's floor in pace() 0.18 m -> 0.25 m and the level blade's factor 0.7 -> 0.85 (every wipe changes)",
+   "why": "a 0.18 m stroke is under what reads as wiping from 2 m; the level blade gets the shortest strokes",
+   "scope": "this family"
+  },
+  {
+   "target": "shows/party.json hubs.greet.families",
+   "change": "if the strokes cannot grow at this hub: remove 'wipe' (greet_18_window covers the pane face on)",
+   "why": "the same pane and blade, smaller",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the press-on / lift-off reads at full size",
+  "the strip's light against the imagined pane"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_15_wipe.png",
+  "labels": "reviews/sheets/greet_15_wipe.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

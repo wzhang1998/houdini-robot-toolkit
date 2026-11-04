@@ -1,0 +1,205 @@
+{
+ "id": "greet_15_wipe",
+ "source": "geo/rebuild/party/greet_15_wipe.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "wipe",
+ "duration_s": 11.5,
+ "bpm": 103,
+ "intensity": 0.51,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "pane_normal": [
+   -0.4224,
+   -0.9064,
+   0.0
+  ],
+  "stroke_axis": [
+   0.0,
+   0.0,
+   1.0
+  ],
+  "blade": "level",
+  "pane_tilt_deg": 0.0,
+  "strokes": 3,
+  "stroke_m": 0.18,
+  "step_m": 0.124,
+  "stroke_pace": 0.611,
+  "family": "wipe",
+  "form": "long",
+  "length_s": [
+   6.184,
+   8.684
+  ],
+  "tempo_factor": 1.283,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 103,
+  "intensity": 0.512,
+  "size": 0.8,
+  "slowed": 1.314,
+  "reach_m": 0.168
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 3.062,
+   "intent": "wipe",
+   "measured": "punch"
+  },
+  {
+   "t0": 3.062,
+   "t1": 6.123,
+   "intent": "wipe",
+   "measured": "slash"
+  },
+  {
+   "t0": 6.123,
+   "t1": 9.185,
+   "intent": "wipe",
+   "measured": "punch"
+  },
+  {
+   "t0": 9.185,
+   "t1": 11.5,
+   "intent": "wipe",
+   "measured": "press"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.473,
+  "time": 0.886,
+  "space": -1.0,
+  "flow": -0.263
+ },
+ "peak_vel_deg_s": [
+  20.2,
+  21.7,
+  30.1,
+  40.1,
+  20.5,
+  146.4
+ ],
+ "peak_acc_deg_s2": [
+  162.4,
+  203.0,
+  180.2,
+  454.1,
+  174.2,
+  459.6
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  16.9,
+  18.1,
+  25.1,
+  22.3,
+  11.4,
+  81.4
+ ],
+ "peak_acc_pct": [
+  54.1,
+  67.7,
+  60.1,
+  75.7,
+  29.0,
+  76.6
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0588,
+  "closest": {
+   "frame": 31,
+   "t": 1.2917,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0117,
+  "closest_self": {
+   "frame": 207,
+   "t": 8.625,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 73.9,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 20.3,
+  "j6_range_deg": 100.5,
+  "twitches_per_joint": [
+   1,
+   0,
+   0,
+   0,
+   1,
+   0
+  ],
+  "wrist_share": 0.69,
+  "facing_audience_mean": 0.98,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.166,
+  "z_max": 1.325,
+  "extent_m": [
+   0.208,
+   0.149,
+   0.159
+  ],
+  "peak_mps": 0.406,
+  "strip_tip_peak_mps": 1.365
+ },
+ "show_labels": {
+  "energy": 0.812,
+  "clearance_m": 0.0588,
+  "wrist_share": 0.69,
+  "action": "slash"
+ },
+ "image": "reviews/sheets/greet_15_wipe.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  1.38,
+  2.54,
+  4.33,
+  5.42,
+  6.29,
+  7.17,
+  8.33,
+  9.29,
+  10.04
+ ]
+}

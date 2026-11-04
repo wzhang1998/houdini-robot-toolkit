@@ -1,0 +1,45 @@
+{
+ "id": "greet_03_reach",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a small lean and wrist turn, weakly a reach",
+  "matches_intent": false,
+  "note": "Reach drawn at size 0.6 (the third of SIZES) with intensity 0.40: the offer is 0.14 x 0.10 x 0.19 m (reach_m 0.22) and the motion is wrist-led (J6 has 41 % of the joint share); 60 % of the 9.1 s is still (still_fraction 0.60: holds t 2.2-5.2 s and 5.6-7.2 s). From 2 m the 'offer towards the audience' is a few centimetres; low_03_reach (size 0.8) moves 0.57 m."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 2.2-5.2 s and 5.6-7.2 s (ghosts 3-8)",
+   "evidence": "two long holds; still_fraction 0.60 (geo clip labels.measured.raw); only J6 visibly moving in the two offers (J6 59 % speed vs J1/J2 13 %)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the reach direction (towards the audience) is foreshortened in the audience-side view, so the small out-move is even less visible from there."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json zones.greet",
+   "change": "size [1.3, 0.5, 0.7] -> [1.3, 0.7, 0.7], or its centre moved ~0.1 m towards the audience (inside the stage line)",
+   "why": "the hub's tool tip stands near the zone's middle, leaving ~0.2 m of the 0.5 m depth towards the audience: the reach out is clamped and redrawn small",
+   "scope": "this family"
+  },
+  {
+   "target": "shows/party.json hubs.greet.families",
+   "change": "if the zone cannot grow: remove 'reach' (trace and dive already carry the body towards the audience at this hub)",
+   "why": "a reach that cannot travel out reads as a wrist turn",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the two offers read as offering anything from the audience zone, in perspective",
+  "whether the holds feel alive (breathing) or dead"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_03_reach.png",
+  "labels": "reviews/sheets/greet_03_reach.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

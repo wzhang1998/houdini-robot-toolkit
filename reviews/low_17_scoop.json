@@ -1,0 +1,39 @@
+{
+ "id": "low_17_scoop",
+ "verdict": "fix",
+ "confidence": "low",
+ "readability": {
+  "reads_as": "a strip turn and a lift with a toss: the dig is missing",
+  "matches_intent": false,
+  "note": "The TCP only goes up: 0.55 -> 0.66 m through 'takes it up' and 'tips it down, digs in' (0-2.2 s), scoops 0.66 -> 0.78 m, the toss at 5.6-6.2 s (0.68 m/s), settles. The dig's lower end is clamped: end_z 0.2 = STRIP_FLOOR_M (the hub's tool tip at 0.55 m less the 0.35-0.65 m depth is under it), so the strip's lower end only reaches 0.15-0.24 m and the tool never dips. dig_deg 29.1 (the steep design set). The only scoop in the library (greet and high made none)."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 4.0-4.2 s, ghost 6",
+   "evidence": "isolated J5 accel spike ~65 % (neighbours < 30 %); twitches J2 1, J4 1 (reversals under 0.6 deg)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.81,
+  "note": "From AUDIENCE SIDE the strip fans at ~45-60 deg and lifts; the scoop is meant to read in profile and nothing in the views shows a shovel digging."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.low.tcp (z, metres) and zones.low center z",
+   "change": "hubs.low.tcp z 0.55 -> ~0.70 (zones.low center z 0.62 -> ~0.77); every low clip is redrawn",
+   "scope": "library",
+   "why": "the dig is floor-bound: from 0.70 m the strip's lower end can go 0.5 m under the tool tip before STRIP_FLOOR_M, so the tool tips down and digs instead of only lifting"
+  }
+ ],
+ "needs_live_check": [
+  "whether the strip reads as a shovel in profile in 3D",
+  "the toss at 5.8 s"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_17_scoop.png",
+  "labels": "reviews/sheets/low_17_scoop.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

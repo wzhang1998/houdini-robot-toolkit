@@ -1,0 +1,171 @@
+{
+ "id": "high_04_tilt",
+ "source": "geo/rebuild/party/high_04_tilt.json",
+ "hub": "high",
+ "generator": "gestures.py",
+ "family": "tilt",
+ "duration_s": 3.583,
+ "bpm": 84,
+ "intensity": 0.44,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "tilt",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.825,
+  "space": {
+   "zone": "high",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 84,
+  "intensity": 0.438,
+  "size": 1.0,
+  "slowed": 1.005,
+  "reach_m": 0.063
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 3.583,
+   "intent": "tilt",
+   "measured": "dab"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "dab",
+  "weight": -0.56,
+  "time": 0.863,
+  "space": 0.724,
+  "flow": 0.11
+ },
+ "peak_vel_deg_s": [
+  6.0,
+  8.0,
+  8.8,
+  14.1,
+  17.1,
+  25.2
+ ],
+ "peak_acc_deg_s2": [
+  35.3,
+  60.2,
+  76.3,
+  118.3,
+  139.9,
+  330.1
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  5.0,
+  6.6,
+  7.3,
+  7.8,
+  9.5,
+  14.0
+ ],
+ "peak_acc_pct": [
+  11.8,
+  20.1,
+  25.4,
+  19.7,
+  23.3,
+  55.0
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0579,
+  "closest": {
+   "frame": 40,
+   "t": 1.6667,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0127,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 21.6,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 3.2,
+  "j6_range_deg": 12.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.72,
+  "facing_audience_mean": 1.0,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.421,
+  "z_max": 1.455,
+  "extent_m": [
+   0.047,
+   0.035,
+   0.034
+  ],
+  "peak_mps": 0.18,
+  "strip_tip_peak_mps": 0.305
+ },
+ "show_labels": {
+  "energy": 0.043,
+  "clearance_m": 0.0579,
+  "wrist_share": 0.72,
+  "action": "dab"
+ },
+ "image": "reviews/sheets/high_04_tilt.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.33,
+  0.79,
+  1.04,
+  1.29,
+  1.75,
+  2.08,
+  2.33,
+  2.62,
+  2.92
+ ]
+}

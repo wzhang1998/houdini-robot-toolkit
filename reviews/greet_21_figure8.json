@@ -1,0 +1,32 @@
+{
+ "id": "greet_21_figure8",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "figure8",
+  "matches_intent": true,
+  "note": "A lying eight in the audience plane, drawn twice, orient fixed (the strip stays upright and translates with it: J6 range 4 deg, strip tips = TCP 0.58 m/s). Legible in the audience-side view but small: 0.22 x 0.12 x 0.15 m at intensity 0.42."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~2.8-3.1 s (ghosts 6-7, the crossing)",
+   "evidence": "J3 twitch 1; jagged J3 accel spikes to 81 % over ~30 % neighbours"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 1.0,
+  "note": "LEDs face the audience 1.00; the upright strip carries the eight face on."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the J3 spikes at the crossing (t ~3 s) show as a hitch at the strip's ends",
+  "whether a 0.22 m eight reads from the audience zone"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_21_figure8.png",
+  "labels": "reviews/sheets/greet_21_figure8.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

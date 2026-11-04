@@ -1,0 +1,151 @@
+{
+ "id": "rest_05_dab",
+ "source": "geo/rebuild/party/rest_05_dab.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 3.0,
+ "bpm": 138,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.217,
+   "t1": 1.304,
+   "intent": "dab",
+   "measured": "dab"
+  }
+ ],
+ "bars_agree": [
+  1,
+  1
+ ],
+ "measured": {
+  "action": "dab",
+  "weight": -0.985,
+  "time": 0.595,
+  "space": 0.624,
+  "flow": -0.691
+ },
+ "peak_vel_deg_s": [
+  0.2,
+  2.7,
+  1.2,
+  20.8,
+  20.4,
+  21.9
+ ],
+ "peak_acc_deg_s2": [
+  1.9,
+  13.8,
+  9.2,
+  103.4,
+  103.4,
+  111.1
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  0.2,
+  2.2,
+  1.0,
+  11.6,
+  11.3,
+  12.2
+ ],
+ "peak_acc_pct": [
+  0.6,
+  4.6,
+  3.1,
+  17.2,
+  17.2,
+  18.5
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0607,
+  "closest": {
+   "frame": 18,
+   "t": 0.75,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0008,
+  "closest_self": {
+   "frame": 33,
+   "t": 1.375,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 83.0,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 7.2,
+  "j6_range_deg": 7.5,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.94,
+  "facing_audience_mean": 0.0,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 1.086,
+  "z_max": 1.095,
+  "extent_m": [
+   0.003,
+   0.033,
+   0.009
+  ],
+  "peak_mps": 0.099,
+  "strip_tip_peak_mps": 0.297
+ },
+ "show_labels": {
+  "energy": 0.029,
+  "clearance_m": 0.0607,
+  "action": "dab"
+ },
+ "image": "reviews/sheets/rest_05_dab.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.29,
+  0.54,
+  0.83,
+  1.08,
+  1.33,
+  1.62,
+  1.92,
+  2.17,
+  2.46
+ ]
+}

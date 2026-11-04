@@ -1,0 +1,33 @@
+{
+ "id": "greet_13_pop",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "pop",
+  "matches_intent": true,
+  "note": "A flick down (0.4 s), a snap up 0.36 m to z 1.57 (pose 'up'), a freeze 1.8-2.9 s, back. The snap is a 1.2 s symmetric speed bell (slowed 1.35) rather than a stop dead; still reads as an accent with a freeze."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 3.0-3.1 s (ghost 9, the return)",
+   "evidence": "J3 83 % accel in a sudden bar: under 90 %, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the pop up is in front of the column."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "the tool point is 5 mm outside the controller zone at the top of the pop (build warning): the controller may stop the arm, check on the arm",
+  "whether the snap reads as stopping dead (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_13_pop.png",
+  "labels": "reviews/sheets/greet_13_pop.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

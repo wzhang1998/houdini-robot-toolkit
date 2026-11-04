@@ -1,0 +1,31 @@
+{
+ "id": "low_10_search",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "search: scans across the audience side to side, quick looks and holds, ends on one person",
+  "matches_intent": true,
+  "note": "Travels 0.39 m across (AUDIENCE SIDE ghosts 1-8) with the strip fanning (J4 106, J6 97 deg), holds between looks, ends turned towards one person (ghosts 9-10); facing 0.94. 'Bending low and high' is small: z 0.50-0.67."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~3.1 s and ~4.8 s, between looks",
+   "evidence": "twitches J2 1, J6 1 (reversals under 0.6 deg) on 0.1 m/s blips; invisible from 2 m, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.94,
+  "note": "The scan is broadside to the audience and the clearest side-to-side motion at the hub."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the small blips at 3.1, 4.8 and 7.1 s read as hesitations or hitches"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_10_search.png",
+  "labels": "reviews/sheets/low_10_search.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

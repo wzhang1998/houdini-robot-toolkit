@@ -1,0 +1,44 @@
+{
+ "id": "high_04_tilt",
+ "verdict": "fix",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "a slight strip roll",
+  "matches_intent": false,
+  "note": "Short form (3.6 s, one side only): the TCP still (extent 0.05 x 0.04 x 0.03 m, meant small) but the strip turns only 13 deg (J6 range 12.6, J4 3; strip tips 0.30 m/s vs TCP 0.18): the strip ghosts in the audience-side view nearly overlap. The family draws a roll of 25 + 20 k (34 deg here); re-drawing tilt keys at this hub and passing them through gestures.wrist_safe keeps 0-65 % of it, because the hub's wrist is near its singularity. greet_04_tilt rolls 44 deg and reads; this one is a twitch of the strip from 2 m."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~1.85-2.0 s (between ghosts 6-7)",
+   "evidence": "a J6 accel spike to ~50 % over a flat ~10 % neighbourhood, at the strip-tip speed bump of 0.12 m/s; no twitch counted (labels.flags)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 1.0,
+  "note": "LEDs face the audience 1.00, but the roll is too small to see as a head tilt from the audience zone."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",
+   "change": "[-0.95, 0.0, 1.45] -> [-0.85, 0.15, 1.35] (metres; zones.high centre [-0.95, 0.0, 1.36] -> [-0.85, 0.15, 1.26]); every high clip is drawn again",
+   "why": "the hub tool tip is 1.56 m from the shoulder against REACH_M 1.6 and 0.15 m under the controller's 1.6 m TCP cap, and its solved wrist sits near the singularity so wrist_safe turns rolls and gazes back. At the new point (checked with gestures.hub_pose and hub_clear: clear of the room) the tip is 1.43 m from the shoulder, 0.25 m under the cap, and wrist_safe keeps ~73 % of a tilt's drawn roll instead of ~35 %. The audience is 0.15 m further away.",
+   "scope": "library"
+  },
+  {
+   "target": "shows/party.json hubs.high.families",
+   "change": "if the hub cannot move: remove 'tilt'",
+   "why": "wrist_safe takes most of the roll at this hub; high_00_look already rolls the strip here",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether a 13 deg roll of the 1 m strip is visible at all in perspective"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_04_tilt.png",
+  "labels": "reviews/sheets/high_04_tilt.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,32 @@
+{
+ "id": "greet_01_wave",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "wave",
+  "matches_intent": true,
+  "note": "The hand up to 1.45 m and four sideways swings of 0.35 m (ghosts 4-7) with the tool kept on one person and the strip rolling with them (J6 range 60 deg); speeds rise and fall evenly with a last smaller swing. A clear wave."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 3.33 s (ghost 7, the far end of a swing)",
+   "evidence": "self clearance 6 mm forearm/wrist3 and the strip's top 54 mm from partition_left at the same frame (labels.room); build passed, wrist-side so probably not visible from the audience"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; the swing is across the audience-side view at ~1.4 m, eye height."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "how close the strip's top looks to the left partition at the far end of the swing (t 3.3 s) from where guests stand"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_01_wave.png",
+  "labels": "reviews/sheets/greet_01_wave.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

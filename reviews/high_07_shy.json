@@ -1,0 +1,37 @@
+{
+ "id": "high_07_shy",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "shy",
+  "matches_intent": true,
+  "note": "The gaze drops away first (t 0.2-1.0 s, a busy wrist move: J4 73 %, J6 63 % accel, several peaks), then the TCP shrinks back 0.31 m towards the robot and 0.26 m down (t 1.6-2.8 s, z to 1.19, ghosts 4-8), holds, a small look at 4.3-4.6 s, and comes back (t 5.6-7.0 s). At k 0.91 the look back is as quick as the retreat (0.50 vs 0.56 m/s): not 'slowly' (as greet_07_shy). Reads as shy."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 3.79 s (ghost 6, the shrunk-back hold)",
+   "evidence": "self clearance 2.8 mm, forearm_link to wrist3_link (labels.room): the wrist tucked against the forearm; suits 'shrinking' and is not readable as a gap from 2 m, a note"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 0.3-1.0 s (ghosts 1-3) and ~4.6 s",
+   "evidence": "jagged J4/J6 accel with several peaks to ~70 % in the gaze drop; a J5 accel spike ~70 % at 4.6 s ending the small look. No twitch counted (labels.flags): notes"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.89,
+  "note": "LEDs face the audience 0.89; the retreat towards the robot is visible across the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the wrist folded 3 mm from the forearm at ~3.8 s looks like a pinch on the arm",
+  "whether the quick look back still reads as shy (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_07_shy.png",
+  "labels": "reviews/sheets/high_07_shy.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

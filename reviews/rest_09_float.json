@@ -1,0 +1,26 @@
+{
+ "id": "rest_09_float",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "float: a slow, slightly curving sink 1.09 -> 0.80 m with the strip fanning, then home",
+  "matches_intent": true,
+  "note": "1/1 agree (float, time -0.99, space -1.00, flow +0.63). One smooth bell 0.36-3.21 s (peak 0.21 m/s), accel <= 6 %. The path bows ~5 cm in AUDIENCE SIDE (ghosts 3-6) and the strip fans in TOP (J4 range 26): indirect, if mildly. Very close to rest_11_float and rest_06_glide in shape (sink to 0.7-0.8 m and back)."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Visible from AUDIENCE SIDE: the strip, broadside, sinks 0.3 m on a gentle curve; 0.80-1.09 m high."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether it reads as weightless/wandering rather than as the same sink as rest_06_glide",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_09_float.png",
+  "labels": "reviews/sheets/rest_09_float.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

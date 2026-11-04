@@ -1,0 +1,31 @@
+{
+ "id": "high_12_dive",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "dive",
+  "matches_intent": true,
+  "note": "A small lift (t 0.3-0.8 s, z 1.54), a swoop down in front to z 1.005 (t 1.5-3.4 s, ghosts 4-6: 0.53 m), back up past the hub (burst t 3.6-4.5 s, TCP 0.92 m/s, z 1.54 at 4.8 s), a settle and home. Gaze leading (J4 range 93, J6 70 deg). The biggest body motion at this hub; reads like a bird dipping."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t ~3.7 s (ghost 6-7, the swoop back up)",
+   "evidence": "J4 79 % accel and 78 % speed (labels) in the burst; a strong (press) bar but under 80 %: a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the swoop is face on in the audience-side view."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the burst back up reads as a swoop or a jerk (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_12_dive.png",
+  "labels": "reviews/sheets/high_12_dive.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

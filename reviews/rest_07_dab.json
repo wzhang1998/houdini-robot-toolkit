@@ -1,0 +1,33 @@
+{
+ "id": "rest_07_dab",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "dab: two quick, precise wrist taps (the second larger), syncopated",
+  "matches_intent": true,
+  "note": "1/1 agree (dab, time +0.95, space +0.59). Taps at ~0.9 s and ~2.3 s, TCP peak 0.40 m/s, strip tip 1.09 m/s, extent 0.06 x 0.01 x 0.09 m (small as a dab should be). Accel peaks J4 60 % / J5 49 % in a sudden bar (under 80 %). The flagged J4 twitch (1) is the designed anticipation: J4 goes back ~0.9 deg at 1.83-2.08 s (the hold before the second tap) and then strikes; the accel curve shows no isolated spike."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 1.83-2.08 s, between ghosts 4 and 5",
+   "evidence": "twitches J4 = 1 (labels.flags); a ~0.9 deg wind-up before the second tap, anticipation by design (principles 1.0)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Readable from AUDIENCE SIDE: the strip tips up and down by ~15 deg (ghost strips fan around 1.0-1.2 m), near eye height."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the 0.9 deg wind-up at 1.9 s reads as anticipation or as a hiccup on the arm",
+  "whether the syncopated rhythm sits on the beat",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_07_dab.png",
+  "labels": "reviews/sheets/rest_07_dab.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

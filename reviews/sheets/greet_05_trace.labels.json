@@ -1,0 +1,171 @@
+{
+ "id": "greet_05_trace",
+ "source": "geo/rebuild/party/greet_05_trace.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "trace",
+ "duration_s": 5.083,
+ "bpm": 74,
+ "intensity": 0.55,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "trace",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.779,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 74,
+  "intensity": 0.553,
+  "size": 1.0,
+  "slowed": 1.373,
+  "reach_m": 0.429
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 5.083,
+   "intent": "trace",
+   "measured": "slash"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.888,
+  "time": 0.183,
+  "space": -1.0,
+  "flow": -0.124
+ },
+ "peak_vel_deg_s": [
+  58.7,
+  20.6,
+  34.5,
+  79.8,
+  75.9,
+  62.8
+ ],
+ "peak_acc_deg_s2": [
+  204.5,
+  137.2,
+  137.3,
+  396.2,
+  277.0,
+  227.9
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  48.9,
+  17.2,
+  28.8,
+  44.3,
+  42.2,
+  34.9
+ ],
+ "peak_acc_pct": [
+  68.2,
+  45.7,
+  45.8,
+  66.0,
+  46.2,
+  38.0
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0591,
+  "closest": {
+   "frame": 100,
+   "t": 4.1667,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0119,
+  "closest_self": {
+   "frame": 112,
+   "t": 4.6667,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 50.3,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 64.8,
+  "j6_range_deg": 37.7,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.66,
+  "facing_audience_mean": 1.0,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.902,
+  "z_max": 1.331,
+  "extent_m": [
+   0.195,
+   0.12,
+   0.429
+  ],
+  "peak_mps": 0.548,
+  "strip_tip_peak_mps": 0.805
+ },
+ "show_labels": {
+  "energy": 0.623,
+  "clearance_m": 0.0591,
+  "wrist_share": 0.66,
+  "action": "slash"
+ },
+ "image": "reviews/sheets/greet_05_trace.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.46,
+  0.92,
+  1.38,
+  1.83,
+  2.29,
+  2.79,
+  3.25,
+  3.58,
+  4.17
+ ]
+}

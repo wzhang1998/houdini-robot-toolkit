@@ -1,0 +1,31 @@
+{
+ "id": "high_09_bounce",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "bounce",
+  "matches_intent": true,
+  "note": "Bobs on the beat with the groove sinking (z 1.45 -> 1.26, extent 0.08 x 0.03 x 0.19 m), the gaze and the strip fixed on one person (J6 range 4.5 deg: the strip translates), five bobs t 0.8-5.3 s with an accelerando (TCP peaks 0.27-0.43 m/s). Reads as a head bob to music."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~0.87 s and ~2.5 s (bottoms of bobs 1 and 3)",
+   "evidence": "J3 accel spikes to ~68-75 % over ~30 % neighbours at the reversals (labels: J3 75 % peak) in sudden bars: notes"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; the bob is seen face on."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the bobs sit on the beat (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_09_bounce.png",
+  "labels": "reviews/sheets/high_09_bounce.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

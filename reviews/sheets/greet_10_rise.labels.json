@@ -1,0 +1,179 @@
+{
+ "id": "greet_10_rise",
+ "source": "geo/rebuild/party/greet_10_rise.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "rise",
+ "duration_s": 4.917,
+ "bpm": 139,
+ "intensity": 0.69,
+ "params": {
+  "tempo": "steady",
+  "accents": [
+   "burst"
+  ],
+  "family": "rise",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.724,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 139,
+  "intensity": 0.689,
+  "size": 0.8,
+  "slowed": 1.366,
+  "reach_m": 0.243
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.359,
+   "intent": "rise",
+   "measured": "punch"
+  },
+  {
+   "t0": 2.359,
+   "t1": 4.917,
+   "intent": "rise",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "punch",
+  "weight": 0.67,
+  "time": 0.404,
+  "space": 0.165,
+  "flow": -0.579
+ },
+ "peak_vel_deg_s": [
+  3.5,
+  15.2,
+  46.8,
+  72.8,
+  17.7,
+  141.5
+ ],
+ "peak_acc_deg_s2": [
+  12.7,
+  74.2,
+  199.5,
+  366.1,
+  74.8,
+  502.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  2.9,
+  12.7,
+  39.0,
+  40.4,
+  9.8,
+  78.6
+ ],
+ "peak_acc_pct": [
+  4.2,
+  24.7,
+  66.5,
+  61.0,
+  12.5,
+  83.8
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0578,
+  "closest": {
+   "frame": 27,
+   "t": 1.125,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0117,
+  "closest_self": {
+   "frame": 91,
+   "t": 3.7917,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 87.0,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 23.8,
+  "j6_range_deg": 73.8,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.7,
+  "facing_audience_mean": 0.96,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.158,
+  "z_max": 1.516,
+  "extent_m": [
+   0.048,
+   0.108,
+   0.358
+  ],
+  "peak_mps": 0.502,
+  "strip_tip_peak_mps": 1.536
+ },
+ "show_labels": {
+  "energy": 0.928,
+  "clearance_m": 0.0578,
+  "wrist_share": 0.7,
+  "action": "punch"
+ },
+ "image": "reviews/sheets/greet_10_rise.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.46,
+  0.88,
+  1.12,
+  1.79,
+  2.25,
+  2.67,
+  3.0,
+  3.75,
+  4.46
+ ]
+}

@@ -1,0 +1,157 @@
+{
+ "id": "rest_10_float-float",
+ "source": "geo/rebuild/party/rest_10_float-float.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 11.25,
+ "bpm": 91,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.659,
+   "t1": 3.956,
+   "intent": "float",
+   "measured": "wring"
+  },
+  {
+   "t0": 3.956,
+   "t1": 7.253,
+   "intent": "float",
+   "measured": "float"
+  }
+ ],
+ "bars_agree": [
+  1,
+  2
+ ],
+ "measured": {
+  "action": "float",
+  "weight": -0.122,
+  "time": -0.967,
+  "space": -1.0,
+  "flow": -0.547
+ },
+ "peak_vel_deg_s": [
+  6.8,
+  8.0,
+  28.2,
+  21.6,
+  15.8,
+  21.7
+ ],
+ "peak_acc_deg_s2": [
+  33.8,
+  26.8,
+  38.8,
+  42.5,
+  35.6,
+  31.8
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  5.7,
+  6.6,
+  23.5,
+  12.0,
+  8.8,
+  12.1
+ ],
+ "peak_acc_pct": [
+  11.3,
+  8.9,
+  12.9,
+  7.1,
+  5.9,
+  5.3
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0606,
+  "closest": {
+   "frame": 39,
+   "t": 1.625,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0078,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 75.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 26.0,
+  "j6_range_deg": 24.4,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.56,
+  "facing_audience_mean": 0.01,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 0.614,
+  "z_max": 1.11,
+  "extent_m": [
+   0.052,
+   0.167,
+   0.496
+  ],
+  "peak_mps": 0.459,
+  "strip_tip_peak_mps": 0.57
+ },
+ "show_labels": {
+  "energy": 0.261,
+  "clearance_m": 0.0606,
+  "action": "float"
+ },
+ "image": "reviews/sheets/rest_10_float-float.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  1.17,
+  2.04,
+  3.08,
+  3.96,
+  5.12,
+  6.67,
+  8.17,
+  9.21,
+  10.5
+ ]
+}

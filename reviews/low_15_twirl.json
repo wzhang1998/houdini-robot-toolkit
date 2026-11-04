@@ -1,0 +1,26 @@
+{
+ "id": "low_15_twirl",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "twirl: the strip swings back and forth face on like a baton, the tool tip still",
+  "matches_intent": true,
+  "note": "Two swings at 2.8-5.0 s and 5.3-7.7 s (J6 range 139 deg, strip tip 1.06 m/s vs TCP 0.16 m/s), braking past the mark (bumps at 5.0 s and 7.7 s), face on (facing 0.98). spin_deg 120 (= TWIRL_MIN_DEG). Wind-up 0-2.8 s and settle 8.8-11.6 s are quiet (strip tip <= 0.17 m/s): ~5.5 s of the 11.6 s."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "AUDIENCE SIDE shows a full starburst of the strip in the frontal plane: the clearest strip image at the hub."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the 2.8 s wind-up and settle feel alive",
+  "the strip's light while spinning"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_15_twirl.png",
+  "labels": "reviews/sheets/low_15_twirl.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

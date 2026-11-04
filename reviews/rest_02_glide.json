@@ -1,0 +1,40 @@
+{
+ "id": "rest_02_glide",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a slow strip turn and holds (~5.6 s still), then a straight glide sink 1.10 -> 0.77 m and home",
+  "matches_intent": true,
+  "note": "1/1 agree (glide, space +0.77, flow -0.75). 12.0 s long, but the TCP moves only 4.8-7.2 s (peak 0.33 m/s) and on the way home 8.0-11.2 s; 0.8-4.8 s is a look + hold with strip tip < 0.03 m/s, and 7.2-8.0 another hold. Show energy 0.09. Same straight sink as rest_06_glide (which also sinks deeper, to 0.70 m)."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 0.8-4.8 s and 7.2-8.0 s, ghosts 2-5",
+   "evidence": "TCP speed ~0.01 m/s for 4 s then a hold; show energy 0.09 over 12 s"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "The sink reads in AUDIENCE SIDE (ghosts 6-8); the slow strip turn shows only in TOP (two strip yaws, J4 range 24)."
+ },
+ "suggestions": [
+  {
+   "target": "choreo phrase spec bars[].moves (glide at the rest hub)",
+   "change": "moves: 1 for glide bars drawn at rest",
+   "why": "the two-move glide draws a look + holds that read as 5.6 s of stillness from this pose; the one-move glide (rest_06) is the same sink without it",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the slow strip turn at 0.8-4.0 s reads as a gaze from the audience",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_02_glide.png",
+  "labels": "reviews/sheets/rest_02_glide.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "rest_06_glide"
+}

@@ -1,0 +1,151 @@
+{
+ "id": "rest_11_float",
+ "source": "geo/rebuild/party/rest_11_float.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 7.625,
+ "bpm": 71,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.423,
+   "t1": 3.803,
+   "intent": "float",
+   "measured": "float"
+  }
+ ],
+ "bars_agree": [
+  1,
+  1
+ ],
+ "measured": {
+  "action": "float",
+  "weight": -0.495,
+  "time": -0.999,
+  "space": -0.581,
+  "flow": 0.748
+ },
+ "peak_vel_deg_s": [
+  2.0,
+  0.3,
+  17.4,
+  12.9,
+  7.8,
+  5.5
+ ],
+ "peak_acc_deg_s2": [
+  4.4,
+  0.9,
+  18.3,
+  14.8,
+  13.9,
+  5.1
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  1.6,
+  0.3,
+  14.5,
+  7.2,
+  4.3,
+  3.1
+ ],
+ "peak_acc_pct": [
+  1.5,
+  0.3,
+  6.1,
+  2.5,
+  2.3,
+  0.8
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0607,
+  "closest": {
+   "frame": 102,
+   "t": 4.25,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0052,
+  "closest_self": {
+   "frame": 29,
+   "t": 1.2083,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 81.8,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 23.6,
+  "j6_range_deg": 10.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.57,
+  "facing_audience_mean": 0.0,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 0.703,
+  "z_max": 1.098,
+  "extent_m": [
+   0.05,
+   0.122,
+   0.394
+  ],
+  "peak_mps": 0.23,
+  "strip_tip_peak_mps": 0.263
+ },
+ "show_labels": {
+  "energy": 0.188,
+  "clearance_m": 0.0607,
+  "action": "float"
+ },
+ "image": "reviews/sheets/rest_11_float.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.71,
+  1.38,
+  2.08,
+  2.79,
+  3.75,
+  4.83,
+  5.54,
+  6.25,
+  6.92
+ ]
+}

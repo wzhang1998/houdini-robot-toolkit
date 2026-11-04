@@ -1,0 +1,39 @@
+{
+ "id": "rest_04_glide",
+ "verdict": "drop",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "near-stillness: the wrist turns the strip a little, the TCP moves 4 cm in 9.7 s",
+  "matches_intent": false,
+  "note": "Labelled glide 1/1, but there is nothing to see: TCP extent 0.02 x 0.04 x 0.04 m, peak 0.053 m/s, z 1.09-1.13 m, show energy 0.00, wrist share 0.80. The 'high' level gave no rise from rest, size 0.475 and tempo 'rit' kept both travel_near moves tiny. A glide should be a smooth straight travel; this reads as idling. rest_06_glide covers glide at this hub."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "whole clip, ghosts 1-10 overlap",
+   "evidence": "TCP extent 0.04 m, peak 0.053 m/s; ghosts nearly coincide in all three views"
+  }
+ ],
+ "audience": {
+  "seen": false,
+  "faces_audience": 0.0,
+  "note": "From the audience side only the strip's slight tilt changes (ghost strips within ~10 deg); a guest would read it as the arm standing still."
+ },
+ "suggestions": [
+  {
+   "target": "choreo phrase spec levels / size (glide bars at the rest hub)",
+   "change": "for light bars from rest draw level 'low' (not 'high') and size >= 0.8",
+   "why": "'high' gives 0.035 m of rise from this pose and size 0.475 keeps the wrist-led travels at 2-4 cm; the 'low' glide rest_06 at size 0.6 sinks 0.39 m and reads",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the small strip tilt reads at all as light on the paper (idle_leds)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_04_glide.png",
+  "labels": "reviews/sheets/rest_04_glide.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "rest_06_glide"
+}

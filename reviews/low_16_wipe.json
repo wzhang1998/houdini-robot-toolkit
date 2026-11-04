@@ -1,0 +1,37 @@
+{
+ "id": "low_16_wipe",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "wipe: strokes side to side on a leaning pane, stepping down, a shake",
+  "matches_intent": true,
+  "note": "Pane tilted back (normal 0.51, -0.64, 0.57); strokes across ~0.45 m at 0.55-1.01 m, stepping down (FRONT ghosts 2-10 zigzag), lifted between (0.3 m/s bumps), a strip shake 9.0-10.0 s (TCP still), home. Every bar measures punch: even strokes on the beat, as a routine should be. The blade lies ~45 deg throughout (the leaning pane)."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 0.5-10.5 s, each stroke",
+   "evidence": "J6 81 %, J4 79 %, J3 78 %, J1 77 % accel; wipe is not a gentle family and under 90 %, a note"
+  },
+  {
+   "kind": "twitch",
+   "where": "not located on the sheet",
+   "evidence": "twitches J5 1 (labels.flags); no spike stands out on the accel timeline"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.87,
+  "note": "The stroke pattern is legible in AUDIENCE SIDE and FRONT; the face 0.87 towards the audience."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the even strokes read as wiping or as mechanical",
+  "the strip's light on the strokes"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_16_wipe.png",
+  "labels": "reviews/sheets/low_16_wipe.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}
