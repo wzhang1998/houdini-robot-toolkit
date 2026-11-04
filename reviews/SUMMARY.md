@@ -1,6 +1,6 @@
 # Clip review summary
 
-Reviewed from static sheets (`scripts/review_render.py`) against `docs/review_rubric.md`; per clip: `reviews/<id>.json`, the sheet and its numbers in `reviews/sheets/`.
+Reviewed from static sheets (`scripts/review_render.py`) against `docs/review_rubric.md`; per clip: `reviews/<id>.json`, the sheet's numbers in `reviews/sheets/<id>.labels.json` (the PNGs are not in git: `scripts/review_render.py` renders them again).
 
 | hub | keep | fix | drop |
 |---|---|---|---|

@@ -29,6 +29,12 @@ Thumbs.db
 .DS_Store
 desktop.ini
 
+# --- Review sheets ---------------------------------------------------------
+# The PNGs are regenerated from the rebuilt library (review_render.py, the same
+# labels each time); ~10 MB a round. The reviews, SUMMARY.md and each sheet's
+# .labels.json are tracked.
+reviews/sheets/*.png
+
 # --- Local Houdini env ----------------------------------------------------
 houdini.env
 

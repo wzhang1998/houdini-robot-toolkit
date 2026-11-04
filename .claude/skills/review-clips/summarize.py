@@ -102,7 +102,8 @@ def summary(reviews, notes=None):
     hubs = sorted({_hub(r["id"]) for r in reviews})
     out = ["# Clip review summary", "",
            "Reviewed from static sheets (`scripts/review_render.py`) against `docs/review_rubric.md`; "
-           "per clip: `reviews/<id>.json`, the sheet and its numbers in `reviews/sheets/`.", "",
+           "per clip: `reviews/<id>.json`, the sheet's numbers in `reviews/sheets/<id>.labels.json` "
+           "(the PNGs are not in git: `scripts/review_render.py` renders them again).", "",
            "| hub | keep | fix | drop |", "|---|---|---|---|"]
     for h in hubs:
         out.append("| %s | %s |" % (h, " | ".join(str(sum(1 for r in by[v] if _hub(r["id"]) == h))

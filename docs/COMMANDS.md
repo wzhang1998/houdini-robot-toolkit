@@ -128,7 +128,8 @@ uv run scripts/rebuild_library.py shows/party.json
 
 A review sheet per clip (three views with ghost poses, the TCP path by bar,
 joint peaks as % of the limits, room clearance; matplotlib off screen, no
-GPU) and its numbers, `<id>.png` + `<id>.labels.json`, ~15 s a clip:
+GPU) and its numbers, `<id>.png` + `<id>.labels.json`, ~15 s a clip. The
+PNGs are not in git (render them again to look); the labels are tracked:
 
 ```bash
 uv run --with numpy --with matplotlib scripts/review_render.py geo/rebuild/party --out reviews/sheets

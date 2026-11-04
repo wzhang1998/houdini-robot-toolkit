@@ -41,7 +41,9 @@ uv run --with numpy --with matplotlib scripts/review_render.py geo/rebuild/party
 ```
 
 ~15 s a clip. Each clip gets `reviews/sheets/<id>.png` and
-`reviews/sheets/<id>.labels.json`. `--capsules` draws the collision capsules
+`reviews/sheets/<id>.labels.json`. The PNGs are not in git (`.gitignore`;
+~10 MB a round): render them again to look at a reviewed clip. The labels
+are tracked and come out the same. `--capsules` draws the collision capsules
 instead of the meshes (when the STLs are missing or for a quick look).
 `scripts/review_render.py --self-test` first if the script changed.
 
