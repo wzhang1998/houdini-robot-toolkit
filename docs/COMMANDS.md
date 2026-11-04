@@ -112,6 +112,38 @@ uv run scripts/show_stream.py shows/party.json --sim --ip 192.168.116.128 --osc
 The real arm goes through show_ui (it asks first, speed 0.3). Keep a hand on
 the E-stop.
 
+## Reviewing the library without Houdini
+
+The party's whole clip library is plain Python (`show.py build`: choreo
+phrases, gestures, paths, the moves and the scan; ruckig and usd-core, no
+`hou`). Rebuilt beside the tracked file, into `geo/rebuild/party/` (the
+generators' full clips: bars, intent, params) and checked against
+`shows/party.compiled.json` -- the same 85 segments, samples and labels
+(2026-11-04: identical; ~9.5 min on a cloud container, a few on the lab PC).
+Exit 1 when it differs (an input changed since the tracked build).
+
+```bash
+uv run scripts/rebuild_library.py shows/party.json
+```
+
+A review sheet per clip (three views with ghost poses, the TCP path by bar,
+joint peaks as % of the limits, room clearance; matplotlib off screen, no
+GPU) and its numbers, `<id>.png` + `<id>.labels.json`, ~15 s a clip:
+
+```bash
+uv run --with numpy --with matplotlib scripts/review_render.py geo/rebuild/party --out reviews/sheets
+uv run --with numpy --with matplotlib scripts/review_render.py geo/rebuild/party --ids greet_14_twirl --capsules
+```
+
+The standard is `docs/review_rubric.md`; the `review-clips` skill
+(`.claude/skills/review-clips`) runs both, judges each sheet and writes
+`reviews/<id>.json` and `reviews/SUMMARY.md` (fix and drop first; suggestions
+are generator parameters, never joint angles):
+
+```bash
+python .claude/skills/review-clips/summarize.py --notes <notes.md>      # check the reviews, write SUMMARY.md
+```
+
 ## TouchDesigner (TD-ROBOT-UVSCAN)
 
 `robot_uvscan_party.toe`. robot_link hears the show on 9002 and sends
@@ -214,6 +246,8 @@ python scripts/track_osc.py && python scripts/track_runner.py && python scripts/
 python scripts/track_mode.py --self-test && python scripts/track_ui.py --self-test
 uv run scripts/show_stream.py --self-test
 uv run scripts/rehearse.py --self-test && uv run scripts/show_ui.py --self-test
+uv run --with numpy --with matplotlib scripts/review_render.py --self-test
+uv run scripts/rebuild_library.py --self-test && python .claude/skills/review-clips/summarize.py --self-test
 ```
 
 The tracking scripts need numpy and ruckig: the system Python has them
