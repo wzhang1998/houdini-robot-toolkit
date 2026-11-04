@@ -1,0 +1,58 @@
+{
+ "id": "high_17_salute",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a dip with the strip stood upright, then strip swings",
+  "matches_intent": false,
+  "note": "To stand the 1 m strip upright under STRIP_TOP_M 1.84 the TCP has to go DOWN 0.28 m (z 1.45 -> 1.17, t 0.2-2.8 s, ghosts 2-4): the 'raise' reads as a sink. The held sabre (2.8-3.7 s) is there, the 'cut' flourish is two strip swings (t 3.7-5.0 and 5.3-6.4 s, J6 range 119 deg, 82 % speed, strip tips 1.35 m/s vs TCP 0.05) - from the audience the same face-on fan as high_15_twirl, which does it bigger (140 deg) - and the last move (t 7.4-8.3 s) goes UP back to the hub, the opposite of a bow. From this hub the family's shape is inverted by the strip's top limit."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t ~0.6 s (ghost 1-2, the wind-up)",
+   "evidence": "J4 80.8 % accel (labels) in a press (sustained) bar: over the 80 % line"
+  },
+  {
+   "kind": "crowding",
+   "where": "t 5.42 s (ghost 8)",
+   "evidence": "self clearance 9.9 mm, forearm_link to tool_strip_bottom_b (labels.room): the strip's end passing the forearm in the flourish, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; face on, but the raise and the bow read backwards."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement",
+   "timing_variety"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 4, still 35 %, dyn x3.54, strip x4.74, joints 3, lag 0.07 s",
+   "timeline: the 'raise' is a sink of 0.28 m with the strip stood upright (0.4 m/s, O ~2.0 s), a held sabre, two strip swings of the same 1.3 m/s (the cut), then home is the loudest TCP move (0.57 m/s)",
+   "the flourish and the bow are the strip alone"
+  ],
+  "note": "Holds and strip swings with braking give it some shape, as greet_16_salute, but the raise sinks, the two swings are alike and the body sits out the flourish: a weaker twirl."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.high.families",
+   "change": "remove 'salute'",
+   "why": "from a 1.45 m tool tip an upright 1 m strip fits under STRIP_TOP_M only by sinking, so the raise and the bow invert; the flourish duplicates high_15_twirl (as greet_16_salute at the greet hub)",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the upright hold at ~3 s reads as a salute at all in perspective",
+  "the strip's end passing ~1 cm from the forearm at ~5.4 s, seen live"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_17_salute.png",
+  "labels": "reviews/sheets/high_17_salute.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "high_15_twirl"
+}

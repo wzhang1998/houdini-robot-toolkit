@@ -1,0 +1,38 @@
+{
+ "id": "greet_14_twirl",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "twirl",
+  "matches_intent": true,
+  "note": "The strip swings like a baton face on to the audience: J6 range 140 deg, strip tips 1.14 m/s vs TCP 0.27 (the strip carries it), two swings each way with braking, settles face on. Spin 120 deg is TWIRL_MIN_DEG, the least the family allows (room 140/130)."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "LEDs face the audience 0.98; the fan of strip ghosts is face on in the audience-side view, the clearest strip clip at the hub."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "4 big moves, A 0 O 2, onset cv 0.33, dyn x3.44, holds 2",
+   "strip x7.57, J6 range 140 deg, strip tips 1.14 m/s vs TCP 0.27: the strip carries a baton swing face on, braking past its marks (O ~3.4 s, ~5.4 s), swings of different speeds",
+   "joints 1, TCP extent 0.07 x 0.10 x 0.08 m: the body hardly takes part; swings regular in shape"
+  ],
+  "note": "A lively baton swing carried by the strip, as the family wants, with braking and varied speeds; the body stays still and the swings repeat, so 4 not 5."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "the strip's light while it swings"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_14_twirl.png",
+  "labels": "reviews/sheets/greet_14_twirl.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

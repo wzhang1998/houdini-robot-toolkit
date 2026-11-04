@@ -1,0 +1,171 @@
+{
+ "id": "rest_00_float-float",
+ "source": "geo/rebuild/party/rest_00_float-float.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 8.708,
+ "bpm": 83,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.723,
+   "t1": 3.614,
+   "intent": "float",
+   "measured": "float"
+  },
+  {
+   "t0": 3.614,
+   "t1": 6.506,
+   "intent": "float",
+   "measured": "float"
+  }
+ ],
+ "bars_agree": [
+  2,
+  2
+ ],
+ "measured": {
+  "action": "float",
+  "weight": -0.134,
+  "time": -0.997,
+  "space": -0.994,
+  "flow": 0.482
+ },
+ "peak_vel_deg_s": [
+  2.3,
+  3.3,
+  22.3,
+  17.9,
+  17.1,
+  19.9
+ ],
+ "peak_acc_deg_s2": [
+  5.5,
+  7.2,
+  25.4,
+  23.9,
+  36.7,
+  42.1
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  1.9,
+  2.8,
+  18.6,
+  9.9,
+  9.5,
+  11.1
+ ],
+ "peak_acc_pct": [
+  1.8,
+  2.4,
+  8.5,
+  4.0,
+  6.1,
+  7.0
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0606,
+  "closest": {
+   "frame": 114,
+   "t": 4.75,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0078,
+  "closest_self": {
+   "frame": 200,
+   "t": 8.3333,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 75.6,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 25.4,
+  "j6_range_deg": 15.7,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.58,
+  "facing_audience_mean": 0.0,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 0.641,
+  "z_max": 1.108,
+  "extent_m": [
+   0.077,
+   0.128,
+   0.467
+  ],
+  "peak_mps": 0.341,
+  "strip_tip_peak_mps": 0.482
+ },
+ "show_labels": {
+  "energy": 0.348,
+  "clearance_m": 0.0606,
+  "action": "float"
+ },
+ "expression": {
+  "lag_s": -0.101,
+  "accents_per_min": 27.6,
+  "still_share": 0.078,
+  "holds": 0,
+  "dynamic_range": 2.08,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 0.04,
+  "strip_ratio": 1.42,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/rest_00_float-float.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.67,
+  1.58,
+  2.38,
+  3.17,
+  3.67,
+  4.75,
+  5.54,
+  6.62,
+  8.04
+ ]
+}

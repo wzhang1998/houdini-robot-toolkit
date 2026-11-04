@@ -1,0 +1,52 @@
+{
+ "id": "rest_01_glide",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a 3.2 s near-still 'look', then a straight glide sink 1.10 -> 0.74 m and home",
+  "matches_intent": true,
+  "note": "1/1 agree (glide, space +0.75). But 0.64-3.83 s is a 'look' segment whose TCP stays ~0 m/s (timeline flat, strip tip < 0.01 m/s): a third of the 10.25 s clip reads as stillness. The moving part (3.83-6.38 s, peak 0.26 m/s, then home 6.38-9.57 s) is the same straight vertical sink as rest_06_glide, which does it without the dead start."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 0.64-3.83 s, ghosts 2-4",
+   "evidence": "TCP speed ~0 for 3.2 s inside the glide bar (segment 'look'), show energy 0.17"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "The sink is visible in AUDIENCE SIDE (ghosts 5-8); the first 3 s show nothing from there."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, dyn x1.88, lag 0.07 s, joints 3",
+   "timeline: flat for 3.2 s (the 'look' segment, strip tip < 0.01 m/s), then one glide bell (0.26 m/s) and one home bell",
+   "still 7 % by the detector, but the first third of the clip shows nothing"
+  ],
+  "note": "The glide itself is smooth and even as it should be, but a third of the clip is a dead wait before it: nothing to watch, then one move."
+ },
+ "suggestions": [
+  {
+   "target": "choreo phrase spec bars[].moves (glide at the rest hub)",
+   "change": "moves: 1 for glide bars drawn at rest (a travel accent, as rest_06_glide)",
+   "why": "with two moves the glide MENU draws a 'look' whose TCP stays still from this pose (0.64-3.83 s here, 0.8-4.8 s in rest_02) before the same sink",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the 'look' turns the strip visibly enough to read as a gaze rather than a pause",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_01_glide.png",
+  "labels": "reviews/sheets/rest_01_glide.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "rest_06_glide"
+}

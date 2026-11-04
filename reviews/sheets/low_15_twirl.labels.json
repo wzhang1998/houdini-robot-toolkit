@@ -1,0 +1,211 @@
+{
+ "id": "low_15_twirl",
+ "source": "geo/rebuild/party/low_15_twirl.json",
+ "hub": "low",
+ "generator": "gestures.py",
+ "family": "twirl",
+ "duration_s": 11.625,
+ "bpm": 82,
+ "intensity": 0.27,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "spin_deg": 120.0,
+  "swings": 2,
+  "wind_deg": -7.0,
+  "room_deg": [
+   20,
+   250
+  ],
+  "aim": "audience",
+  "family": "twirl",
+  "form": "long",
+  "length_s": [
+   9.05,
+   11.55
+  ],
+  "tempo_factor": 1.624,
+  "space": {
+   "zone": "low",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 82,
+  "intensity": 0.268,
+  "size": 1.0,
+  "slowed": 1.002,
+  "reach_m": 0.149
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.933,
+   "intent": "twirl",
+   "measured": "press"
+  },
+  {
+   "t0": 2.933,
+   "t1": 5.865,
+   "intent": "twirl",
+   "measured": "glide"
+  },
+  {
+   "t0": 5.865,
+   "t1": 8.798,
+   "intent": "twirl",
+   "measured": "glide"
+  },
+  {
+   "t0": 8.798,
+   "t1": 11.625,
+   "intent": "twirl",
+   "measured": "press"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "glide",
+  "weight": -0.034,
+  "time": -0.955,
+  "space": 0.749,
+  "flow": -0.806
+ },
+ "peak_vel_deg_s": [
+  6.1,
+  13.6,
+  11.1,
+  58.0,
+  9.5,
+  115.7
+ ],
+ "peak_acc_deg_s2": [
+  13.0,
+  35.2,
+  25.0,
+  137.7,
+  25.3,
+  317.2
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  5.1,
+  11.3,
+  9.3,
+  32.2,
+  5.3,
+  64.3
+ ],
+ "peak_acc_pct": [
+  4.3,
+  11.7,
+  8.3,
+  22.9,
+  4.2,
+  52.9
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0569,
+  "closest": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0126,
+  "closest_self": {
+   "frame": 144,
+   "t": 6.0,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 34.1,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 45.4,
+  "j6_range_deg": 138.7,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.89,
+  "facing_audience_mean": 0.98,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.55,
+  "z_max": 0.687,
+  "extent_m": [
+   0.021,
+   0.061,
+   0.137
+  ],
+  "peak_mps": 0.164,
+  "strip_tip_peak_mps": 1.057
+ },
+ "show_labels": {
+  "energy": 0.667,
+  "clearance_m": 0.0569,
+  "wrist_share": 0.89,
+  "action": "glide"
+ },
+ "expression": {
+  "lag_s": -0.006,
+  "accents_per_min": 51.6,
+  "still_share": 0.319,
+  "holds": 3,
+  "dynamic_range": 3.0,
+  "big_moves": 3,
+  "anticipated": 0,
+  "overshot": 2,
+  "onset_cv": 0.43,
+  "bar_contrast": 1.66,
+  "strip_ratio": 7.81,
+  "joints_used": 2
+ },
+ "image": "reviews/sheets/low_15_twirl.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  1.62,
+  2.58,
+  4.21,
+  5.25,
+  6.33,
+  7.42,
+  8.29,
+  9.54,
+  10.58
+ ]
+}

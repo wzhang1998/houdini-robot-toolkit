@@ -1,0 +1,45 @@
+{
+ "id": "greet_20_lissajous",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "lissajous",
+  "matches_intent": true,
+  "note": "A 2:1 Lissajous in the audience plane (extent 0.32 x 0.14 x 0.35 m), look orient, strip turned 90 deg to level: the knot is legible in the audience-side view. The strip's turn to level (0-1.2 s) and back (9.0-10.2 s) are the fastest moves (J6 76 % speed, strip tips 1.2 m/s while the TCP is near still)."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~8.25-8.35 s (just before ghost 9)",
+   "evidence": "isolated accel spike on J1/J5/J6 to ~68 % over ~5-10 % neighbours, with a notch in the TCP speed; twitch counter 0. Where the figure ends and folds back: a brief jolt"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.95,
+  "note": "LEDs face the audience 0.95; the figure is drawn face on and at 1.2-1.5 m."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "dynamics"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, holds 0, still 3 %, accents 11.7/min, dyn x1.89",
+   "lag 0.16 s: the look trails the figure (the best follow-through at the hub)",
+   "timeline: the knot is drawn at a near-even 0.15-0.3 m/s for 7 s; the strip's turn to level and back (1.1-1.2 m/s at 0.7 s and 9.5 s) are the loudest moves"
+  ],
+  "note": "The knot flows and the gaze trails it, but 7 s at one speed with no breath and set-up turns louder than the figure make it a calm doodle."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the jolt at ~8.3 s is visible on the arm (the controller's smoothing may hide it)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_20_lissajous.png",
+  "labels": "reviews/sheets/greet_20_lissajous.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

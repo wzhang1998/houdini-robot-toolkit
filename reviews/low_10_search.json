@@ -1,0 +1,43 @@
+{
+ "id": "low_10_search",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "search: scans across the audience side to side, quick looks and holds, ends on one person",
+  "matches_intent": true,
+  "note": "Travels 0.39 m across (AUDIENCE SIDE ghosts 1-8) with the strip fanning (J4 106, J6 97 deg), holds between looks, ends turned towards one person (ghosts 9-10); facing 0.94. 'Bending low and high' is small: z 0.50-0.67."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~3.1 s and ~4.8 s, between looks",
+   "evidence": "twitches J2 1, J6 1 (reversals under 0.6 deg) on 0.1 m/s blips; invisible from 2 m, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.94,
+  "note": "The scan is broadside to the audience and the clearest side-to-side motion at the hub."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "timing_variety"
+  ],
+  "evidence": [
+   "6 big moves, A 2 O 3, onset cv 0.14, holds 2, still 29 %, dyn x2.75, lag -0.06 s (the gaze leads)",
+   "timeline: scans with counter-turns before (A ~3.6 s, ~5.4 s) and settles after (O ~3.1, ~4.6, ~6.9 s), the first scan the loudest (strip 1.0 m/s), later ones 0.3-0.4 m/s",
+   "heights small (z 0.50-0.67 m); scans come on a near-even clock"
+  ],
+  "note": "Wind-ups, settles and the gaze leading the scans make it more animated than greet_09_search, but the scans come evenly and fade: searching rather than surprised."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the small blips at 3.1, 4.8 and 7.1 s read as hesitations or hitches"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_10_search.png",
+  "labels": "reviews/sheets/low_10_search.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

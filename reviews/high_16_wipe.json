@@ -1,0 +1,70 @@
+{
+ "id": "high_16_wipe",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a level bar bobbing",
+  "matches_intent": false,
+  "note": "Level blade, strokes top to bottom on a pane turned ~45 deg from the audience (pane_normal [0.70, -0.71, 0]), 3 strokes, stroke_m 0.219 drawn at size 0.6 (SIZES' third step): the TCP moves 0.14 x 0.13 x 0.14 m in all. From the audience the strip lies level and steps 13 cm up and down: a squeegee is not legible. Same pattern as greet_15_wipe, smaller."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 1.4-9.0 s (ghosts 2-8)",
+   "evidence": "strokes and lifts as equal ~0.2-0.3 m/s bumps (timeline); stroke_m 0.219, step_m 0.111, size 0.6 (labels.params)"
+  },
+  {
+   "kind": "twitch",
+   "where": "t ~1.3, ~3.5, ~4.5 and ~6.5 s (press-on / lift-off between strokes)",
+   "evidence": "twitches J1 2, J5 2 (labels.flags) at 3.5 and 6.5 s; J3 accel spikes to ~75-81 % (labels: J3 81 %) standing out of ~30 % neighbours"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.83,
+  "note": "LEDs face the audience 0.83: the pane is turned, the strip seen foreshortened from the audience zone."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "dynamics",
+   "follow_through",
+   "overshoot"
+  ],
+  "evidence": [
+   "7 big moves, A 0 O 1, onset cv 0.29, holds 1, dyn x2.54, joints 4, lag -0.01 s",
+   "timeline: the strokes and the lifts are the same ~0.2-0.35 m/s bumps (2-9 s); the loudest moves are the strip turning to level and back (0.85 m/s at ~0.6 s and ~11.2 s) and two strip shakes",
+   "TCP extent 0.14 x 0.13 x 0.14 m"
+  ],
+  "note": "As greet_15_wipe: 7 s of one dynamic framed by louder set-up turns; pressing on and lifting off look alike and the blade does not trail."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",
+   "change": "[-0.95, 0.0, 1.45] -> [-0.85, 0.15, 1.35] (metres; zones.high centre [-0.95, 0.0, 1.36] -> [-0.85, 0.15, 1.26]); every high clip is drawn again",
+   "why": "the hub tool tip is 1.56 m from the shoulder against REACH_M 1.6 and 0.15 m under the controller's 1.6 m TCP cap, and its solved wrist sits near the singularity so wrist_safe turns rolls and gazes back. At the new point (checked with gestures.hub_pose and hub_clear: clear of the room) the tip is 1.43 m from the shoulder, 0.25 m under the cap, and wrist_safe keeps ~73 % of a tilt's drawn roll instead of ~35 %. The audience is 0.15 m further away.",
+   "scope": "library"
+  },
+  {
+   "target": "gestures.make wipe stroke length",
+   "change": "the stroke's floor in pace() 0.18 m -> 0.25 m and the level blade's factor 0.7 -> 0.85 (every wipe changes)",
+   "why": "as greet_15_wipe: the level blade gets the shortest strokes; here shrunk again by size 0.6",
+   "scope": "this family"
+  },
+  {
+   "target": "shows/party.json hubs.high.families",
+   "change": "if the strokes cannot grow at this hub: remove 'wipe'",
+   "why": "a 14 cm wipe on a turned pane does not read as wiping from the audience",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the press-on / lift-off reads at full size",
+  "the strip's light against the imagined pane"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_16_wipe.png",
+  "labels": "reviews/sheets/high_16_wipe.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

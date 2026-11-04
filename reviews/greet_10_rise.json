@@ -1,0 +1,44 @@
+{
+ "id": "greet_10_rise",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "rise",
+  "matches_intent": true,
+  "note": "Gathers low (z 1.16, only 0.12 m under the hub), then rises to 1.52 looking up and out (ghosts 5-6), holds, and returns. The return at 3.8-4.6 s is the burst accent: the hardest move of the clip (J6 79 % speed / 84 % accel, strip tips 1.54 m/s), so the 'settles back' snaps rather than settles."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 3.8-4.6 s (ghosts 9-10)",
+   "evidence": "J6 84 % accel, strip tips 1.54 m/s; a sudden (punch) bar so under the 90 % line, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the rise is in the audience-side view, up to 1.5 m."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 0, still 25 %, dyn x2.27, strip x2.66, joints 3",
+   "timeline: the gather (A ~1.2 s) and a long rise with a decisive ease (strip leading the TCP), then the return at ~4.2 s is the fastest move (strip tips 1.54 m/s, J6 84 % accel)",
+   "the top is not held: the climax lands on the settle back"
+  ],
+  "note": "It gathers before it rises and the rise eases out nicely, but the snap home is louder than the rise itself and there is no held moment at the top, so the arc of the phrase is inverted."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the burst return reads as intended or as a whip of the strip"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_10_rise.png",
+  "labels": "reviews/sheets/greet_10_rise.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

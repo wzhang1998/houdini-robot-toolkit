@@ -1,0 +1,43 @@
+{
+ "id": "greet_04_tilt",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "tilt",
+  "matches_intent": true,
+  "note": "The TCP holds still (extent 0.07 x 0.09 x 0.04 m, meant small) while the strip rolls to one side and the other (J6 range 44 deg, strip tips 0.74 m/s vs TCP 0.22): a head tilt carried by the strip, with holds. The calm one, as described."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 5.1 s (ghost 9)",
+   "evidence": "self clearance 9 mm forearm/tool_bracket_d (labels.room); wrist-side, not visible from the audience"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the strip's tilt is face-on in the audience-side view."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 1 O 1, onset cv 0.26, dyn x3.75, still 44 %",
+   "timeline: each roll has a small after-hump (~2.2 s, ~4.5 s): the head settling; rolls of different speeds",
+   "strip x3.06, joints 3, TCP extent 0.07 x 0.09 x 0.04 m: the strip and wrist do everything, the body stays put"
+  ],
+  "note": "A calm tilt with settles and uneven timing, as the family wants, but nothing below the wrist joins in, so it stays a small gesture of the prop."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a 44 deg strip roll with a still TCP reads as a tilt at full size or as nothing much"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_04_tilt.png",
+  "labels": "reviews/sheets/greet_04_tilt.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

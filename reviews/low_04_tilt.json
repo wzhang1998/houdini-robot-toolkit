@@ -1,0 +1,62 @@
+{
+ "id": "low_04_tilt",
+ "verdict": "fix",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "tilt: the tool holds and the strip rolls side to side, but swung hard",
+  "matches_intent": true,
+  "note": "TCP nearly still (extent 0.19 x 0.06 x 0.07 m) while the strip rolls ~108 deg end to end (J6), strip tip 1.39 m/s vs TCP 0.39 at 2.2 s and 7.5 s, holds between: the head-tilt shape is there. But 'the calm one' is drawn at k 0.88 and bpm 133: J4 82 %, J6 82 % accel, J6 speed 77 %. greet_04_tilt (k 0.84) peaks at 65 %."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 1.8-2.6 s and 7.0-7.8 s, ghosts 3-4 and 9-10",
+   "evidence": "J4 82 %, J6 82 % accel (labels peak_acc_pct) in the calm family"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 1.4-1.6 s, ghost 3",
+   "evidence": "J6 accel spikes ~70 % on a 25 % speed bump before the main roll (accel timeline)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "The roll is in the frontal plane of AUDIENCE SIDE (ghosts fan from near level to upright): clearly seen. Strip lower end goes to 0.10 m over the floor at 1.0-2.0 s (room min 51 mm tool_strip_bottom_a / floor)."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.17, holds 2, still 32 %, dyn x3.75",
+   "timeline: rolls of different speeds (strip tips 1.39 m/s at ~2.2 s, 0.6 at ~3.6 s, 1.0 at ~7.5 s), each followed by a settle (O ~2.7 s, ~6.3 s), holds between",
+   "strip x4.14, joints 2, TCP extent 0.19 x 0.06 x 0.07 m: the strip and the wrist do everything"
+  ],
+  "note": "Settles and uneven timing as greet_04_tilt, with a lot more light and shade (too hard for the calm one, see awkward); nothing below the wrist joins in."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json library.intensity",
+   "change": "[0.2, 1.0] -> [0.2, 0.85]",
+   "why": "tilt rolls (25 + 20 k) deg each way at the lively tempo; at k 0.88 the calm family's wrist reaches 82 % accel; every gesture's top intensity drops",
+   "scope": "library"
+  },
+  {
+   "target": "shows/party.json hubs.low.tcp (z, metres) and zones.low center z",
+   "change": "hubs.low.tcp z 0.55 -> ~0.70 (zones.low center z 0.62 -> ~0.77); every low clip is redrawn",
+   "scope": "library",
+   "why": "part of the 108 deg J6 range is the strip being rolled off the floor (lower end 0.10-0.11 m at 1.0-2.0 s); more height lets the tilt roll only as drawn"
+  }
+ ],
+ "needs_live_check": [
+  "whether the strip's swing looks violent at full size",
+  "whether the strip's roll on each dip reads as a deliberate head tilt or as the prop flailing (Houdini review video)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_04_tilt.png",
+  "labels": "reviews/sheets/low_04_tilt.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

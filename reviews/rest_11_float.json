@@ -1,0 +1,45 @@
+{
+ "id": "rest_11_float",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "float: a slow sink 1.10 -> 0.70 m with the strip fanning, then home",
+  "matches_intent": true,
+  "note": "1/1 agree (float, time -1.00, space -0.58, flow +0.75). One smooth bell 0.42-3.80 s (peak 0.23 m/s), accel <= 6 %. The path is nearly straight (slight wiggle at ghosts 3-4); the indirectness is in the strip fanning (TOP, J4 range 24, J6 11). Shape is close to rest_09_float and rest_06_glide."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 1.21 s, ghost 2",
+   "evidence": "self clearance 5.2 mm forearm_link / tool_strip_bottom_b; not visible from the audience"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Visible from AUDIENCE SIDE: strip broadside, a 0.4 m sink; 0.70-1.10 m high."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "follow_through",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, still 1 %, dyn x1.8, lag 0.02 s",
+   "timeline: one smooth bell sink (0.23 m/s), one home bell, strip tips crossing slightly",
+   "path nearly straight; the indirectness is in the strip fanning (TOP, J4 range 24)"
+  ],
+  "note": "Light and even as a float should be, but straight and without breath or trailing wrist: much like rest_09 and rest_06."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether it reads as a float or as the same sink as rest_06_glide",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_11_float.png",
+  "labels": "reviews/sheets/rest_11_float.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

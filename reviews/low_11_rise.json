@@ -1,0 +1,50 @@
+{
+ "id": "low_11_rise",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "rise: sinks with the gaze down, still, rises looking up and out, holds, settles",
+  "matches_intent": true,
+  "note": "Gathers 0.55 -> 0.45 m (0.5-1.6 s), still to 2.4 s, rises to 0.72 m (2.4-5.0 s) with the arrow turning up (ghost 6), holds 5-7 s, settles. Modest at k 0.33: 0.27 m of height (extent 0.01 x 0.10 x 0.28 m), TCP peak 0.21 m/s; the strip swings more than the tool (tip 0.56 m/s)."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 3.4-3.5 s, ghost 4-5 (mid-rise)",
+   "evidence": "isolated J4/J6 accel spike 72-73 % against ~45 % speed, at the via-join of the burst into the arrive; strip-tip speed notches at 3.7 s"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 6.4-6.7 s, ghost 7 (inside the hold)",
+   "evidence": "a 0.07 m/s blip with J5 accel 36 %"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.94,
+  "note": "Vertical in AUDIENCE SIDE and seen; peaks at 0.72 m, the strip's upper end ~1.07 m."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, holds 3, still 26 %, dyn x2.45, strip x2.71, joints 3, TCP peak 0.21 m/s",
+   "timeline: the gather (a strip roll and a 0.1 m sink, 0.5-1.6 s) is the rise's wind-up across a hold (not counted), the rise eases out long (2.4-5 s), the top held, a small twitch of the strip (~6.6 s), a settle",
+   "the strip turning up does more than the TCP (0.28 m of height)"
+  ],
+  "note": "The arc is the right way round (gather, rise, held top, quiet home), unlike greet_10_rise, but at k 0.33 everything is one soft level and the strip outshines the body."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "the wrist spike mid-rise at 3.45 s on the arm",
+  "whether 'looking up over the audience' reads from a tool at 0.7 m"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_11_rise.png",
+  "labels": "reviews/sheets/low_11_rise.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

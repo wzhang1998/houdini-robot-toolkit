@@ -1,0 +1,38 @@
+{
+ "id": "greet_06_peek",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "peek",
+  "matches_intent": true,
+  "note": "Ducks (z to 1.15, only 0.13 m under the hub), still, pops up (burst at 1.8-2.3 s, J3 81 % accel), a small wrist cock (ghosts 7-8) and back. The duck is shallow (extent 0.10 x 0.10 x 0.20 m; low_06_peek travels 0.34 m) but the pop-and-cock sequence is there."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the pop is in front of the column in the audience-side view."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "overshoot"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, onset cv 0.13, holds 2, still 43 %, dyn x2.2, bar contrast 1.44",
+   "timeline: a slow creeping duck (0.3 m/s bell), still, a burst pop (0.5 m/s TCP, J3 81 % accel at ~1.9 s), a small wrist cock (~2.8 s), a pause, the dart back",
+   "the duck works as the pop's wind-up though a hold separates them (not counted by the detector); the pop ends on a symmetric bell, no settle past the mark"
+  ],
+  "note": "Clear phrasing with stillness and a burst, creep-then-pop, and a cocked wrist: a little story; only the pop lands softly instead of overshooting and settling."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a 0.13 m duck reads as hiding from 2 m",
+  "timing of the pop (burst accent)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_06_peek.png",
+  "labels": "reviews/sheets/greet_06_peek.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

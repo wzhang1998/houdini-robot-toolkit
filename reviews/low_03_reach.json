@@ -1,0 +1,44 @@
+{
+ "id": "low_03_reach",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "reach: a lean back, out and up towards the audience, holds, two small offers, home",
+  "matches_intent": true,
+  "note": "Lean-back anticipation 0.4-1.0 s (strip-led), the offer 1.0-3.6 s rising 0.5 -> 1.06 m (TCP 0.5 m/s), hold, 'here' offers at 3.8 s and 5.1 s (0.2-0.3 m/s), then home 5.9-6.9 s is the fastest move (0.91 m/s): the retreat is quicker than the offer. J4 range 149 deg, J4 speed 83 % at 1.9 s: a big wrist turn inside the offer, but the strip stays laid diagonally in the views."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t 5.9-7.6 s, ghosts 9-10 (the way home)",
+   "evidence": "J6 78 %, J4 77 %, J3 75 % accel; under 80 % at k 0.86, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.86,
+  "note": "AUDIENCE SIDE ghosts 5-9: the tool climbs to ~1.05 m with the strip up to ~1.5 m, the highest a low clip gets; the lean towards the audience is in depth (TOP)."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 3, still 33 %, dyn x3.23, joints 3, extent z 0.57 m",
+   "timeline: the lean back (A ~1.1 s, strip-led 0.6 m/s), the offer as a long even bell up to 1.06 m (0.5 m/s, 1.0-3.5 s), two small 'here' offers (3.9, 5.1 s), then home at 0.91 m/s, the loudest move",
+   "the second offers have no lean back of their own"
+  ],
+  "note": "Better than greet_03_reach (2): a real wind-up and the whole body rising 0.57 m; but the offer is a slow even swell and the climax lands on the way home."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the offer reads towards the audience in 3D (the outward part is in depth)",
+  "the J4 149 deg wrist turn at 1.2-2.6 s on the arm"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_03_reach.png",
+  "labels": "reviews/sheets/low_03_reach.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,205 @@
+{
+ "id": "low_11_rise",
+ "source": "geo/rebuild/party/low_11_rise.json",
+ "hub": "low",
+ "generator": "gestures.py",
+ "family": "rise",
+ "duration_s": 10.25,
+ "bpm": 118,
+ "intensity": 0.33,
+ "params": {
+  "tempo": "steady",
+  "accents": [
+   "burst"
+  ],
+  "family": "rise",
+  "form": "long",
+  "length_s": [
+   5.0,
+   7.459
+  ],
+  "tempo_factor": 1.545,
+  "space": {
+   "zone": "low",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 118,
+  "intensity": 0.325,
+  "size": 1.0,
+  "slowed": 1.374,
+  "reach_m": 0.181
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.795,
+   "intent": "rise",
+   "measured": "press"
+  },
+  {
+   "t0": 2.795,
+   "t1": 5.589,
+   "intent": "rise",
+   "measured": "wring"
+  },
+  {
+   "t0": 5.589,
+   "t1": 8.384,
+   "intent": "rise",
+   "measured": "press"
+  },
+  {
+   "t0": 8.384,
+   "t1": 10.25,
+   "intent": "rise",
+   "measured": "glide"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "wring",
+  "weight": 0.188,
+  "time": -0.543,
+  "space": -0.559,
+  "flow": -0.617
+ },
+ "peak_vel_deg_s": [
+  5.9,
+  19.6,
+  14.2,
+  82.3,
+  37.3,
+  84.5
+ ],
+ "peak_acc_deg_s2": [
+  33.2,
+  59.5,
+  65.7,
+  430.2,
+  218.3,
+  440.0
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  4.9,
+  16.3,
+  11.9,
+  45.7,
+  20.7,
+  47.0
+ ],
+ "peak_acc_pct": [
+  11.1,
+  19.8,
+  21.9,
+  71.7,
+  36.4,
+  73.3
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0529,
+  "closest": {
+   "frame": 40,
+   "t": 1.6667,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0122,
+  "closest_self": {
+   "frame": 141,
+   "t": 5.875,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 21.9,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 58.6,
+  "j6_range_deg": 65.7,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.82,
+  "facing_audience_mean": 0.94,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.446,
+  "z_max": 0.722,
+  "extent_m": [
+   0.01,
+   0.097,
+   0.277
+  ],
+  "peak_mps": 0.215,
+  "strip_tip_peak_mps": 0.559
+ },
+ "show_labels": {
+  "energy": 0.333,
+  "clearance_m": 0.0529,
+  "wrist_share": 0.82,
+  "action": "wring"
+ },
+ "expression": {
+  "lag_s": -0.009,
+  "accents_per_min": 35.1,
+  "still_share": 0.261,
+  "holds": 3,
+  "dynamic_range": 2.45,
+  "big_moves": 3,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": 0.48,
+  "bar_contrast": 1.52,
+  "strip_ratio": 2.71,
+  "joints_used": 3
+ },
+ "image": "reviews/sheets/low_11_rise.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.92,
+  1.67,
+  2.79,
+  3.71,
+  4.67,
+  5.92,
+  6.75,
+  7.46,
+  8.67
+ ]
+}

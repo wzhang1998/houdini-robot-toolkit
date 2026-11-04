@@ -1,0 +1,37 @@
+{
+ "id": "low_01_wave",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "wave: the hand goes up and swings side to side, the strip rolling with the swing",
+  "matches_intent": true,
+  "note": "Rises 0.55 -> 0.73 m, then swings 0.35 m across (AUDIENCE SIDE ghosts 4-8) with the strip fanning (J6 range 55, strip tip 1.32 m/s vs TCP 0.75), aim kept on one person (facing 0.94). Same shape as greet_01_wave (0.35 m across), 0.6 m lower."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.94,
+  "note": "The swing is broadside to the audience and in front of the arm; the hand is at 0.73 m (under the guests' eyes) but the strip's upper end waves at ~1.25 m."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "5 big moves, A 0 O 1, onset cv 0.27, holds 0, still 18 %, dyn x2.27, lag 0.05 s, strip x1.59",
+   "timeline: swings 0.55 -> 0.75 -> 0.6 m/s and a small fourth (a swell and fade), strip tip a much faster than tip b on each swing (the strip rolling with it)",
+   "no breath between the swings; even beat, as a wave should"
+  ],
+  "note": "The same swell-and-fade wave as greet_01_wave, the strip rolling a little more with each swing; the hand never pauses, so it is friendly and plain."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether a wave at knee-to-waist height reads as greeting from 2 m"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_01_wave.png",
+  "labels": "reviews/sheets/low_01_wave.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

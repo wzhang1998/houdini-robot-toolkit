@@ -1,0 +1,44 @@
+{
+ "id": "high_14_pop",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "pop",
+  "matches_intent": true,
+  "note": "A flick up (t 0.2-0.55 s), the snap down 0.6 m to z 0.91 (pose 'down', t 0.6-1.8 s), a small rebound (1.9-2.1 s), a freeze (2.2-2.9 s), back up (2.9-4.1 s, 0.87 m/s). The snap is a 1.2 s symmetric speed bell (slowed 1.22) rather than a 'stop dead', and the way back is as quick as the snap (as greet_13_pop); still reads as an accent with a freeze."
+ },
+ "awkward": [
+  {
+   "kind": "too_hard",
+   "where": "t ~3.7 s (ghost 9, the way back up)",
+   "evidence": "J3 76 % accel (labels) in a sudden (punch) bar: under 90 %, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.93,
+  "note": "LEDs face the audience 0.93; the drop is face on in the audience-side view, the strip's lower end at 0.45 m."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 1, still 32 %, dyn x2.08, joints 4",
+   "timeline: the flick up (A, ~0.4 s), the snap down 0.6 m as a 1.2 s symmetric bell (0.98 m/s), a small rebound (O ~2.0 s), a freeze (2.2-2.9 s), back at 0.87 m/s",
+   "the snap decelerates as slowly as it accelerates; the way back is as loud as the snap"
+  ],
+  "note": "Bigger than greet_13_pop and low_14_pop, with the counter-flick, rebound and freeze, but the snap is a swell and the return as loud: no stop dead, no punch."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the snap down reads as a snap or a fall (timing feel)",
+  "whether the freeze reads as a held pose"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_14_pop.png",
+  "labels": "reviews/sheets/high_14_pop.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

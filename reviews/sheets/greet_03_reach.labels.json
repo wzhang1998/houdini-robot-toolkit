@@ -1,0 +1,203 @@
+{
+ "id": "greet_03_reach",
+ "source": "geo/rebuild/party/greet_03_reach.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "reach",
+ "duration_s": 9.083,
+ "bpm": 130,
+ "intensity": 0.4,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "reach",
+  "form": "long",
+  "length_s": [
+   7.558,
+   10.058
+  ],
+  "tempo_factor": 1.433,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 130,
+  "intensity": 0.405,
+  "size": 0.6,
+  "slowed": 1.202,
+  "reach_m": 0.221
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.219,
+   "intent": "reach",
+   "measured": "punch"
+  },
+  {
+   "t0": 2.219,
+   "t1": 4.438,
+   "intent": "reach",
+   "measured": "glide"
+  },
+  {
+   "t0": 4.438,
+   "t1": 6.657,
+   "intent": "reach",
+   "measured": "dab"
+  },
+  {
+   "t0": 6.657,
+   "t1": 9.083,
+   "intent": "reach",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "punch",
+  "weight": 0.334,
+  "time": 0.723,
+  "space": 0.534,
+  "flow": -0.996
+ },
+ "peak_vel_deg_s": [
+  15.4,
+  15.2,
+  47.5,
+  47.9,
+  34.4,
+  106.5
+ ],
+ "peak_acc_deg_s2": [
+  91.0,
+  64.2,
+  233.0,
+  245.5,
+  146.1,
+  424.9
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  12.8,
+  12.6,
+  39.5,
+  26.6,
+  19.1,
+  59.2
+ ],
+ "peak_acc_pct": [
+  30.3,
+  21.4,
+  77.7,
+  40.9,
+  24.3,
+  70.8
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0592,
+  "closest": {
+   "frame": 14,
+   "t": 0.5833,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0116,
+  "closest_self": {
+   "frame": 188,
+   "t": 7.8333,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 85.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 21.9,
+  "j6_range_deg": 57.8,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.74,
+  "facing_audience_mean": 0.96,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.258,
+  "z_max": 1.444,
+  "extent_m": [
+   0.14,
+   0.105,
+   0.186
+  ],
+  "peak_mps": 0.545,
+  "strip_tip_peak_mps": 1.112
+ },
+ "show_labels": {
+  "energy": 0.478,
+  "clearance_m": 0.0592,
+  "wrist_share": 0.74,
+  "action": "punch"
+ },
+ "expression": {
+  "lag_s": 0.031,
+  "accents_per_min": 66.1,
+  "still_share": 0.604,
+  "holds": 2,
+  "dynamic_range": 3.05,
+  "big_moves": 2,
+  "anticipated": 1,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": 1.91,
+  "strip_ratio": 2.3,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/greet_03_reach.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.62,
+  1.67,
+  2.46,
+  3.29,
+  4.29,
+  5.21,
+  6.12,
+  6.96,
+  7.96
+ ]
+}

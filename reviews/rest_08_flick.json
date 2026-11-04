@@ -1,0 +1,63 @@
+{
+ "id": "rest_08_flick",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a barely visible strip tremor: the flick's curl is a few degrees",
+  "matches_intent": true,
+  "note": "1/1 agree (flick, time +0.99, space -1.00), but tiny: TCP extent 0.02 x 0.015 x 0.035 m, peak 0.19 m/s, strip tip 0.28 m/s, J4 range 1.1 deg, J6 6.5 deg, show energy 0.01. The 'high' level gave 0.035 m of rise. A flick should be a small but visible curling flourish; here ghosts 1-10 overlap in every view. J2 accel 48 % with J2 speed 6 % at 0.3-0.5 s (jagged accel curves on all joints 0.2-1.0 s)."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 1.125 s, ghost 5",
+   "evidence": "self clearance 0.1 mm forearm_link / tool_strip_bottom_b: the strip touching the forearm at the wrist (not visible from the audience)"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 0.25-0.5 s, ghosts 2-3",
+   "evidence": "J2 accel spikes 25 % and 48 % against a 6 % speed (accel timeline); twitches flag 0, so possibly interpolation"
+  }
+ ],
+ "audience": {
+  "seen": false,
+  "faces_audience": 0.0,
+  "note": "From AUDIENCE SIDE the strip does not visibly change (ghosts overlap); a guest sees nothing for 3 s."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "anticipation"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 1, lag 0.20 s (the strip trails the TCP), dyn x3.04",
+   "timeline: TCP 0.19 m/s and strip tips peaking after it (follow-through), then a settle; TCP extent 0.02 x 0.015 x 0.035 m, show energy 0.01",
+   "ghosts 1-10 overlap in every view"
+  ],
+  "note": "The flick's ingredients are there (a release, the strip trailing, a settle) but at 3 cm it is a tremor, and it starts with no counter-move."
+ },
+ "suggestions": [
+  {
+   "target": "choreo phrase spec size (flick accents)",
+   "change": "size >= 1.2 for one-move flick bars (here 0.80)",
+   "why": "at 0.8 the flick's wrist curl is a few degrees (strip tip 0.28 m/s, energy 0.01); the dab at 1.08 (rest_07) reaches 1.09 m/s at the strip tip and reads",
+   "scope": "this family"
+  },
+  {
+   "target": "choreo phrase spec levels (flick at the rest hub)",
+   "change": "draw 'low' (or levels False) instead of 'high' for flicks from rest",
+   "why": "'high' gives only 0.035 m of rise from this pose, so the flick has no carriage under it",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the flick is visible at all at full size",
+  "the J2 accel spikes at 0.3-0.5 s on the arm (jitter or interpolation)",
+  "the 0.1 mm strip-to-forearm gap on the real arm (strip mount, cable)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_08_flick.png",
+  "labels": "reviews/sheets/rest_08_flick.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,44 @@
+{
+ "id": "high_01_wave",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "wave",
+  "matches_intent": true,
+  "note": "Six even sideways swings of 0.30 m (x extent 0.299 m, TCP peaks 0.85-0.9 m/s, t 2.0-6.2 s, accel tempo) with the tool kept on one person and the strip rolling with them (J6 range 33 deg). The 'hand goes up' is only 0.12 m (z 1.43-1.55): the controller's 1.6 m TCP cap is just above the hub. Still reads as a clear wave; greet_01_wave is the bigger one (0.35 m, 60 deg roll)."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~3.1 s and ~3.8 s (swing turnarounds, ghosts 4-6); J6 t ~6.6 s",
+   "evidence": "twitches J5 2 (labels.flags) with J5 at 4 % speed: sub-degree reversals at the turns; an isolated J6 accel blip ~55 % at 6.6 s after the last swing. Notes"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 1.0,
+  "note": "LEDs face the audience 1.00; the swings run across the audience-side view, not hidden by the column."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics"
+  ],
+  "evidence": [
+   "7 big moves, A 1 O 1, onset cv 0.08, holds 1, dyn x2.39, lag 0.10 s (the wrist trails), joints 5",
+   "timeline: the hand goes up with a small counter-move (A ~0.8 s), then six swings all at 0.85-0.9 m/s (2.0-6.2 s), a smaller last one, a settle (O ~6.4 s), a hold, home",
+   "even beat, right for a wave; no swell or fade in size"
+  ],
+  "note": "A clear wave with the wrist trailing each swing, but the six swings are one size and one speed, so it does not swell or fade like greet_01_wave."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the small 'hand up' (0.12 m) still reads as a raised hand in perspective",
+  "timing feel of the accelerando swings"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_01_wave.png",
+  "labels": "reviews/sheets/high_01_wave.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

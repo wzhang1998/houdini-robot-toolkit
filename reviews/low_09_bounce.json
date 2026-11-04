@@ -1,0 +1,44 @@
+{
+ "id": "low_09_bounce",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "bounce: bobs on the beat, a groove step, quicker bobs (accel)",
+  "matches_intent": true,
+  "note": "Size 0.6, k 0.98: four bobs (1.3-5.0 s) carried mostly by the strip swaying (strip tip 0.8 m/s vs TCP 0.25-0.3), a step aside at 5.5 s, four tighter bobs 6.9-9.0 s (TCP 0.35-0.4 m/s). Extent 0.20 x 0.07 x 0.19 m; facing 0.99. Each dip rolls the strip (lower end 0.10-0.16 m)."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t 1.3-1.4 s, ghost 2",
+   "evidence": "twitches J6 1 (a 0.2 deg reversal), J6 accel spike 63 % at the first bob; not visible from 2 m"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "AUDIENCE SIDE: the bobs and the strip sway are frontal and seen; the groove sits at 0.45-0.64 m."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "body_involvement"
+  ],
+  "evidence": [
+   "9 big moves, A 0 O 0, onset cv 0.29, holds 1, still 17 %, dyn x2.26, joints 4, strip x2.0",
+   "timeline: four bobs on the beat where the strip sways (tips 0.6-0.8 m/s, alternating) while the TCP makes 0.25-0.3, a step aside (~5.5 s), then four tighter bobs with the body (TCP 0.35-0.4 m/s, accel)",
+   "two grooves and a break between: a change of feel, even beat within each"
+  ],
+  "note": "Livelier than greet_08_bounce: the strip rocks against the bob in the first groove and the second is tighter and quicker; the first half is carried by the strip more than the body."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the bobs sit on the beat",
+  "whether the strip's roll on each dip reads as a deliberate head tilt or as the prop flailing (Houdini review video)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_09_bounce.png",
+  "labels": "reviews/sheets/low_09_bounce.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

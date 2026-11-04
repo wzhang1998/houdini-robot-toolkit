@@ -1,0 +1,45 @@
+{
+ "id": "high_00_look",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "look",
+  "matches_intent": true,
+  "note": "Long form (9.3 s, k 0.32): the TCP almost still (extent 0.04 x 0.11 x 0.10 m) while the strip carries the gaze between four or five points (J4 range 66 deg, J6 54; strip tips 0.62 m/s vs TCP 0.33), quick glances at 0.4 and 2.2 s, slower ones at 4.0, 5.0 and 6.1 s, a slow drift to end (8.5 s). Reads as the arm looking round the audience; the lean and bob towards each point are small because the tool tip has little room at this hub."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~2.1 s and ~5.65 s; J4/J6 accel spike t ~5.05 s (ghost 6)",
+   "evidence": "twitches J6 2 (labels.flags, each under 2 deg); J4 accel 82.5 % peak in a sudden (slash) bar, a spike over ~40 % neighbours: under 90 %, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99 (100 % of the time over 0.5); the strip's swing is in the audience-side view, the arrow on the audience in the TOP view."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "anticipation",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.57, holds 3, still 43 %, dyn x3.3, joints 4, strip x2.04",
+   "timeline: two quick glances (strip 0.6 m/s at ~0.4 and ~2.2 s), each with a settle (O), then slower wrist looks (4.0-6.1 s, TCP ~0.05 m/s) and a slow drift to end",
+   "TCP extent 0.04 x 0.11 x 0.10 m: the lean and bob towards each point are small"
+  ],
+  "note": "More varied in timing than greet_00_look (quick glances, then slow ones), but the second half is the wrist alone at a murmur and nothing winds up a glance."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the J4/J6 spike at ~5.05 s reads as a hitch at the strip's ends",
+  "the wrist comes within ~13 deg of its singularity (min |J5| 12.9 at t 4.2 s deg; the hub itself is at 26): whether the FR20 raises its singular-pose fault or the wrist visibly speeds up there"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_00_look.png",
+  "labels": "reviews/sheets/high_00_look.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,54 @@
+{
+ "id": "rest_05_dab",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a single tiny wrist tick (3 cm), then home",
+  "matches_intent": true,
+  "note": "1/1 agree (dab, time +0.59, space +0.62). One-move accent at size 0.70: TCP extent 0.003 x 0.033 x 0.009 m, peak 0.10 m/s, strip tip 0.30 m/s, J4/J6 ranges 7/8 deg, show energy 0.03. A dab is meant small, but this is the weaker of the two dabs at the hub: rest_07_dab (size 1.08) shows two clear taps with the strip tip at 1.09 m/s."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 1.375 s, ghost 6",
+   "evidence": "self clearance 0.8 mm forearm_link / tool_strip_bottom_b (the strip all but touching the forearm at the wrist); not visible from 2 m"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "From AUDIENCE SIDE the strip barely tilts (ghost strips overlap); from 2 m it reads as a twitch of the strip, not a tap."
+ },
+ "expression": {
+  "score": 1,
+  "lacks": [
+   "anticipation",
+   "overshoot",
+   "dynamics"
+  ],
+  "evidence": [
+   "TCP extent 0.003 x 0.033 x 0.009 m, peak 0.10 m/s, show energy 0.03, wrist share 94 %",
+   "2 big moves, A 0 O 0, dyn x2.2, lag 0.03 s",
+   "timeline: the 'tap' is a 0.5 s symmetric bell (strip 0.30 m/s), then a slow home bell: no snap"
+  ],
+  "note": "A barely visible tick with neither wind-up nor snap: rest_07_dab does the same action alive."
+ },
+ "suggestions": [
+  {
+   "target": "choreo phrase spec size (dab accents)",
+   "change": "size >= 1.0 for one-move dab accents (here 0.70)",
+   "why": "rest_07_dab at size 1.08 reads as a tap (strip tip 1.09 m/s); at 0.70 the dab is a 3 cm tick with energy 0.03",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the 0.8 mm strip-to-forearm gap on the real arm (cable, strip mount)",
+  "whether the tick is visible at all at full size"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_05_dab.png",
+  "labels": "reviews/sheets/rest_05_dab.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "rest_07_dab"
+}

@@ -1,0 +1,187 @@
+{
+ "id": "low_00_look",
+ "source": "geo/rebuild/party/low_00_look.json",
+ "hub": "low",
+ "generator": "gestures.py",
+ "family": "look",
+ "duration_s": 4.833,
+ "bpm": 96,
+ "intensity": 0.22,
+ "params": {
+  "tempo": "accel",
+  "accents": [
+   "stop"
+  ],
+  "family": "look",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.913,
+  "space": {
+   "zone": "low",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 96,
+  "intensity": 0.217,
+  "size": 1.0,
+  "slowed": 1.343,
+  "reach_m": 0.283
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 4.833,
+   "intent": "look",
+   "measured": "punch"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "punch",
+  "weight": 0.489,
+  "time": 0.833,
+  "space": 0.562,
+  "flow": -0.696
+ },
+ "peak_vel_deg_s": [
+  17.6,
+  38.8,
+  36.4,
+  93.6,
+  14.2,
+  64.4
+ ],
+ "peak_acc_deg_s2": [
+  74.8,
+  192.6,
+  175.8,
+  424.4,
+  64.6,
+  213.0
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  14.7,
+  32.3,
+  30.4,
+  52.0,
+  7.9,
+  35.8
+ ],
+ "peak_acc_pct": [
+  24.9,
+  64.2,
+  58.6,
+  70.7,
+  10.8,
+  35.5
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0565,
+  "closest": {
+   "frame": 100,
+   "t": 4.1667,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0126,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 26.8,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 70.8,
+  "j6_range_deg": 46.4,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.77,
+  "facing_audience_mean": 0.97,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 0.55,
+  "z_max": 0.812,
+  "extent_m": [
+   0.044,
+   0.103,
+   0.262
+  ],
+  "peak_mps": 0.694,
+  "strip_tip_peak_mps": 0.757
+ },
+ "show_labels": {
+  "energy": 0.246,
+  "clearance_m": 0.0565,
+  "wrist_share": 0.77,
+  "action": "punch"
+ },
+ "expression": {
+  "lag_s": 0.026,
+  "accents_per_min": 74.5,
+  "still_share": 0.282,
+  "holds": 2,
+  "dynamic_range": 3.27,
+  "big_moves": 3,
+  "anticipated": 1,
+  "overshot": 2,
+  "onset_cv": 0.05,
+  "bar_contrast": null,
+  "strip_ratio": 1.14,
+  "joints_used": 3
+ },
+ "image": "reviews/sheets/low_00_look.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.46,
+  0.92,
+  1.38,
+  1.75,
+  2.21,
+  2.62,
+  3.04,
+  3.62,
+  3.96
+ ]
+}

@@ -1,0 +1,45 @@
+{
+ "id": "rest_10_float-float",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "float-float: a quicker sink 1.11 -> 0.61 m, then a wandering rise with the strip swinging",
+  "matches_intent": true,
+  "note": "Bar 1 intent float measured wring (1/2 agree; whole clip float). Bar 1 is the fastest float at the hub (TCP 0.46 m/s, J3 speed 24 %), with bound flow -0.83; bar 2 wanders (the two strip tips' speeds cross, J6 range 24). Largest extent at the hub (0.05 x 0.17 x 0.50 m). More varied than rest_00 (same intent) so both are worth keeping."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.01,
+  "note": "Readable from AUDIENCE SIDE: a 0.5 m sink and rise, strip tilting (ghosts 3-7); 0.61-1.11 m high."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, holds 2, still 24 %, dyn x2.87, bar contrast 0.8",
+   "timeline: a quicker sink (0.46 m/s, bound, measured wring) then a breath, a wandering rise where the two strip tips peak at different times (overlap), a breath, home",
+   "lag -0.06 s: in bar 1 the wrist leads rather than trails; onset cv 0.02"
+  ],
+  "note": "The most phrased clip at the hub: two bars of different character with breaths between and a wandering second bar; the first bar is bound, without the trailing wrist a float wants."
+ },
+ "suggestions": [
+  {
+   "target": "choreo random_spec: flow for float bars",
+   "change": "draw flow from [0.1, 1.0] (free) instead of [-1, 1] when a bar is float",
+   "why": "the floats with free flow read float (rest_00 +0.17, rest_09 +0.25, rest_11 +0.91); the bound ones misread: rest_03 flow -0.64 measured glide, rest_10 bar 1 flow -0.83 measured wring",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether bar 1 reads heavy (wring) on the arm or still light",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_10_float-float.png",
+  "labels": "reviews/sheets/rest_10_float-float.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

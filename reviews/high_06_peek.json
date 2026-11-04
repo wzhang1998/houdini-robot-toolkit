@@ -1,0 +1,39 @@
+{
+ "id": "high_06_peek",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "peek",
+  "matches_intent": true,
+  "note": "All the parts are there, small: ducks and creeps in (t 0.2-1.8 s, z to 1.36, 0.11 m towards the audience), still, pops up (burst t 2.2-2.8 s, J3 61 % accel), cocks the wrist (t 2.9-3.4 s, J6 34 % speed, strip tips 0.53 m/s with the TCP still), pauses, darts back (3.6 s), home (4.1-5.3 s). The duck is shallow (extent 0.005 x 0.11 x 0.12 m at k 0.24; low_06_peek ducks 0.34 m); the strip's wrist cock is what reads."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.99,
+  "note": "LEDs face the audience 0.99; the pop and the wrist cock are seen from the audience side."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "overshoot",
+   "body_involvement"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 0, onset cv 0.03, holds 2, still 26 %, dyn x2.85, joints 4",
+   "timeline: a slow creep (0.14 m/s), still, the burst pop (0.36 m/s, J3 61 % accel), a strip-only wrist cock (0.53 m/s), a pause, a dart back of a few cm (~3.7 s), home",
+   "duck 0.12 m (low_06_peek 0.34 m) at k 0.24; the creep is the pop's wind-up across a hold (not counted)"
+  ],
+  "note": "The whole story of greet_06_peek is there but at a third of the size and with hardly a dart back, so the burst does not stand out: 3, not 4."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the 0.1 m duck reads as ducking in perspective, or only the wrist cock does",
+  "the wrist comes within ~13 deg of its singularity (min |J5| 13.5 at t 4.05 s deg; the hub itself is at 26): whether the FR20 raises its singular-pose fault or the wrist visibly speeds up there"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_06_peek.png",
+  "labels": "reviews/sheets/high_06_peek.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

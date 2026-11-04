@@ -1,0 +1,45 @@
+{
+ "id": "greet_00_look",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "look",
+  "matches_intent": true,
+  "note": "Short glance form (4.6 s): the strip swings between three or four gaze points (J6 range 42 deg, strip tips 1.16 m/s vs TCP 0.53), holds between, a small lean (TCP extent 0.10 x 0.10 x 0.30 m). Reads as the arm looking round the audience."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~1.4-1.5 s (between ghosts 4-5) and t ~2.9 s (ghost 7-8)",
+   "evidence": "twitches J4 1, J6 1 (labels.flags); J6 accel spike to ~70 % at 1.5 s over ~40 % neighbours, at the settle of the small second glance. Under 2 deg of reversal: likely the overshoot settling, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.91,
+  "note": "LEDs face the audience 0.91 (100 % of the time over 0.5); the gaze swings are in the audience-side view, not hidden by the column."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "anticipation",
+   "timing_variety"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.06 (three glances evenly spaced), holds 1, still 29 %, dyn x2.32",
+   "timeline: each big glance followed by a small settle hump (the O marks at ~1.1 s and ~3.2 s), the last glance quickest (tempo accel)",
+   "lag -0.01 s: the gaze barely leads the lean; TCP extent 0.10 x 0.10 x 0.30 m, joints 4"
+  ],
+  "note": "Glances settle past their mark and quicken towards the end, but they come on an even clock with no counter-turn before them: a tidy look, not a curious one."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the J4/J6 reversal at ~1.5 s reads as a hitch at the strip tips or as a settle",
+  "timing feel of the holds between glances (accel tempo)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_00_look.png",
+  "labels": "reviews/sheets/greet_00_look.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

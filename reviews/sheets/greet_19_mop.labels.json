@@ -1,0 +1,218 @@
+{
+ "id": "greet_19_mop",
+ "source": "geo/rebuild/party/greet_19_mop.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "mop",
+ "duration_s": 10.5,
+ "bpm": 120,
+ "intensity": 0.4,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "face_deg": 56.9,
+  "heading": [
+   -0.196,
+   -0.981,
+   0.0
+  ],
+  "sweep_axis": [
+   0.9807,
+   -0.1957,
+   0.0
+  ],
+  "strokes": 2,
+  "stroke_m": 0.644,
+  "low_z": 0.4,
+  "swivel_deg": 42.1,
+  "family": "mop",
+  "form": "long",
+  "length_s": [
+   8.452,
+   11.452
+  ],
+  "tempo_factor": 1.437,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 120,
+  "intensity": 0.402,
+  "size": 0.8,
+  "slowed": 1.191,
+  "reach_m": 0.802
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.382,
+   "intent": "mop",
+   "measured": "punch"
+  },
+  {
+   "t0": 2.382,
+   "t1": 4.764,
+   "intent": "mop",
+   "measured": "slash"
+  },
+  {
+   "t0": 4.764,
+   "t1": 7.146,
+   "intent": "mop",
+   "measured": "wring"
+  },
+  {
+   "t0": 7.146,
+   "t1": 10.5,
+   "intent": "mop",
+   "measured": "press"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.905,
+  "time": 0.308,
+  "space": -0.963,
+  "flow": -0.628
+ },
+ "peak_vel_deg_s": [
+  44.9,
+  43.3,
+  45.1,
+  103.4,
+  59.7,
+  106.3
+ ],
+ "peak_acc_deg_s2": [
+  236.4,
+  184.2,
+  156.4,
+  419.5,
+  355.8,
+  489.1
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  37.4,
+  36.1,
+  37.6,
+  57.5,
+  33.2,
+  59.0
+ ],
+ "peak_acc_pct": [
+  78.8,
+  61.4,
+  52.1,
+  69.9,
+  59.3,
+  81.5
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0591,
+  "closest": {
+   "frame": 237,
+   "t": 9.875,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0116,
+  "closest_self": {
+   "frame": 87,
+   "t": 3.625,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 58.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 44.6,
+  "j6_range_deg": 108.0,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   1
+  ],
+  "wrist_share": 0.68,
+  "facing_audience_mean": 0.17,
+  "facing_audience_share_over_half": 0.17
+ },
+ "tcp": {
+  "z_min": 0.572,
+  "z_max": 1.28,
+  "extent_m": [
+   0.516,
+   0.161,
+   0.708
+  ],
+  "peak_mps": 1.179,
+  "strip_tip_peak_mps": 2.509
+ },
+ "show_labels": {
+  "energy": 1.0,
+  "clearance_m": 0.0591,
+  "wrist_share": 0.68,
+  "action": "slash"
+ },
+ "expression": {
+  "lag_s": 0.012,
+  "accents_per_min": 51.4,
+  "still_share": 0.264,
+  "holds": 2,
+  "dynamic_range": 2.93,
+  "big_moves": 4,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": 0.44,
+  "bar_contrast": 1.4,
+  "strip_ratio": 1.83,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/greet_19_mop.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.96,
+  1.58,
+  2.88,
+  3.25,
+  4.17,
+  5.54,
+  6.54,
+  7.88,
+  9.04
+ ]
+}

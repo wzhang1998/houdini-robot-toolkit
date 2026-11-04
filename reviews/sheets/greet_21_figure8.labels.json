@@ -1,0 +1,206 @@
+{
+ "id": "greet_21_figure8",
+ "source": "geo/rebuild/party/greet_21_figure8.json",
+ "hub": "greet",
+ "generator": "paths.py",
+ "family": "figure8",
+ "duration_s": 5.708,
+ "bpm": 109,
+ "intensity": 0.42,
+ "params": {
+  "family": "figure8",
+  "orient": "fixed",
+  "plane": "audience",
+  "normal": [
+   -0.4224,
+   -0.9064,
+   0.0
+  ],
+  "zone": "greet",
+  "extent_m": 0.2357,
+  "aspect": 0.9096,
+  "depth": 0.3045,
+  "bpm": 109,
+  "intensity": 0.423,
+  "ramp": 0.2692,
+  "offset": [
+   -0.001,
+   -0.0176,
+   -0.0898
+  ],
+  "lying": true,
+  "roll_deg": 0.0,
+  "roll_phase_deg": 155.07,
+  "roll_cycles": 1.0,
+  "v_mps": 0.5405,
+  "a_mps2": 1.9393,
+  "power_law": 0.621,
+  "tempo": "steady",
+  "ease_s": 0.55,
+  "form": "short",
+  "cycles": 2,
+  "strip_roll_deg": 0.0,
+  "beats": 9,
+  "cruise_s": 4.9541,
+  "slowed": 1.152,
+  "slowed_all": 1.0
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.537,
+   "intent": "figure8",
+   "measured": "slash"
+  },
+  {
+   "t0": 2.537,
+   "t1": 5.708,
+   "intent": "figure8",
+   "measured": "slash"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.862,
+  "time": 0.531,
+  "space": -1.0,
+  "flow": 0.784
+ },
+ "peak_vel_deg_s": [
+  42.8,
+  14.4,
+  37.3,
+  37.0,
+  42.2,
+  7.1
+ ],
+ "peak_acc_deg_s2": [
+  189.3,
+  76.3,
+  243.7,
+  316.2,
+  186.8,
+  31.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  35.7,
+  12.0,
+  31.1,
+  20.6,
+  23.5,
+  3.9
+ ],
+ "peak_acc_pct": [
+  63.1,
+  25.4,
+  81.2,
+  52.7,
+  31.1,
+  5.3
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0591,
+  "closest": {
+   "frame": 43,
+   "t": 1.7917,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0116,
+  "closest_self": {
+   "frame": 84,
+   "t": 3.5,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 74.3,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 13.8,
+  "j6_range_deg": 4.5,
+  "twitches_per_joint": [
+   0,
+   0,
+   1,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.51,
+  "facing_audience_mean": 1.0,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.126,
+  "z_max": 1.28,
+  "extent_m": [
+   0.216,
+   0.119,
+   0.154
+  ],
+  "peak_mps": 0.58,
+  "strip_tip_peak_mps": 0.58
+ },
+ "show_labels": {
+  "energy": 0.29,
+  "clearance_m": 0.0591,
+  "wrist_share": 0.51,
+  "action": "slash"
+ },
+ "expression": {
+  "lag_s": -0.001,
+  "accents_per_min": 21.0,
+  "still_share": 0.0,
+  "holds": 0,
+  "dynamic_range": 2.21,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": 0.29,
+  "strip_ratio": 1.0,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/greet_21_figure8.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.5,
+  1.04,
+  1.54,
+  2.08,
+  2.58,
+  3.12,
+  3.62,
+  4.5,
+  5.21
+ ]
+}

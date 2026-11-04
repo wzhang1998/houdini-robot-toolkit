@@ -1,0 +1,62 @@
+{
+ "id": "low_02_nod",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a small dip with the strip rolling ~60 deg each way: more a head tilt than a nod",
+  "matches_intent": false,
+  "note": "The TCP dips 0.13 m (0.59 -> 0.46 m at 1.5-2.2 s, back by 3.0 s): a nod is meant small. But on each dip the strip windmills (J6 range 63 deg, joint share J6 0.54; strip tip 1.25 m/s vs TCP 0.30; AUDIENCE SIDE ghosts 4-7 go from upright to near level). The strip's lower end stays 0.12-0.18 m over the floor through the dip while the TCP drops 0.13 m: the roll is the strip being turned off the floor (strip_safe), not the gaze. The only clearly 'nod' cue is the TCP dip; the second, smaller nod (3.4-3.6 s) is a 0.13 m/s blip."
+ },
+ "awkward": [
+  {
+   "kind": "strip_orientation",
+   "where": "t 1.5-3.0 s, ghosts 4-7",
+   "evidence": "J6 range 63 deg, strip tip 1.25 m/s vs TCP 0.30 m/s; strip lower end held at 0.12-0.18 m (show.strip_ends) during the dip"
+  },
+  {
+   "kind": "twitch",
+   "where": "t 3.4-3.6 s, ghost 8",
+   "evidence": "isolated J5 accel spike 62 % (J4 ~50 %) against ~10 % speed, on a 0.13 m/s blip"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "Seen from AUDIENCE SIDE, but the dominant image is the strip rolling in the frontal plane, the same image as low_04_tilt."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "body_involvement",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 1, holds 0, dyn x2.69, joints 2, strip x3.45 (not a strip family)",
+   "timeline: the gaze drops first by the wrist (0.2-0.8 s), then one dip where the strip tips reach 1.25 m/s while the TCP makes 0.30 m/s, a settle (O ~3.4 s), a slow return",
+   "TCP extent 0.03 x 0.08 x 0.13 m: one dip, no smaller repeats"
+  ],
+  "note": "One dip in which the strip windmills while the body barely moves: the gaze leading is nice, but there is no dying-away nod-nod and the prop carries it."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.low.tcp (z, metres) and zones.low center z",
+   "change": "hubs.low.tcp z 0.55 -> ~0.70 (zones.low center z 0.62 -> ~0.77); every low clip is redrawn",
+   "scope": "library",
+   "why": "at TCP 0.55 m the strip's lower end sits 0.15 m over the floor, so every dip at this hub is paid for by rolling the strip; 15 cm more under it lets the nod dip without the roll (also nod, shy, dive, bounce, scoop here)"
+  },
+  {
+   "target": "shows/party.json hubs.low.families",
+   "change": "remove 'nod' if hubs.low.tcp stays at 0.55 m",
+   "why": "greet_02_nod reads as a nod; from this hub a dip always rolls the strip",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the strip's roll on each dip reads as a deliberate head tilt or as the prop flailing (Houdini review video)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_02_nod.png",
+  "labels": "reviews/sheets/low_02_nod.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

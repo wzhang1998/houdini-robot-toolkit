@@ -1,0 +1,165 @@
+{
+ "id": "rest_06_glide",
+ "source": "geo/rebuild/party/rest_06_glide.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 7.583,
+ "bpm": 92,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.326,
+   "t1": 3.587,
+   "intent": "glide",
+   "measured": "glide"
+  }
+ ],
+ "bars_agree": [
+  1,
+  1
+ ],
+ "measured": {
+  "action": "glide",
+  "weight": -0.455,
+  "time": -0.999,
+  "space": 0.764,
+  "flow": 0.482
+ },
+ "peak_vel_deg_s": [
+  0.2,
+  0.5,
+  19.6,
+  22.7,
+  3.7,
+  0.9
+ ],
+ "peak_acc_deg_s2": [
+  0.7,
+  0.8,
+  18.9,
+  21.0,
+  5.2,
+  0.8
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  0.2,
+  0.4,
+  16.3,
+  12.6,
+  2.1,
+  0.5
+ ],
+ "peak_acc_pct": [
+  0.2,
+  0.3,
+  6.3,
+  3.5,
+  0.9,
+  0.1
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0607,
+  "closest": {
+   "frame": 98,
+   "t": 4.0833,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0078,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 89.9,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 40.5,
+  "j6_range_deg": 1.6,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.58,
+  "facing_audience_mean": 0.0,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 0.696,
+  "z_max": 1.095,
+  "extent_m": [
+   0.067,
+   0.089,
+   0.399
+  ],
+  "peak_mps": 0.238,
+  "strip_tip_peak_mps": 0.254
+ },
+ "show_labels": {
+  "energy": 0.145,
+  "clearance_m": 0.0607,
+  "action": "glide"
+ },
+ "expression": {
+  "lag_s": 0.007,
+  "accents_per_min": 23.7,
+  "still_share": 0.078,
+  "holds": 0,
+  "dynamic_range": 1.77,
+  "big_moves": 2,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 1.07,
+  "joints_used": 2
+ },
+ "image": "reviews/sheets/rest_06_glide.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.71,
+  1.38,
+  2.08,
+  2.75,
+  3.54,
+  4.12,
+  4.83,
+  5.5,
+  6.21
+ ]
+}

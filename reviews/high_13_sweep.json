@@ -1,0 +1,48 @@
+{
+ "id": "high_13_sweep",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "sweep",
+  "matches_intent": true,
+  "note": "A big arc across 0.65 m (x -1.2 to -0.55) and through heights (z 1.24-1.53): out to one end fast (t 0.3-1.5 s, TCP 0.82 m/s, J2 75 % accel), hold, the arc across with the gaze leading (t 2.4-5.4 s, a rainbow in the audience-side view, ghosts 4-8), hold, back (6.5-7.7 s). The clearest whole-arm clip at the hub."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 1.46 s (ghost 3)",
+   "evidence": "room clearance 47 mm, upperarm_link to base_plate (labels.room): under ~60 mm but low at the base, not visible from the audience; a note"
+  },
+  {
+   "kind": "twitch",
+   "where": "t ~7.0 s (ghost 9, the return)",
+   "evidence": "a J5/J6 accel spike to ~60 % at the return's peak over ~30 % neighbours; no twitch counted, a note"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.83,
+  "note": "LEDs face the audience 0.83 (100 % of the time over 0.5); the arc is drawn across the audience-side view, face on."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "overshoot"
+  ],
+  "evidence": [
+   "3 big moves, A 1 O 0, onset cv 0.32, holds 2, dyn x2.43, joints 6, lag -0.06 s",
+   "timeline: a counter-move (A ~0.5 s), quick out (0.82 m/s), a hold, the 3 s arc across through heights with the two strip tips alternating (the strip turning through the arc), a hold, quick back",
+   "extent 0.65 x 0.18 x 0.29 m: the whole arm in it; the ends stop without swinging past"
+  ],
+  "note": "A wind-up, quick-slow-quick, the strip turning through a real rainbow and every joint in it: well above greet_12_sweep; the swings stop cold at their ends."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the fast first swing out (J2 75 %) looks like a lurch in perspective"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_13_sweep.png",
+  "labels": "reviews/sheets/high_13_sweep.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

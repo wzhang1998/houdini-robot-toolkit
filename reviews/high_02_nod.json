@@ -1,0 +1,37 @@
+{
+ "id": "high_02_nod",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "nod",
+  "matches_intent": true,
+  "note": "Calm (k 0.22, 10.8 s): the gaze drops first by the wrist (t 0.3-1.0 s, J5 24 % speed, TCP 0.05 m/s), then four dips of the TCP (t 2.0-7.1 s, z 1.33-1.46, extent 0.05 x 0.08 x 0.13 m: meant small), the later two smaller (TCP 0.25 -> 0.13-0.15 m/s), and a slow float drift to finish (8.3-10.5 s). Every joint under 30 % accel. Reads as a slow nod; long for one."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.92,
+  "note": "LEDs face the audience 0.92; the dips are seen face on from the audience side."
+ },
+ "expression": {
+  "score": 4,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "4 big moves, A 0 O 2, onset cv 0.21, holds 2, dyn x3.14, lag 0.05 s, joints 4",
+   "timeline: the gaze drops first by the wrist (0.3-1.0 s: the eyes lead), then four dips 0.22, 0.25, 0.13, 0.15 m/s on an even beat, the later ones smaller with settles after them (O ~4.1, ~7.2 s)",
+   "then a 2.5 s float drift to end; k 0.22, every joint under 30 % accel"
+  ],
+  "note": "Unlike greet_02_nod this has the dying-away repeats and the gaze leading the dips: a gentle agreeing nod; the long drift after it dilutes the end."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether 10.8 s of nodding holds attention or drags (timing feel)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_02_nod.png",
+  "labels": "reviews/sheets/high_02_nod.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

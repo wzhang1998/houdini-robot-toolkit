@@ -1,0 +1,219 @@
+{
+ "id": "greet_18_window",
+ "source": "geo/rebuild/party/greet_18_window.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "window",
+ "duration_s": 11.792,
+ "bpm": 121,
+ "intensity": 0.42,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "pane_n": [
+   -0.4224,
+   -0.9064,
+   0.0
+  ],
+  "sweep_axis": [
+   0.9064,
+   -0.4224,
+   0.0
+  ],
+  "pane_tilt_deg": 0.0,
+  "blade": "level",
+  "pattern": "eights",
+  "count": 1,
+  "width_m": 0.549,
+  "height_m": 0.233,
+  "family": "window",
+  "form": "long",
+  "length_s": [
+   8.066,
+   11.066
+  ],
+  "tempo_factor": 1.415,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 121,
+  "intensity": 0.418,
+  "size": 0.8,
+  "slowed": 1.428,
+  "reach_m": 0.237
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.832,
+   "intent": "window",
+   "measured": "press"
+  },
+  {
+   "t0": 2.832,
+   "t1": 5.665,
+   "intent": "window",
+   "measured": "wring"
+  },
+  {
+   "t0": 5.665,
+   "t1": 8.497,
+   "intent": "window",
+   "measured": "wring"
+  },
+  {
+   "t0": 8.497,
+   "t1": 11.792,
+   "intent": "window",
+   "measured": "dab"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "wring",
+  "weight": 0.746,
+  "time": -0.241,
+  "space": -1.0,
+  "flow": -0.39
+ },
+ "peak_vel_deg_s": [
+  36.1,
+  17.8,
+  20.1,
+  32.8,
+  39.9,
+  140.7
+ ],
+ "peak_acc_deg_s2": [
+  98.0,
+  213.4,
+  195.5,
+  232.4,
+  360.1,
+  445.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  30.1,
+  14.8,
+  16.7,
+  18.2,
+  22.2,
+  78.2
+ ],
+ "peak_acc_pct": [
+  32.7,
+  71.1,
+  65.2,
+  38.7,
+  60.0,
+  74.3
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.059,
+  "closest": {
+   "frame": 33,
+   "t": 1.375,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0115,
+  "closest_self": {
+   "frame": 78,
+   "t": 3.25,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 61.5,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 21.6,
+  "j6_range_deg": 99.3,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.72,
+  "facing_audience_mean": 0.98,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.211,
+  "z_max": 1.398,
+  "extent_m": [
+   0.409,
+   0.191,
+   0.187
+  ],
+  "peak_mps": 0.417,
+  "strip_tip_peak_mps": 1.243
+ },
+ "show_labels": {
+  "energy": 0.768,
+  "clearance_m": 0.059,
+  "wrist_share": 0.72,
+  "action": "wring"
+ },
+ "expression": {
+  "lag_s": 0.005,
+  "accents_per_min": 45.8,
+  "still_share": 0.216,
+  "holds": 1,
+  "dynamic_range": 2.44,
+  "big_moves": 3,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": 0.22,
+  "bar_contrast": 1.72,
+  "strip_ratio": 2.32,
+  "joints_used": 5
+ },
+ "image": "reviews/sheets/greet_18_window.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  1.08,
+  1.92,
+  2.96,
+  4.0,
+  5.12,
+  7.38,
+  8.88,
+  9.75,
+  10.5
+ ]
+}

@@ -1,0 +1,185 @@
+{
+ "id": "high_05_trace",
+ "source": "geo/rebuild/party/high_05_trace.json",
+ "hub": "high",
+ "generator": "gestures.py",
+ "family": "trace",
+ "duration_s": 4.125,
+ "bpm": 112,
+ "intensity": 0.38,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "family": "trace",
+  "form": "short",
+  "length_s": [
+   3.2,
+   4.8
+  ],
+  "tempo_factor": 0.85,
+  "space": {
+   "zone": "high",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 112,
+  "intensity": 0.375,
+  "size": 0.45,
+  "slowed": 1.289,
+  "reach_m": 0.15
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 4.125,
+   "intent": "trace",
+   "measured": "slash"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "slash",
+  "weight": 0.575,
+  "time": 0.756,
+  "space": -1.0,
+  "flow": -0.608
+ },
+ "peak_vel_deg_s": [
+  12.8,
+  10.7,
+  30.0,
+  22.2,
+  29.8,
+  30.9
+ ],
+ "peak_acc_deg_s2": [
+  85.7,
+  55.4,
+  132.2,
+  166.6,
+  128.8,
+  190.7
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  10.6,
+  8.9,
+  25.0,
+  12.3,
+  16.5,
+  17.1
+ ],
+ "peak_acc_pct": [
+  28.6,
+  18.5,
+  44.1,
+  27.8,
+  21.5,
+  31.8
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0584,
+  "closest": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0127,
+  "closest_self": {
+   "frame": 0,
+   "t": 0.0,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 13.9,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 9.2,
+  "j6_range_deg": 21.0,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.57,
+  "facing_audience_mean": 0.99,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.312,
+  "z_max": 1.45,
+  "extent_m": [
+   0.021,
+   0.132,
+   0.138
+  ],
+  "peak_mps": 0.282,
+  "strip_tip_peak_mps": 0.332
+ },
+ "show_labels": {
+  "energy": 0.072,
+  "clearance_m": 0.0584,
+  "wrist_share": 0.57,
+  "action": "slash"
+ },
+ "expression": {
+  "lag_s": 0.003,
+  "accents_per_min": 43.6,
+  "still_share": 0.259,
+  "holds": 1,
+  "dynamic_range": 1.88,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 0,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 1.2,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/high_05_trace.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.38,
+  0.75,
+  1.12,
+  1.5,
+  1.88,
+  2.25,
+  2.58,
+  3.17,
+  3.75
+ ]
+}

@@ -1,0 +1,44 @@
+{
+ "id": "rest_06_glide",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "glide: a smooth, straight, even sink 1.09 -> 0.70 m and an equally smooth return",
+  "matches_intent": true,
+  "note": "1/1 agree (glide, time -1.00, space +0.76). One-move accent: one bell of speed 0.33-3.59 s (peak 0.24 m/s), accel <= 6 %, J4 range 40 with J6 still (strip stays parallel), ghosts 2-6 in a straight vertical line. The best glide at the hub. The return home (3.59-7.24 s) is as long as the bar, so the clip reads as sink-and-back (shared by most rest clips)."
+ },
+ "awkward": [
+  {
+   "kind": "crowding",
+   "where": "t 0.0 s (hub pose)",
+   "evidence": "self clearance 7.8 mm forearm_link / tool_strip_bottom_b, the hub pose itself; not visible"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Clear from AUDIENCE SIDE: the strip, broadside, sinks 0.4 m in a straight line (ghosts 2-6). 0.70-1.09 m high."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 0, dyn x1.77, lag 0.01 s, joints 2",
+   "timeline: one smooth bell sinking 0.39 m (0.24 m/s), one equal bell home; strip tips = TCP (strip x1.07)",
+   "straight vertical path, ghosts 2-6 in a line"
+  ],
+  "note": "The cleanest glide at the hub, exactly as even as the action asks, but a sink and the same move back with no pause at the bottom: good filler."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the even speed reads as a glide or as slow and dull at full size",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_06_glide.png",
+  "labels": "reviews/sheets/rest_06_glide.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

@@ -1,0 +1,165 @@
+{
+ "id": "rest_08_flick",
+ "source": "geo/rebuild/party/rest_08_flick.json",
+ "hub": "rest",
+ "generator": "choreo.py",
+ "family": null,
+ "duration_s": 3.0,
+ "bpm": 124,
+ "intensity": 1.0,
+ "params": null,
+ "bars_kind": "laban",
+ "bars": [
+  {
+   "t0": 0.242,
+   "t1": 1.21,
+   "intent": "flick",
+   "measured": "flick"
+  }
+ ],
+ "bars_agree": [
+  1,
+  1
+ ],
+ "measured": {
+  "action": "flick",
+  "weight": -0.79,
+  "time": 0.987,
+  "space": -1.0,
+  "flow": -0.569
+ },
+ "peak_vel_deg_s": [
+  3.8,
+  7.6,
+  5.0,
+  6.4,
+  6.5,
+  22.1
+ ],
+ "peak_acc_deg_s2": [
+  46.2,
+  143.9,
+  49.6,
+  122.7,
+  70.0,
+  132.2
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  3.1,
+  6.3,
+  4.2,
+  3.5,
+  3.6,
+  12.3
+ ],
+ "peak_acc_pct": [
+  15.4,
+  48.0,
+  16.5,
+  20.4,
+  11.7,
+  22.0
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.0607,
+  "closest": {
+   "frame": 11,
+   "t": 0.4583,
+   "link": "upperarm_link",
+   "with": "base_plate"
+  },
+  "min_self_clearance_m": 0.0001,
+  "closest_self": {
+   "frame": 27,
+   "t": 1.125,
+   "link": "forearm_link",
+   "with": "tool_strip_bottom_b"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 89.9,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 1.1,
+  "j6_range_deg": 6.5,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "wrist_share": 0.72,
+  "facing_audience_mean": 0.0,
+  "facing_audience_share_over_half": 0.0
+ },
+ "tcp": {
+  "z_min": 1.089,
+  "z_max": 1.124,
+  "extent_m": [
+   0.017,
+   0.015,
+   0.035
+  ],
+  "peak_mps": 0.187,
+  "strip_tip_peak_mps": 0.285
+ },
+ "show_labels": {
+  "energy": 0.014,
+  "clearance_m": 0.0607,
+  "action": "flick"
+ },
+ "expression": {
+  "lag_s": 0.205,
+  "accents_per_min": 60.0,
+  "still_share": 0.25,
+  "holds": 0,
+  "dynamic_range": 3.04,
+  "big_moves": 1,
+  "anticipated": 0,
+  "overshot": 1,
+  "onset_cv": null,
+  "bar_contrast": null,
+  "strip_ratio": 2.2,
+  "joints_used": 4
+ },
+ "image": "reviews/sheets/rest_08_flick.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.29,
+  0.54,
+  0.83,
+  1.12,
+  1.38,
+  1.62,
+  1.92,
+  2.29,
+  2.71
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "id": "greet_16_salute",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a second twirl (strip swung face on round a still wrist)",
+  "matches_intent": false,
+  "note": "The TCP hardly moves (extent 0.07 x 0.07 x 0.06 m, z 1.23-1.29): the sabre 'raised' and the 'bow' are only the strip turning. The rise (gestures.make: up to 0.3 m) is clamped because an upright 1 m strip from a 1.28 m tool tip already has its top at ~1.8 m (STRIP_TOP_M 1.84). What remains is four face-on strip swings (J6 range 101 deg, strip tips 1.25 m/s vs TCP 0.26): from the audience it looks like greet_14_twirl, which does it better."
+ },
+ "awkward": [
+  {
+   "kind": "twitch",
+   "where": "t ~1.9 s (ghost 3, the held salute)",
+   "evidence": "J4 twitch 1; J5 accel spike to ~70 % while the other joints are still, in the hold"
+  },
+  {
+   "kind": "crowding",
+   "where": "t 3.83 s (ghost 4)",
+   "evidence": "the strip's top 57 mm from partition_left (labels.room)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.89,
+  "note": "LEDs face the audience 0.89; face on, but no raise or bow to read."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "body_involvement",
+   "anticipation"
+  ],
+  "evidence": [
+   "5 big moves, A 0 O 2, onset cv 0.56, holds 3, dyn x3.54",
+   "strip x8.14, joints 3, TCP extent 0.07 x 0.07 x 0.06 m: the raise and the bow are only the strip turning",
+   "timeline: four near-equal strip swings (~1.1-1.2 m/s, 2.6-8.3 s) after small set-up moves"
+  ],
+  "note": "The strip swings with braking and some timing variety, but the salute's character (raise, hold, bow) needs the body and it never moves: a weaker twirl."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.greet.families",
+   "change": "remove 'salute'",
+   "why": "from this hub's height the upright strip leaves no room to raise it, so the salute loses its raise and bow and duplicates the twirl",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "the LED strip's end exceeds the operator_slow zone's speed limit (build warning): a safety review item, check on the arm",
+  "whether the upright hold at ~2 s reads as a salute at all in perspective"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/greet_16_salute.png",
+  "labels": "reviews/sheets/greet_16_salute.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "greet_14_twirl"
+}

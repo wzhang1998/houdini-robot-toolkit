@@ -1,0 +1,199 @@
+{
+ "id": "greet_16_salute",
+ "source": "geo/rebuild/party/greet_16_salute.json",
+ "hub": "greet",
+ "generator": "gestures.py",
+ "family": "salute",
+ "duration_s": 8.708,
+ "bpm": 100,
+ "intensity": 0.59,
+ "params": {
+  "tempo": "steady",
+  "accents": [],
+  "flourish": "cut",
+  "aim": "audience",
+  "family": "salute",
+  "form": "long",
+  "length_s": [
+   6.177,
+   8.677
+  ],
+  "tempo_factor": 1.173,
+  "space": {
+   "zone": "greet",
+   "z": [
+    0.4,
+    1.57
+   ]
+  },
+  "bpm": 100,
+  "intensity": 0.591,
+  "size": 1.0,
+  "slowed": 1.045,
+  "reach_m": 0.098
+ },
+ "bars_kind": "family",
+ "bars": [
+  {
+   "t0": 0.0,
+   "t1": 2.508,
+   "intent": "salute",
+   "measured": "punch"
+  },
+  {
+   "t0": 2.508,
+   "t1": 5.016,
+   "intent": "salute",
+   "measured": "glide"
+  },
+  {
+   "t0": 5.016,
+   "t1": 8.708,
+   "intent": "salute",
+   "measured": "glide"
+  }
+ ],
+ "bars_agree": null,
+ "measured": {
+  "action": "glide",
+  "weight": -0.367,
+  "time": -0.512,
+  "space": 0.215,
+  "flow": -0.655
+ },
+ "peak_vel_deg_s": [
+  7.1,
+  13.8,
+  19.8,
+  84.6,
+  54.3,
+  146.9
+ ],
+ "peak_acc_deg_s2": [
+  98.9,
+  62.4,
+  96.0,
+  308.4,
+  467.5,
+  450.3
+ ],
+ "vel_limit": [
+  120.0,
+  120.0,
+  120.0,
+  180.0,
+  180.0,
+  180.0
+ ],
+ "acc_limit": [
+  300.0,
+  300.0,
+  300.0,
+  600.0,
+  600.0,
+  600.0
+ ],
+ "peak_vel_pct": [
+  5.9,
+  11.5,
+  16.5,
+  47.0,
+  30.2,
+  81.6
+ ],
+ "peak_acc_pct": [
+  33.0,
+  20.8,
+  32.0,
+  51.4,
+  77.9,
+  75.1
+ ],
+ "peak_jerk_pct": null,
+ "playback_scale": 1.0,
+ "player_ok": true,
+ "player_reasons": [],
+ "room": {
+  "min_clearance_m": 0.057,
+  "closest": {
+   "frame": 92,
+   "t": 3.8333,
+   "link": "tool_strip_top_a3",
+   "with": "partition_left"
+  },
+  "min_self_clearance_m": 0.0114,
+  "closest_self": {
+   "frame": 93,
+   "t": 3.875,
+   "link": "wrist1_link",
+   "with": "wrist3_link"
+  },
+  "ok": true,
+  "violations": [],
+  "margin_m": 0.05
+ },
+ "flags": {
+  "j5_zero_crossings": 0,
+  "j5_min_abs_deg": 87.1,
+  "j3_zero_crossings": 0,
+  "j4_range_deg": 52.2,
+  "j6_range_deg": 101.0,
+  "twitches_per_joint": [
+   0,
+   0,
+   0,
+   1,
+   0,
+   0
+  ],
+  "wrist_share": 0.9,
+  "facing_audience_mean": 0.89,
+  "facing_audience_share_over_half": 1.0
+ },
+ "tcp": {
+  "z_min": 1.227,
+  "z_max": 1.287,
+  "extent_m": [
+   0.069,
+   0.074,
+   0.06
+  ],
+  "peak_mps": 0.258,
+  "strip_tip_peak_mps": 1.253
+ },
+ "show_labels": {
+  "energy": 0.855,
+  "clearance_m": 0.057,
+  "wrist_share": 0.9,
+  "action": "glide"
+ },
+ "expression": {
+  "lag_s": 0.019,
+  "accents_per_min": 55.1,
+  "still_share": 0.27,
+  "holds": 3,
+  "dynamic_range": 3.54,
+  "big_moves": 5,
+  "anticipated": 0,
+  "overshot": 2,
+  "onset_cv": 0.56,
+  "bar_contrast": 1.55,
+  "strip_ratio": 8.14,
+  "joints_used": 3
+ },
+ "image": "reviews/sheets/greet_16_salute.png",
+ "show": "shows/party.json",
+ "model": "URDF STL, vertex clustering 15 mm",
+ "ghost_times_s": [
+  0.0,
+  0.71,
+  2.08,
+  3.17,
+  3.75,
+  4.75,
+  5.62,
+  6.33,
+  7.17,
+  7.92
+ ]
+}

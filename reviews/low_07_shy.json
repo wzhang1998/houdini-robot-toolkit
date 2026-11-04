@@ -1,0 +1,52 @@
+{
+ "id": "low_07_shy",
+ "verdict": "drop",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a 0.1 m sink with the strip rolling, a long hold, back: the shrinking away does not read",
+  "matches_intent": false,
+  "note": "Drawn at size 0.6 (SIZES' fallback). The 'shrink back and down' is 0.56 -> 0.46 m (1.8-2.2 s), extent 0.14 x 0.06 x 0.10 m; the visible event is the strip rolling ~70 deg (J6, strip tip 1.04 m/s vs TCP 0.35) because its lower end is already at 0.11-0.15 m over the floor. Then a 2.6 s hold at 0.46 m (2.2-4.8 s) and a slow return. LEDs face the audience 0.99: the gaze never visibly drops away. From this hub there is no room down, which is the family's essence; greet_07_shy shrinks 0.28 m and drops its gaze (facing 0.85)."
+ },
+ "awkward": [
+  {
+   "kind": "strip_orientation",
+   "where": "t 1.6-2.6 s, ghosts 3-4",
+   "evidence": "J6 range 70 deg, strip tip 1.04 m/s vs TCP 0.35 m/s; strip lower end 0.11-0.13 m (floor) while the TCP sinks"
+  }
+ ],
+ "audience": {
+  "seen": false,
+  "faces_audience": 0.99,
+  "note": "From AUDIENCE SIDE the TCP barely moves (ghosts 1-10 within 0.1 m); only the strip roll is seen, and the face stays on the audience."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "body_involvement",
+   "phrasing"
+  ],
+  "evidence": [
+   "2 big moves, A 0 O 0, holds 3, dyn x2.56, strip x3.28 (not a strip family), joints 3",
+   "timeline: the 'shrink' is a strip roll (strip tips 1.04 m/s vs TCP 0.35 at ~2 s), a dead 2.6 s hold (2.2-4.8 s), a slower return (0.27 m/s), a float drift",
+   "TCP extent 0.14 x 0.06 x 0.10 m; LEDs face the audience 0.99: the gaze never drops away"
+  ],
+  "note": "The slower return is the hesitation greet_07_shy lacks, but the retreat is the prop turning and half the clip is held: little to read as shyness."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.low.families",
+   "change": "remove 'shy'",
+   "why": "shy shrinks back and down; at TCP 0.55 m with the strip's lower end 0.15 m over the floor it can only sink 0.1 m and roll the strip (size already cut to 0.6); greet_07_shy covers the family",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the gaze turning away (30-37 deg down) is visible at all from the audience"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_07_shy.png",
+  "labels": "reviews/sheets/low_07_shy.labels.json"
+ },
+ "reviewed_from": "static sheet",
+ "replace_with": "greet_07_shy"
+}

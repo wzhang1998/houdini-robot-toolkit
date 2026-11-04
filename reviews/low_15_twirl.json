@@ -1,0 +1,39 @@
+{
+ "id": "low_15_twirl",
+ "verdict": "keep",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "twirl: the strip swings back and forth face on like a baton, the tool tip still",
+  "matches_intent": true,
+  "note": "Two swings at 2.8-5.0 s and 5.3-7.7 s (J6 range 139 deg, strip tip 1.06 m/s vs TCP 0.16 m/s), braking past the mark (bumps at 5.0 s and 7.7 s), face on (facing 0.98). spin_deg 120 (= TWIRL_MIN_DEG). Wind-up 0-2.8 s and settle 8.8-11.6 s are quiet (strip tip <= 0.17 m/s): ~5.5 s of the 11.6 s."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "AUDIENCE SIDE shows a full starburst of the strip in the frontal plane: the clearest strip image at the hub."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "phrasing",
+   "timing_variety"
+  ],
+  "evidence": [
+   "3 big moves, A 0 O 2, onset cv 0.43, holds 3, still 32 %, dyn x3.0, strip x7.81 (a strip family), joints 2",
+   "timeline: two strip swings (1.05 and 0.97 m/s, 2.8-5.0 and 5.3-7.7 s) each braking past its mark (O), framed by a quiet set-up and settle (strip <= 0.17 m/s) that take ~5.5 s of the 11.6 s",
+   "TCP 0.16 m/s peak: the body stays out (right for a twirl)"
+  ],
+  "note": "The strip carries a braking baton swing as it should, but there are two alike swings at k 0.27 and half the clip is quiet set-up, so it is plainer than greet_14_twirl (four swings of different speeds)."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the 2.8 s wind-up and settle feel alive",
+  "the strip's light while spinning"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_15_twirl.png",
+  "labels": "reviews/sheets/low_15_twirl.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

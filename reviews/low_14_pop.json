@@ -1,0 +1,37 @@
+{
+ "id": "low_14_pop",
+ "verdict": "keep",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "pop (up): a strip flick, a rise to a pose, a freeze, back",
+  "matches_intent": true,
+  "note": "Flick the other way 0.3-0.9 s (J6, strip tip 0.65 m/s), up 0.50 -> 0.88 m (1.0-1.85 s, 0.79 m/s), a small after-bump at 2.0 s, freeze 2.2-2.9 s, back. At bpm 77 / k 0.45 the snap is a 0.85 s symmetric speed bell, as long as the return: an accent with a freeze rather than a snap that stops dead (as greet_13_pop)."
+ },
+ "awkward": [],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.98,
+  "note": "Vertical in AUDIENCE SIDE (ghosts 4-8); the 0.39 m rise is the biggest single move at the hub."
+ },
+ "expression": {
+  "score": 3,
+  "lacks": [
+   "dynamics"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 1, still 36 %, dyn x2.51, joints 5",
+   "timeline: the strip flick the other way (A, 0.3-0.9 s), the snap up as a 0.85 s symmetric bell (0.79 m/s), a small rebound (O ~2.0 s), a freeze, back at 0.6 m/s",
+   "the snap decelerates as slowly as it accelerates and the way back is nearly as loud"
+  ],
+  "note": "Counter-flick, a rebound and a freeze, as greet_13_pop, but the snap is a soft swell rather than a stop dead: an accent without punch."
+ },
+ "suggestions": [],
+ "needs_live_check": [
+  "whether the stop reads as 'dead' at this tempo"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/low_14_pop.png",
+  "labels": "reviews/sheets/low_14_pop.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

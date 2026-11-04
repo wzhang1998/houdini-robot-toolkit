@@ -1,0 +1,62 @@
+{
+ "id": "rest_03_float",
+ "verdict": "fix",
+ "confidence": "high",
+ "readability": {
+  "reads_as": "a small lift 1.05 -> 1.20 m with a strip sway: a short glide, not a wandering float",
+  "matches_intent": false,
+  "note": "Intent float, measured glide (0/1 agree; space +0.70 direct, flow -0.81 bound). One-move accent rising to the 'high' level, but from the rest pose it only rises 0.15 m (extent 0.02 x 0.08 x 0.15 m). The speed has a notch at ~1.4 s between two humps (TCP to ~0.01 m/s while the strip tip keeps 0.12 m/s): a stop-and-go in a sustained bar."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t ~1.4 s, between ghosts 3 and 4",
+   "evidence": "TCP speed drops to ~0 between two humps inside the float bar (speed timeline)"
+  },
+  {
+   "kind": "crowding",
+   "where": "t 4.88 s",
+   "evidence": "self clearance 7.7 mm forearm_link / tool_strip_bottom_b (hub pose level, not visible)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.0,
+  "note": "Small from the audience side: the TCP moves 0.15 m, the strip sways (J6 range 17) at ~1.1-1.2 m, near eye level but barely changing."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "follow_through"
+  ],
+  "evidence": [
+   "1 big move, A 0 O 0, holds 1, still 32 %, dyn x2.02, lag 0.06 s",
+   "timeline: the TCP stops dead at ~1.4 s between two humps while strip tip b keeps 0.14 m/s through the notch (overlap only in the strip)",
+   "TCP extent 0.02 x 0.07 x 0.15 m, flow -0.81 (bound)"
+  ],
+  "note": "A small, bound rise that stops in the middle: the float's drift and follow-through are missing from the body, left to the strip."
+ },
+ "suggestions": [
+  {
+   "target": "choreo random_spec: flow for float bars",
+   "change": "draw flow from [0.1, 1.0] (free) instead of [-1, 1] when a bar is float",
+   "why": "the floats with free flow read float (rest_00 +0.17, rest_09 +0.25, rest_11 +0.91); the bound ones misread: rest_03 flow -0.64 measured glide, rest_10 bar 1 flow -0.83 measured wring",
+   "scope": "this family"
+  },
+  {
+   "target": "choreo phrase spec levels (float bars at the rest hub)",
+   "change": "draw 'low' (or levels False) for single-bar floats started at rest instead of 'high'",
+   "why": "'high' from the rest pose rises only 0.15 m here (0.04 m in rest_04, rest_08), so the carriage that should make a float travel is missing; 'low' floats (rest_09, rest_11) travel 0.3-0.4 m and read float",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the 1.4 s notch is visible on the arm or smoothed by the strip's follow-through",
+  "what the LEDs show while the strip faces down at this hub (idle_leds cues)"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/rest_03_float.png",
+  "labels": "reviews/sheets/rest_03_float.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}

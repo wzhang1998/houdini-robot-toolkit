@@ -1,0 +1,58 @@
+{
+ "id": "high_03_reach",
+ "verdict": "fix",
+ "confidence": "medium",
+ "readability": {
+  "reads_as": "a lean out and down, weakly a reach",
+  "matches_intent": false,
+  "note": "A tiny lean back (t 0.3-0.7 s, z to 1.47), then out towards the audience AND down (t 0.8-1.8 s: 0.19 m out, z 1.47 -> 1.28), a long hold (2.3-6.3 s) broken only by a second offer of a few cm (t 4.3 s, TCP 0.15 m/s), then home - the hardest move of the clip (t 6.5-7.0 s, J3 78 % accel). still_fraction 0.53. 'Out and up' is not possible from this hub: the tool tip is 1.56 m from the shoulder (REACH_M 1.6) and 0.15 m under the TCP cap, so the offer goes down; the 'offer again a little further' is not visible."
+ },
+ "awkward": [
+  {
+   "kind": "mechanical",
+   "where": "t 2.3-6.3 s (ghosts 4-9)",
+   "evidence": "a 4 s hold with one few-cm bump; still_fraction 0.53 (geo clip labels.measured.raw); the return home is faster than the offer (0.55 vs 0.46 m/s)"
+  }
+ ],
+ "audience": {
+  "seen": true,
+  "faces_audience": 0.96,
+  "note": "LEDs face the audience 0.96; the reach is towards the audience, so it is foreshortened in the audience-side view (reads mostly as a dip)."
+ },
+ "expression": {
+  "score": 2,
+  "lacks": [
+   "phrasing",
+   "anticipation"
+  ],
+  "evidence": [
+   "2 big moves, A 1 O 1, holds 2, still 53 %, dyn x3.03, joints 5",
+   "timeline: a small lean back (A ~0.7 s), the offer out and down (0.47 m/s), a long hold (2.3-6.3 s) broken by a few-cm second offer with no lean back before it, then home is the loudest move (0.55 m/s, J3 78 % accel)",
+   "extent 0.09 x 0.19 x 0.19 m"
+  ],
+  "note": "As greet_03_reach: the first offer is shaped, then the clip waits more than half its length and the retreat outshouts the offer."
+ },
+ "suggestions": [
+  {
+   "target": "shows/party.json hubs.high.tcp (and zones.high centre with it)",
+   "change": "[-0.95, 0.0, 1.45] -> [-0.85, 0.15, 1.35] (metres; zones.high centre [-0.95, 0.0, 1.36] -> [-0.85, 0.15, 1.26]); every high clip is drawn again",
+   "why": "the hub tool tip is 1.56 m from the shoulder against REACH_M 1.6 and 0.15 m under the controller's 1.6 m TCP cap, and its solved wrist sits near the singularity so wrist_safe turns rolls and gazes back. At the new point (checked with gestures.hub_pose and hub_clear: clear of the room) the tip is 1.43 m from the shoulder, 0.25 m under the cap, and wrist_safe keeps ~73 % of a tilt's drawn roll instead of ~35 %. The audience is 0.15 m further away.",
+   "scope": "library"
+  },
+  {
+   "target": "shows/party.json hubs.high.families",
+   "change": "if the hub cannot move: remove 'reach'",
+   "why": "from the hub's edge of reach the offer can only go down, and dive / bounce already carry the body down at this hub",
+   "scope": "this family"
+  }
+ ],
+ "needs_live_check": [
+  "whether the offer reads as offering anything from the audience zone, in perspective",
+  "whether the long hold feels alive (breathing) or dead"
+ ],
+ "evidence": {
+  "image": "reviews/sheets/high_03_reach.png",
+  "labels": "reviews/sheets/high_03_reach.labels.json"
+ },
+ "reviewed_from": "static sheet"
+}
